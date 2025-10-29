@@ -1,0 +1,172 @@
+/* ===== グローバルスタイル ===== */
+body {
+    font-family: 'Noto Sans JP', 'Inter', sans-serif;
+    /* ダーフモード/ライトモード切り替え時に色変数を使うと便利 */
+    --bg-primary: #f8fafc; /* bg-slate-50 */
+    --bg-secondary: #ffffff; /* bg-white */
+    --text-primary: #1e293b; /* text-slate-800 */
+    --text-secondary: #475569; /* text-slate-600 */
+    --border-primary: #e2e8f0; /* border-slate-200 */
+}
+
+/* ===== サイドナビゲーション ===== */
+.nav-link {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1.5rem; /* py-3 px-6 */
+    margin: 0 1rem; /* mx-4 */
+    border-radius: 0.5rem; /* rounded-lg */
+    font-weight: 600; /* font-semibold */
+    color: var(--text-secondary);
+    transition: all 0.2s ease-in-out;
+}
+.nav-link:hover {
+    background-color: #f1f5f9; /* hover:bg-slate-100 */
+    color: var(--text-primary);
+}
+.nav-link.active {
+    background-color: #eef2ff; /* bg-indigo-50 (Tailwind v2) / bg-blue-50 (v3) */
+    color: #4338ca; /* text-indigo-700 (v2) / text-blue-600 (v3) */
+}
+.nav-link.active i {
+    color: #4338ca; /* text-indigo-700 (v2) / text-blue-600 (v3) */
+}
+
+/* ===== メインコンテンツエリア ===== */
+[data-page] {
+    display: none;
+}
+[data-page].active {
+    display: block;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== テーブル管理 ===== */
+.table-card {
+    border-color: var(--border-primary);
+}
+.table-card[data-status="available"] {
+    background-color: #f0fdf4; /* bg-green-50 */
+    border-color: #86efac; /* border-green-300 */
+}
+.table-card[data-status="occupied"] {
+    background-color: #eff6ff; /* bg-blue-50 */
+    border-color: #93c5fd; /* border-blue-300 */
+}
+.table-card[data-status="checkout"] {
+    background-color: #fff7ed; /* bg-orange-50 */
+    border-color: #fed7aa; /* border-orange-300 */
+}
+
+/* ===== メニュー管理タブ ===== */
+.menu-tab {
+    padding: 0.75rem 1.5rem; /* py-3 px-6 */
+    font-weight: 600; /* font-semibold */
+    color: var(--text-secondary);
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+.menu-tab:hover {
+    color: var(--text-primary);
+    border-bottom-color: var(--border-primary);
+}
+.menu-tab.active {
+    color: #2563eb; /* text-blue-600 */
+    border-bottom-color: #2563eb; /* border-blue-600 */
+}
+
+.menu-tab-content {
+    display: none;
+}
+.menu-tab-content.active {
+    display: block;
+}
+
+/* ===== モーダル共通 ===== */
+.modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 50;
+    padding: 1.5rem;
+    overflow-y: auto;
+    animation: modalBackdropFadeIn 0.2s ease-out;
+}
+.modal-backdrop.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.modal-content {
+    background-color: var(--bg-secondary);
+    border-radius: 0.75rem; /* rounded-xl */
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    animation: modalContentSlideIn 0.3s ease-out;
+}
+
+@keyframes modalBackdropFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes modalContentSlideIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== 会計モーダル ===== */
+.payment-method-btn {
+    padding: 0.75rem; /* p-3 */
+    border: 2px solid var(--border-primary);
+    border-radius: 0.5rem; /* rounded-lg */
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+.payment-method-btn:hover {
+    border-color: #93c5fd; /* border-blue-300 */
+    background-color: #eff6ff; /* bg-blue-50 */
+}
+.payment-method-btn.active {
+    border-color: #2563eb; /* border-blue-600 */
+    background-color: #dbeafe; /* bg-blue-100 */
+    color: #1d4ed8; /* text-blue-700 */
+    box-shadow: 0 0 0 2px #dbeafe; /* ring-2 ring-blue-100 */
+}
+
+/* (変更) Ranking 期間切り替えボタン (ドロップダウンに変更したため不要) */
+/*
+.ranking-period-btn {
+    padding: 0.25rem 0.75rem; 
+    border-radius: 0.5rem; 
+    font-weight: 500;
+    color: #475569; 
+    transition: all 0.2s ease;
+}
+.ranking-period-btn.active {
+    background-color: #ffffff; 
+    color: #1e293b; 
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+*/
+
+/* (変更) Ranking 集計対象切り替えボタン */
+.ranking-type-btn {
+    padding: 0.5rem 1rem; /* py-2 px-4 */
+    border-bottom: 3px solid transparent;
+    font-weight: 600;
+    color: #475569; /* text-slate-600 */
+}
+.ranking-type-btn:hover {
+    color: #1e293b; /* text-slate-800 */
+}
+.ranking-type-btn.active {
+    border-bottom-color: #2563eb; /* border-blue-600 */
+    color: #2563eb; /* text-blue-600 */
+}
+
+
