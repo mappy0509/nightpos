@@ -49,6 +49,7 @@ body {
 /* ===== テーブル管理 ===== */
 .table-card {
     border-color: var(--border-primary);
+    position: relative; /* (新規) バッジを配置するため */
 }
 .table-card[data-status="available"] {
     background-color: #f0fdf4; /* bg-green-50 */
@@ -58,9 +59,30 @@ body {
     background-color: #eff6ff; /* bg-blue-50 */
     border-color: #93c5fd; /* border-blue-300 */
 }
+/* (変更) 会計待ちステータスは伝票単位で管理するため削除 */
+/*
 .table-card[data-status="checkout"] {
-    background-color: #fff7ed; /* bg-orange-50 */
-    border-color: #fed7aa; /* border-orange-300 */
+    background-color: #fff7ed; 
+    border-color: #fed7aa; 
+}
+*/
+
+/* (新規) 伝票数バッジ */
+.slip-count-badge {
+    position: absolute;
+    top: -0.5rem;
+    right: -0.5rem;
+    background-color: #ef4444; /* bg-red-500 */
+    color: white;
+    font-size: 0.75rem; /* text-xs */
+    font-weight: 700; /* font-bold */
+    width: 1.5rem; /* w-6 */
+    height: 1.5rem; /* h-6 */
+    border-radius: 9999px; /* rounded-full */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid white;
 }
 
 /* ===== メニュー管理タブ ===== */
@@ -170,3 +192,63 @@ body {
 }
 
 
+/* (新規) 印刷用スタイル */
+@media print {
+    /* 印刷時はモーダル背景や他のUIを非表示 */
+    body > div.flex.h-screen {
+        display: none;
+    }
+
+    .modal-backdrop {
+        display: block !important; /* 表示を強制 */
+        position: static;
+        background-color: transparent;
+        padding: 0;
+        overflow: visible;
+        animation: none;
+    }
+
+    .modal-content {
+        box-shadow: none;
+        border-radius: 0;
+        max-width: 100%;
+        width: 100%;
+        max-h: none;
+        animation: none;
+    }
+
+    /* 印刷しない要素を非表示 */
+    .non-printable {
+        display: none !important;
+    }
+
+    /* 印刷する領域を指定 */
+    #slip-content-to-print {
+        display: block;
+        padding: 0;
+        /* レシートプリンタ幅を想定 (例: 80mm用紙なら 280px-300px程度) */
+        width: 300px; 
+        margin: 0;
+        color: #000;
+        background: #fff;
+    }
+
+    /* 印刷時のフォントサイズ調整 */
+    #slip-content-to-print,
+    #slip-content-to-print p,
+    #slip-content-to-print div,
+    #slip-content-to-print span,
+    #slip-content-to-print h4 {
+        font-size: 10pt !important;
+        line-height: 1.4;
+    }
+    #slip-content-to-print h2 {
+        font-size: 14pt !important;
+    }
+    #slip-content-to-print .font-semibold {
+        font-weight: 600 !important;
+    }
+    #slip-content-to-print .font-bold {
+        font-weight: 700 !important;
+    }
+}
