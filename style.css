@@ -49,7 +49,7 @@ body {
 /* ===== テーブル管理 ===== */
 .table-card {
     border-color: var(--border-primary);
-    position: relative; /* (新規) バッジを配置するため */
+    position: relative; /* (新規) バッジの基準位置 */
 }
 .table-card[data-status="available"] {
     background-color: #f0fdf4; /* bg-green-50 */
@@ -59,31 +59,28 @@ body {
     background-color: #eff6ff; /* bg-blue-50 */
     border-color: #93c5fd; /* border-blue-300 */
 }
-/* (変更) 会計待ちステータスは伝票単位で管理するため削除 */
-/*
-.table-card[data-status="checkout"] {
-    background-color: #fff7ed; 
-    border-color: #fed7aa; 
-}
-*/
+/* (変更) checkout は伝票単位になったため削除 */
+/* .table-card[data-status="checkout"] { ... } */
 
 /* (新規) 伝票数バッジ */
 .slip-count-badge {
     position: absolute;
-    top: -0.5rem;
-    right: -0.5rem;
+    top: -0.75rem; /* -top-3 */
+    right: -0.75rem; /* -right-3 */
+    width: 1.75rem; /* w-7 */
+    height: 1.75rem; /* h-7 */
+    border-radius: 9999px; /* rounded-full */
     background-color: #ef4444; /* bg-red-500 */
     color: white;
-    font-size: 0.75rem; /* text-xs */
-    font-weight: 700; /* font-bold */
-    width: 1.5rem; /* w-6 */
-    height: 1.5rem; /* h-6 */
-    border-radius: 9999px; /* rounded-full */
+    font-size: 0.875rem; /* text-sm */
+    font-weight: 600; /* font-semibold */
     display: flex;
     align-items: center;
     justify-content: center;
     border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
+
 
 /* ===== メニュー管理タブ ===== */
 .menu-tab {
@@ -130,6 +127,7 @@ body {
     border-radius: 0.75rem; /* rounded-xl */
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
     animation: modalContentSlideIn 0.3s ease-out;
+    max-width: 90vw; /* (追加) モーダルの最大幅を制限 */
 }
 
 @keyframes modalBackdropFadeIn {
@@ -160,23 +158,7 @@ body {
     box-shadow: 0 0 0 2px #dbeafe; /* ring-2 ring-blue-100 */
 }
 
-/* (変更) Ranking 期間切り替えボタン (ドロップダウンに変更したため不要) */
-/*
-.ranking-period-btn {
-    padding: 0.25rem 0.75rem; 
-    border-radius: 0.5rem; 
-    font-weight: 500;
-    color: #475569; 
-    transition: all 0.2s ease;
-}
-.ranking-period-btn.active {
-    background-color: #ffffff; 
-    color: #1e293b; 
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-*/
-
-/* (変更) Ranking 集計対象切り替えボタン */
+/* Ranking 集計対象切り替えボタン */
 .ranking-type-btn {
     padding: 0.5rem 1rem; /* py-2 px-4 */
     border-bottom: 3px solid transparent;
@@ -191,64 +173,49 @@ body {
     color: #2563eb; /* text-blue-600 */
 }
 
-
-/* (新規) 印刷用スタイル */
+/* ===== 印刷用スタイル (伝票プレビュー・領収書) ===== */
 @media print {
-    /* 印刷時はモーダル背景や他のUIを非表示 */
-    body > div.flex.h-screen {
-        display: none;
-    }
-
-    .modal-backdrop {
-        display: block !important; /* 表示を強制 */
-        position: static;
-        background-color: transparent;
-        padding: 0;
-        overflow: visible;
-        animation: none;
-    }
-
-    .modal-content {
-        box-shadow: none;
-        border-radius: 0;
-        max-width: 100%;
-        width: 100%;
-        max-h: none;
-        animation: none;
-    }
-
-    /* 印刷しない要素を非表示 */
+    /* 印刷時に非表示にする要素 */
     .non-printable {
         display: none !important;
     }
-
-    /* 印刷する領域を指定 */
-    #slip-content-to-print {
+    
+    /* 印刷対象のモーダルだけを表示 */
+    body {
+        background-color: white;
+    }
+    .modal-backdrop.active {
         display: block;
+        position: static;
         padding: 0;
-        /* レシートプリンタ幅を想定 (例: 80mm用紙なら 280px-300px程度) */
-        width: 300px; 
+        background-color: white;
+    }
+    .modal-content {
+        box-shadow: none;
+        border: none;
+        border-radius: 0;
+        padding: 0;
         margin: 0;
-        color: #000;
-        background: #fff;
+        width: 100%;
+        max-width: 100%;
     }
 
-    /* 印刷時のフォントサイズ調整 */
+    /* 印刷対象のコンテンツをフル表示 */
     #slip-content-to-print,
-    #slip-content-to-print p,
-    #slip-content-to-print div,
-    #slip-content-to-print span,
-    #slip-content-to-print h4 {
-        font-size: 10pt !important;
-        line-height: 1.4;
+    #receipt-content {
+        display: block !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }
-    #slip-content-to-print h2 {
-        font-size: 14pt !important;
+
+    /* 印刷時の改ページ制御 */
+    @page {
+        size: auto; /* 用紙サイズ自動 (レシートプリンタ対応) */
+        margin: 10mm; /* 印刷マージン */
     }
-    #slip-content-to-print .font-semibold {
-        font-weight: 600 !important;
-    }
-    #slip-content-to-print .font-bold {
-        font-weight: 700 !important;
+    
+    body {
+        margin: 0;
     }
 }
+

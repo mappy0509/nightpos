@@ -33,7 +33,8 @@ const state = {
                 { id: 1, name: '基本セット (指名)', price: 10000, qty: 1 },
                 { id: 2, name: 'キャストドリンク', price: 1500, qty: 2 },
                 { id: 3, name: '鏡月 (ボトル)', price: 8000, qty: 1 },
-            ]
+            ],
+            paidAmount: 0 // (新規) 支払い済み金額
         },
         // { 
         //     slipId: 'slip-2', 
@@ -45,7 +46,8 @@ const state = {
         //     nomination: 'フリー', 
         //     items: [
         //         { id: 1, name: '基本セット (フリー)', price: 8000, qty: 1 },
-        //     ]
+        //     ],
+        //     paidAmount: 0
         // },
         { 
             slipId: 'slip-3', 
@@ -58,7 +60,8 @@ const state = {
             items: [
                 { id: 1, name: '基本セット (フリー)', price: 8000, qty: 3 },
                 { id: 4, name: 'ビール', price: 1000, qty: 6 },
-            ]
+            ],
+            paidAmount: 0 // (新規) 支払い済み金額
         },
         { 
             slipId: 'slip-4', 
@@ -72,7 +75,8 @@ const state = {
                 { id: 1, name: '基本セット (指名)', price: 10000, qty: 2 },
                 { id: 5, name: 'シャンパン (ゴールド)', price: 50000, qty: 1 },
                 { id: 2, name: 'キャストドリンク', price: 1500, qty: 8 },
-            ]
+            ],
+            paidAmount: 0 // (新規) 支払い済み金額
         },
     ],
     menu: {
@@ -162,6 +166,7 @@ const tableGrid = document.getElementById('table-grid');
 const dashboardSlips = document.getElementById('dashboard-slips'); // (変更) dashboard-tables -> dashboard-slips
 const menuTabs = document.querySelectorAll('.menu-tab');
 const menuTabContents = document.querySelectorAll('.menu-tab-content');
+const allSlipsList = document.getElementById('all-slips-list'); // (新規)
 
 // モーダル関連
 const orderModal = document.getElementById('order-modal');
@@ -173,6 +178,7 @@ const openSlipPreviewBtn = document.getElementById('open-slip-preview-btn');
 const processPaymentBtn = document.getElementById('process-payment-btn');
 const printSlipBtn = document.getElementById('print-slip-btn');
 const goToCheckoutBtn = document.getElementById('go-to-checkout-btn');
+const reopenSlipBtn = document.getElementById('reopen-slip-btn'); // (新規)
 
 // (新規) 伝票選択モーダル
 const slipSelectionModal = document.getElementById('slip-selection-modal');
@@ -203,8 +209,16 @@ const checkoutItemsList = document.getElementById('checkout-items-list');
 const checkoutSubtotalEl = document.getElementById('checkout-subtotal');
 const checkoutServiceChargeEl = document.getElementById('checkout-service-charge');
 const checkoutTaxEl = document.getElementById('checkout-tax');
+const checkoutPaidAmountEl = document.getElementById('checkout-paid-amount'); // (新規)
 const checkoutTotalEl = document.getElementById('checkout-total');
 const paymentMethodBtns = document.querySelectorAll('.payment-method-btn');
+
+// 伝票プレビューモーダル (金額)
+const slipSubtotalEl = document.getElementById('slip-subtotal');
+const slipServiceChargeEl = document.getElementById('slip-service-charge');
+const slipTaxEl = document.getElementById('slip-tax');
+const slipPaidAmountEl = document.getElementById('slip-paid-amount'); // (新規)
+const slipTotalEl = document.getElementById('slip-total'); // (変更) これは「今回ご請求額」
 
 // Ranking関連
 const castRankingList = document.getElementById('cast-ranking-list');
@@ -229,6 +243,25 @@ const getUUID = () => {
 const formatCurrency = (amount) => {
     return `¥${amount.toLocaleString()}`;
 };
+
+/**
+ * (新規) 伝票の合計金額（割引前）を計算する
+ * @param {object} slip 伝票データ
+ * @returns {number} 合計金額
+ */
+const calculateSlipTotal = (slip) => {
+    let subtotal = 0;
+    slip.items.forEach(item => {
+        subtotal += item.price * item.qty;
+    });
+    const serviceCharge = subtotal * DUMMY_SERVICE_CHARGE_RATE;
+    const subtotalWithService = subtotal + serviceCharge;
+    const tax = subtotalWithService * DUMMY_TAX_RATE;
+    const total = subtotalWithService + tax;
+    // Math.round で丸めておく
+    return Math.round(total);
+};
+
 
 /**
  * ページを切り替える
@@ -260,9 +293,12 @@ const switchPage = (targetPageId) => {
     // ページタイトル更新
     pageTitle.textContent = targetTitle;
 
-    // (変更) ダッシュボード表示時は未会計「伝票」を再描画
+    // (変更) ページに応じた描画関数を呼び出す
     if (targetPageId === 'dashboard') {
         renderDashboardSlips();
+    }
+    if (targetPageId === 'all-slips') {
+        renderAllSlipsPage();
     }
 };
 
@@ -380,7 +416,7 @@ const renderDashboardSlips = () => {
 
         const card = `
             <button class="w-full text-left p-4 bg-white rounded-lg shadow-md border hover:bg-slate-50" 
-                    data-slip-id="${slip.slipId}">
+                    data-slip-id="${slip.slipId}" data-status="${slip.status}">
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-xl font-bold">
                         <i class="fa-solid fa-table fa-fw text-slate-400 mr-2"></i>${slip.tableId}
@@ -400,7 +436,79 @@ const renderDashboardSlips = () => {
     // (変更) 各伝票カードにクリックイベントを追加
     dashboardSlips.querySelectorAll('button[data-slip-id]').forEach(card => {
         card.addEventListener('click', () => {
-            handleSlipClick(card.dataset.slipId);
+            // (変更) paid 以外は handleSlipClick を呼ぶ
+            if (card.dataset.status !== 'paid') {
+                handleSlipClick(card.dataset.slipId);
+            }
+        });
+    });
+};
+
+/**
+ * (新規) 「伝票一覧」ページを描画する
+ */
+const renderAllSlipsPage = () => {
+    if (!allSlipsList) return;
+    allSlipsList.innerHTML = '';
+
+    if (state.slips.length === 0) {
+        allSlipsList.innerHTML = '<p class="text-slate-500 text-sm">本日の伝票はありません。</p>';
+        return;
+    }
+
+    // (変更) 伝票を新しい順（ダミーデータなので現状のまま）に表示
+    state.slips.forEach(slip => {
+        let statusColor, statusText;
+        switch (slip.status) {
+            case 'active':
+                statusColor = 'blue'; statusText = '利用中'; break;
+            case 'checkout':
+                statusColor = 'orange'; statusText = '会計待ち'; break;
+            case 'paid':
+                statusColor = 'gray'; statusText = '会計済み'; break;
+        }
+        const nominationText = slip.nomination || 'フリー';
+        const total = calculateSlipTotal(slip); // (新規) 合計金額を計算
+        const paidAmount = slip.paidAmount || 0;
+
+        const card = `
+            <button class="w-full text-left p-4 bg-white rounded-lg shadow-md border hover:bg-slate-50" 
+                    data-slip-id="${slip.slipId}" data-status="${slip.status}">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-xl font-bold">
+                        <i class="fa-solid fa-table fa-fw text-slate-400 mr-2"></i>${slip.tableId} - ${slip.name || 'ゲスト'}
+                    </span>
+                    <span class="text-xs font-semibold px-2 py-1 bg-${statusColor}-100 text-${statusColor}-700 border border-${statusColor}-300 rounded-full">${statusText}</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2 text-sm">
+                    <div>
+                        <p class="text-xs text-slate-500">指名</p>
+                        <p class="font-medium text-pink-600 truncate">${nominationText}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500">合計金額</p>
+                        <p class="font-medium">${formatCurrency(total)}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500">支払い済み</p>
+                        <p class="font-medium text-red-600">${formatCurrency(paidAmount)}</p>
+                    </div>
+                </div>
+            </button>
+        `;
+        allSlipsList.innerHTML += card;
+    });
+
+    // クリックイベント
+    allSlipsList.querySelectorAll('button[data-slip-id]').forEach(card => {
+        card.addEventListener('click', () => {
+            const slipId = card.dataset.slipId;
+            const status = card.dataset.status;
+            if (status === 'paid') {
+                handlePaidSlipClick(slipId); // (新規) 会計済み伝票の処理
+            } else {
+                handleSlipClick(slipId); // (既存) 未会計伝票の処理
+            }
         });
     });
 };
@@ -490,6 +598,7 @@ const updateSlipInfo = () => {
 
     // (変更) ダッシュボードの伝票一覧のみ再描画
     renderDashboardSlips();
+    renderAllSlipsPage(); // (追加) 伝票一覧ページも更新
 };
 
 
@@ -525,6 +634,7 @@ const renderSlipPreviewModal = () => {
     slipData.status = 'checkout';
     renderDashboardSlips(); // ダッシュボードのステータス表示を更新
     renderTableGrid(); // テーブルのバッジ数更新（色が変わるわけではないが念のため）
+    renderAllSlipsPage(); // (追加) 伝票一覧ページも更新
 
     // プレビューモーダルのタイトル
     document.getElementById('slip-preview-title').textContent = `伝票プレビュー (${slipData.tableId} - ${slipData.name})`;
@@ -557,13 +667,16 @@ const renderSlipPreviewModal = () => {
     const serviceCharge = subtotal * DUMMY_SERVICE_CHARGE_RATE;
     const subtotalWithService = subtotal + serviceCharge;
     const tax = subtotalWithService * DUMMY_TAX_RATE;
-    const total = subtotalWithService + tax;
+    const total = Math.round(subtotalWithService + tax);
+    const paidAmount = slipData.paidAmount || 0;
+    const billingAmount = total - paidAmount; // (変更) 今回ご請求額
 
     // 金額反映
-    document.getElementById('slip-subtotal').textContent = formatCurrency(subtotal);
-    document.getElementById('slip-service-charge').textContent = formatCurrency(serviceCharge);
-    document.getElementById('slip-tax').textContent = formatCurrency(tax);
-    document.getElementById('slip-total').textContent = formatCurrency(total);
+    slipSubtotalEl.textContent = formatCurrency(subtotal);
+    slipServiceChargeEl.textContent = formatCurrency(serviceCharge);
+    slipTaxEl.textContent = formatCurrency(tax);
+    slipPaidAmountEl.textContent = formatCurrency(paidAmount); // (新規)
+    slipTotalEl.textContent = formatCurrency(billingAmount); // (変更)
 };
 
 
@@ -592,15 +705,18 @@ const renderCheckoutModal = () => {
     const serviceCharge = subtotal * DUMMY_SERVICE_CHARGE_RATE;
     const subtotalWithService = subtotal + serviceCharge;
     const tax = subtotalWithService * DUMMY_TAX_RATE;
-    const total = subtotalWithService + tax;
+    const total = Math.round(subtotalWithService + tax);
+    const paidAmount = slipData.paidAmount || 0;
+    const billingAmount = total - paidAmount; // (変更) 今回ご請求額
 
     checkoutSubtotalEl.textContent = formatCurrency(subtotal);
     checkoutServiceChargeEl.textContent = formatCurrency(serviceCharge);
     checkoutTaxEl.textContent = formatCurrency(tax);
-    checkoutTotalEl.textContent = formatCurrency(total);
+    checkoutPaidAmountEl.textContent = formatCurrency(paidAmount); // (新規)
+    checkoutTotalEl.textContent = formatCurrency(billingAmount); // (変更)
     
-    // 領収書モーダルの金額も更新
-    document.getElementById('receipt-total').textContent = formatCurrency(total);
+    // 領収書モーダルの金額も更新 (領収書に載せるのは「今回支払う金額」)
+    document.getElementById('receipt-total').textContent = formatCurrency(billingAmount);
 };
 
 /**
@@ -653,7 +769,8 @@ const createNewSlip = (tableId) => {
         name: "新規のお客様",
         startTime: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
         nomination: "フリー",
-        items: []
+        items: [],
+        paidAmount: 0 // (新規)
     };
     
     state.slips.push(newSlip);
@@ -665,6 +782,7 @@ const createNewSlip = (tableId) => {
     // UIを更新
     renderTableGrid();
     renderDashboardSlips();
+    renderAllSlipsPage(); // (追加)
     
     // 伝票モーダルを開く
     renderOrderModal();
@@ -767,7 +885,7 @@ const handleTableClick = (tableId) => {
 };
 
 /**
- * (新規) 伝票カードクリック時の処理 (ダッシュボードなど)
+ * (新規) 未会計伝票カードクリック時の処理 (ダッシュボード、伝票一覧ページなど)
  * @param {string} slipId 
  */
 const handleSlipClick = (slipId) => {
@@ -778,6 +896,22 @@ const handleSlipClick = (slipId) => {
     renderOrderModal();
     openModal(orderModal);
 };
+
+/**
+ * (新規) 会計済み伝票カードクリック時の処理 (伝票一覧ページ)
+ * @param {string} slipId 
+ */
+const handlePaidSlipClick = (slipId) => {
+    state.currentSlipId = slipId;
+    
+    // (重要) 領収書モーダルは「今回ご請求額」を表示してしまうため、
+    // 先に会計モーダルを描画（計算）させてから、領収書モーダルを描画する
+    // (この時点で billingAmount は 0 になるはず)
+    renderCheckoutModal(); 
+    renderReceiptModal();
+    openModal(receiptModal);
+};
+
 
 /**
  * (新規) キャストランキングを描画する
@@ -826,6 +960,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTableGrid(); // テーブル管理ページ（非表示）の初期化もしておく
     renderCastRanking();
     renderDashboardSlips(); // (変更) ダッシュボードの伝票一覧を初期描画
+    renderAllSlipsPage(); // (新規) 伝票一覧ページも初期化
 });
 
 // ナビゲーションリンク
@@ -913,13 +1048,22 @@ if (goToCheckoutBtn) {
 // (変更) 会計モーダル -> 領収書モーダル
 if (processPaymentBtn) {
     processPaymentBtn.addEventListener('click', () => {
+        // (変更) 領収書モーダルを描画
         renderReceiptModal();
         closeModal(checkoutModal);
         openModal(receiptModal);
         
-        // (変更) 伝票のステータスを 'paid' に変更
+        // (変更) 伝票のステータスと支払い済み金額を更新
         const slip = state.slips.find(s => s.slipId === state.currentSlipId);
         if (slip) {
+            
+            // (変更) paidAmount を更新するために合計金額を再計算
+            const total = calculateSlipTotal(slip);
+
+            // (変更) 支払い済み金額を、その時点での総合計金額で更新する
+            slip.paidAmount = total; 
+            
+            // (変更) ステータスを 'paid' に変更
             slip.status = 'paid';
             
             // (変更) このテーブルに他の未会計伝票が残っているか確認
@@ -936,9 +1080,35 @@ if (processPaymentBtn) {
             // UIをすべて更新
             renderTableGrid();
             renderDashboardSlips();
+            renderAllSlipsPage();
         }
     });
 }
+
+// (新規) 領収書モーダル -> 伝票復活
+if (reopenSlipBtn) {
+    reopenSlipBtn.addEventListener('click', () => {
+        const slip = state.slips.find(s => s.slipId === state.currentSlipId);
+        if (slip) {
+            slip.status = 'active'; // ステータスを 'active' に戻す
+            
+            const table = state.tables.find(t => t.id === slip.tableId);
+            if (table) {
+                table.status = 'occupied'; // テーブルも 'occupied' に戻す
+            }
+            
+            // UIをすべて更新
+            renderTableGrid();
+            renderDashboardSlips();
+            renderAllSlipsPage();
+            
+            // 全モーダルを閉じてから、注文モーダルを開き直す
+            closeModal(receiptModal);
+            handleSlipClick(state.currentSlipId); // 注文モーダルを開く
+        }
+    });
+}
+
 
 // 領収書モーダルを閉じた時 (伝票モーダルにも会計モーダルにも戻らない)
 if (receiptModal) {
