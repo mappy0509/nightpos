@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- (変更) ページタイトル -->
-    <title>Night POS - ダッシュボード</title>
+    <title>Night POS - 売上分析</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts: Inter -->
@@ -13,8 +12,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <!-- Font Awesome (アイコン) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-    <!-- カスタムCSS (共通) -->
+    <!-- カスタムCSS -->
     <link rel="stylesheet" href="style.css">
+    <!-- (新規) Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- (新規) html2canvas CDN (エクスポート機能用) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body class="text-slate-800">
 
@@ -26,7 +29,7 @@
             </div>
             <nav class="flex-grow pt-6 space-y-2">
                 <!-- (変更) href と active クラスを修正 -->
-                <a href="index.html" class="nav-link active" data-target="dashboard">
+                <a href="index.html" class="nav-link" data-target="dashboard">
                     <i class="fa-solid fa-chart-pie fa-fw w-6 text-center"></i>
                     <span>ダッシュボード</span>
                 </a>
@@ -42,7 +45,7 @@
                     <i class="fa-solid fa-book-open fa-fw w-6 text-center"></i>
                     <span>メニュー管理</span>
                 </a>
-                <a href="reports.html" class="nav-link" data-target="reports">
+                <a href="reports.html" class="nav-link active" data-target="reports">
                     <i class="fa-solid fa-chart-line fa-fw w-6 text-center"></i>
                     <span>売上分析</span>
                 </a>
@@ -72,8 +75,7 @@
             <!-- ヘッダー -->
             <header class="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm">
                 <div>
-                    <!-- (変更) ページタイトルを固定 -->
-                    <h2 id="page-title" class="text-xl font-semibold text-slate-700">ダッシュボード</h2>
+                    <h2 id="page-title" class="text-xl font-semibold text-slate-700">売上分析</h2>
                 </div>
                 <!-- マルチアカウント機能: 店舗切替 -->
                 <div class="flex items-center space-x-4">
@@ -94,90 +96,87 @@
             <!-- コンテンツエリア -->
             <div class="flex-1 overflow-y-auto p-6 lg:p-8">
                 
-                <!-- ページ: ダッシュボード -->
-                <!-- (変更) data-page と active を削除 (このページ専用のため) -->
-                <div id="dashboard">
+                <!-- (変更) 売上分析ダッシュボード -->
+                <div id="reports">
+                    <!-- 期間選択タブ -->
+                    <div class="mb-6 flex items-center justify-between">
+                        <div class="flex space-x-2 border-b">
+                            <button class="report-period-btn active" data-period="daily">
+                                <i class="fa-solid fa-calendar-day mr-1"></i> 日次
+                            </button>
+                            <button class="report-period-btn" data-period="weekly">
+                                <i class="fa-solid fa-calendar-week mr-1"></i> 週次
+                            </button>
+                            <button class="report-period-btn" data-period="monthly">
+                                <i class="fa-solid fa-calendar-alt mr-1"></i> 月次
+                            </button>
+                        </div>
+                        <!-- (変更) 日付選択とエクスポートボタン -->
+                        <div class="flex items-center space-x-3">
+                            <input type="date" class="p-2 border border-slate-300 rounded-lg text-sm" value="2025-10-30" disabled>
+                            <!-- (新規) エクスポートボタン -->
+                            <button id="export-report-btn" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition duration-200">
+                                <i class="fa-solid fa-download mr-2"></i>JPEGで保存
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- サマリーカード -->
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
                             <div class="flex justify-between items-center">
-                                <span class="text-sm font-medium text-slate-500">本日の総売上</span>
+                                <span class="text-sm font-medium text-slate-500">期間中総売上</span>
                                 <i class="fa-solid fa-yen-sign text-green-500"></i>
                             </div>
-                            <p class="text-3xl font-bold mt-2">¥1,280,000</p>
-                            <p class="text-sm text-green-600 mt-1">+5.2% (昨日比)</p>
+                            <p id="report-total-sales" class="text-3xl font-bold mt-2">¥0</p>
+                            <p class="text-sm text-slate-500 mt-1">会計済み伝票合計</p>
                         </div>
                         <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
                             <div class="flex justify-between items-center">
-                                <span class="text-sm font-medium text-slate-500">テーブル稼働率</span>
-                                <i class="fa-solid fa-chair text-blue-500"></i>
+                                <span class="text-sm font-medium text-slate-500">会計組数</span>
+                                <i class="fa-solid fa-receipt text-blue-500"></i>
                             </div>
-                            <p class="text-3xl font-bold mt-2">65%</p>
-                            <p class="text-sm text-slate-500 mt-1">13 / 20 卓</p>
+                            <p id="report-total-slips" class="text-3xl font-bold mt-2">0 <span class="text-lg font-medium">組</span></p>
+                            <p class="text-sm text-slate-500 mt-1">会計済み伝票数</p>
                         </div>
                         <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
                             <div class="flex justify-between items-center">
                                 <span class="text-sm font-medium text-slate-500">平均客単価</span>
                                 <i class="fa-solid fa-user-group text-indigo-500"></i>
                             </div>
-                            <p class="text-3xl font-bold mt-2">¥15,200</p>
-                            <p class="text-sm text-red-600 mt-1">-¥300 (昨日比)</p>
+                            <p id="report-avg-sales" class="text-3xl font-bold mt-2">¥0</p>
+                            <p class="text-sm text-slate-500 mt-1">総売上 / 組数</p>
                         </div>
                         <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
                             <div class="flex justify-between items-center">
-                                <span class="text-sm font-medium text-slate-500">出勤キャスト</span>
-                                <i class="fa-solid fa-star text-pink-500"></i>
+                                <span class="text-sm font-medium text-slate-500">ボツ伝件数</span>
+                                <i class="fa-solid fa-trash-can text-red-500"></i>
                             </div>
-                            <p class="text-3xl font-bold mt-2">18 <span class="text-lg font-medium">名</span></p>
-                            <p class="text-sm text-slate-500 mt-1">2名 体験入店</p>
+                            <p id="report-cancelled-slips" class="text-3xl font-bold mt-2">0 <span class="text-lg font-medium">件</span></p>
+                            <p class="text-sm text-slate-500 mt-1">期間中のボツ伝</p>
                         </div>
                     </div>
-                    
+
+                    <!-- グラフとランキング -->
                     <div class="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        <!-- (変更後) 未会計伝票一覧 -->
+                        <!-- 売上推移グラフ -->
                         <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg border border-slate-200">
-                            <h3 class="text-lg font-semibold mb-4">未会計伝票 (利用中・会計待ち)</h3>
-                            <!-- (変更) 伝票単位のリストに変更 -->
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto pr-2" id="dashboard-slips">
-                                <!-- JSで動的に生成 -->
+                            <h3 class="text-lg font-semibold mb-4">売上推移</h3>
+                            <div class="relative h-96">
+                                <canvas id="sales-chart"></canvas>
                             </div>
                         </div>
-                        <!-- Ranking -->
+
+                        <!-- ランキング (売れ筋商品) -->
                         <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
-                            <div class="flex justify-between items-center mb-4">
-                                <h3 class="text-lg font-semibold">Ranking</h3>
-                                <!-- 期間切り替え (ドロップダウン) -->
-                                <div class="relative">
-                                    <select id="ranking-period-select" class="text-sm font-medium border border-slate-300 rounded-lg bg-white hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 py-1 pl-3 pr-8 appearance-none">
-                                        <option value="monthly">今月</option>
-                                        <option value="weekly">今週</option>
-                                        <option value="daily">当日</option>
-                                    </select>
-                                    <i class="fa-solid fa-chevron-down absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
-                                </div>
-                            </div>
-                            <!-- 集計対象切り替え -->
-                            <div class="flex space-x-2 mb-4 border-b">
-                                <button class="ranking-type-btn active" data-type="nominations">
-                                    <i class="fa-solid fa-star mr-1"></i> 指名
-                                </button>
-                                <button class="ranking-type-btn" data-type="sales">
-                                    <i class="fa-solid fa-yen-sign mr-1"></i> 売上
-                                </button>
-                            </div>
-                            <!-- ランキングリスト -->
-                            <ul id="cast-ranking-list" class="space-y-4">
+                            <h3 class="text-lg font-semibold mb-4">売れ筋商品 (数量別)</h3>
+                            <ul id="top-items-list" class="space-y-4 max-h-96 overflow-y-auto pr-2">
                                 <!-- JSで動的に生成 -->
                             </ul>
                         </div>
                     </div>
                 </div>
-                
-                <!-- (削除) ページ: テーブル管理 -->
-                <!-- (削除) ページ: 伝票一覧 -->
-                <!-- (削除) ページ: メニュー管理 -->
-                <!-- (削除) ページ: 売上分析 -->
-                <!-- (削除) ページ: 店舗設定 -->
-                
+
             </div>
         </main>
         <!-- ===== /メインコンテンツ ===== -->
@@ -673,7 +672,9 @@
 
     <!-- ===== /モーダルエリア ===== -->
 
-    <!-- (変更) ダッシュボード専用のJSファイルを読み込む -->
-    <script type="module" src="dashboard.js"></script>
+    <!-- (変更) 売上分析ページ用のJSファイルを読み込む -->
+    <script type="module" src="reports.js"></script>
 </body>
 </html>
+
+

@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- (変更) ページタイトル -->
-    <title>Night POS - ダッシュボード</title>
+    <title>ナイトワーク向けPOSシステム - 店舗設定</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts: Inter -->
@@ -13,7 +12,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <!-- Font Awesome (アイコン) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-    <!-- カスタムCSS (共通) -->
+    <!-- カスタムCSS -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="text-slate-800">
@@ -25,28 +24,27 @@
                 <h1 class="text-2xl font-bold text-blue-600">Night POS</h1>
             </div>
             <nav class="flex-grow pt-6 space-y-2">
-                <!-- (変更) href と active クラスを修正 -->
-                <a href="index.html" class="nav-link active" data-target="dashboard">
+                <a href="index.html" class="nav-link" data-target="dashboard"> <!-- (変更) リンク先修正 -->
                     <i class="fa-solid fa-chart-pie fa-fw w-6 text-center"></i>
                     <span>ダッシュボード</span>
                 </a>
-                <a href="tables.html" class="nav-link" data-target="tables">
+                <a href="tables.html" class="nav-link" data-target="tables"> <!-- (変更) リンク先修正 -->
                     <i class="fa-solid fa-border-all fa-fw w-6 text-center"></i>
                     <span>テーブル管理</span>
                 </a>
-                <a href="all-slips.html" class="nav-link" data-target="all-slips">
+                <a href="all-slips.html" class="nav-link" data-target="all-slips"> <!-- (変更) リンク先修正 -->
                     <i class="fa-solid fa-file-invoice fa-fw w-6 text-center"></i>
                     <span>伝票一覧</span>
                 </a>
-                <a href="menu.html" class="nav-link" data-target="menu">
+                <a href="menu.html" class="nav-link" data-target="menu"> <!-- (変更) リンク先修正 -->
                     <i class="fa-solid fa-book-open fa-fw w-6 text-center"></i>
                     <span>メニュー管理</span>
                 </a>
-                <a href="reports.html" class="nav-link" data-target="reports">
+                <a href="reports.html" class="nav-link" data-target="reports"> <!-- (変更) リンク先修正 -->
                     <i class="fa-solid fa-chart-line fa-fw w-6 text-center"></i>
                     <span>売上分析</span>
                 </a>
-                <a href="settings.html" class="nav-link" data-target="settings">
+                <a href="settings.html" class="nav-link active" data-target="settings"> <!-- (変更) リンク先修正 & active化 -->
                     <i class="fa-solid fa-gear fa-fw w-6 text-center"></i>
                     <span>店舗設定</span>
                 </a>
@@ -72,8 +70,7 @@
             <!-- ヘッダー -->
             <header class="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm">
                 <div>
-                    <!-- (変更) ページタイトルを固定 -->
-                    <h2 id="page-title" class="text-xl font-semibold text-slate-700">ダッシュボード</h2>
+                    <h2 id="page-title" class="text-xl font-semibold text-slate-700">店舗設定</h2> <!-- (変更) タイトル -->
                 </div>
                 <!-- マルチアカウント機能: 店舗切替 -->
                 <div class="flex items-center space-x-4">
@@ -94,97 +91,66 @@
             <!-- コンテンツエリア -->
             <div class="flex-1 overflow-y-auto p-6 lg:p-8">
                 
-                <!-- ページ: ダッシュボード -->
-                <!-- (変更) data-page と active を削除 (このページ専用のため) -->
-                <div id="dashboard">
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
-                            <div class="flex justify-between items-center">
-                                <span class="text-sm font-medium text-slate-500">本日の総売上</span>
-                                <i class="fa-solid fa-yen-sign text-green-500"></i>
-                            </div>
-                            <p class="text-3xl font-bold mt-2">¥1,280,000</p>
-                            <p class="text-sm text-green-600 mt-1">+5.2% (昨日比)</p>
-                        </div>
-                        <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
-                            <div class="flex justify-between items-center">
-                                <span class="text-sm font-medium text-slate-500">テーブル稼働率</span>
-                                <i class="fa-solid fa-chair text-blue-500"></i>
-                            </div>
-                            <p class="text-3xl font-bold mt-2">65%</p>
-                            <p class="text-sm text-slate-500 mt-1">13 / 20 卓</p>
-                        </div>
-                        <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
-                            <div class="flex justify-between items-center">
-                                <span class="text-sm font-medium text-slate-500">平均客単価</span>
-                                <i class="fa-solid fa-user-group text-indigo-500"></i>
-                            </div>
-                            <p class="text-3xl font-bold mt-2">¥15,200</p>
-                            <p class="text-sm text-red-600 mt-1">-¥300 (昨日比)</p>
-                        </div>
-                        <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
-                            <div class="flex justify-between items-center">
-                                <span class="text-sm font-medium text-slate-500">出勤キャスト</span>
-                                <i class="fa-solid fa-star text-pink-500"></i>
-                            </div>
-                            <p class="text-3xl font-bold mt-2">18 <span class="text-lg font-medium">名</span></p>
-                            <p class="text-sm text-slate-500 mt-1">2名 体験入店</p>
-                        </div>
-                    </div>
-                    
-                    <div class="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        <!-- (変更後) 未会計伝票一覧 -->
-                        <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg border border-slate-200">
-                            <h3 class="text-lg font-semibold mb-4">未会計伝票 (利用中・会計待ち)</h3>
-                            <!-- (変更) 伝票単位のリストに変更 -->
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto pr-2" id="dashboard-slips">
-                                <!-- JSで動的に生成 -->
-                            </div>
-                        </div>
-                        <!-- Ranking -->
+                <!-- (変更) ページ: 店舗設定 -->
+                <div id="settings" data-page class="active">
+                    <div class="max-w-4xl mx-auto space-y-8">
+
+                        <!-- 店舗情報カード -->
                         <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
-                            <div class="flex justify-between items-center mb-4">
-                                <h3 class="text-lg font-semibold">Ranking</h3>
-                                <!-- 期間切り替え (ドロップダウン) -->
-                                <div class="relative">
-                                    <select id="ranking-period-select" class="text-sm font-medium border border-slate-300 rounded-lg bg-white hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 py-1 pl-3 pr-8 appearance-none">
-                                        <option value="monthly">今月</option>
-                                        <option value="weekly">今週</option>
-                                        <option value="daily">当日</option>
-                                    </select>
-                                    <i class="fa-solid fa-chevron-down absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+                            <h3 class="text-xl font-semibold mb-6 border-b pb-3">店舗情報</h3>
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="store-name-input" class="text-sm font-semibold text-slate-600">店舗名</label>
+                                    <input type="text" id="store-name-input" class="w-full p-2 border border-slate-300 rounded-lg mt-1" placeholder="例: Night POS 新宿本店">
+                                </div>
+                                <div>
+                                    <label for="store-address-input" class="text-sm font-semibold text-slate-600">住所</label>
+                                    <input type="text" id="store-address-input" class="w-full p-2 border border-slate-300 rounded-lg mt-1" placeholder="例: 東京都新宿区歌舞伎町1-1-1">
+                                </div>
+                                <div>
+                                    <label for="store-tel-input" class="text-sm font-semibold text-slate-600">電話番号</label>
+                                    <input type="text" id="store-tel-input" class="w-full p-2 border border-slate-300 rounded-lg mt-1" placeholder="例: 03-0000-0000">
                                 </div>
                             </div>
-                            <!-- 集計対象切り替え -->
-                            <div class="flex space-x-2 mb-4 border-b">
-                                <button class="ranking-type-btn active" data-type="nominations">
-                                    <i class="fa-solid fa-star mr-1"></i> 指名
-                                </button>
-                                <button class="ranking-type-btn" data-type="sales">
-                                    <i class="fa-solid fa-yen-sign mr-1"></i> 売上
-                                </button>
-                            </div>
-                            <!-- ランキングリスト -->
-                            <ul id="cast-ranking-list" class="space-y-4">
-                                <!-- JSで動的に生成 -->
-                            </ul>
                         </div>
+
+                        <!-- 税率・サービス料設定カード -->
+                        <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                            <h3 class="text-xl font-semibold mb-6 border-b pb-3">税率・サービス料設定</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label for="tax-rate-input" class="text-sm font-semibold text-slate-600">消費税率 (%)</label>
+                                    <div class="relative mt-1">
+                                        <input type="number" id="tax-rate-input" class="w-full p-2 border border-slate-300 rounded-lg pr-8" placeholder="10">
+                                        <i class="fa-solid fa-percent absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label for="service-rate-input" class="text-sm font-semibold text-slate-600">サービス料率 (%)</label>
+                                    <div class="relative mt-1">
+                                        <input type="number" id="service-rate-input" class="w-full p-2 border border-slate-300 rounded-lg pr-8" placeholder="20">
+                                        <i class="fa-solid fa-percent absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 保存ボタン -->
+                        <div class="flex justify-end">
+                            <button id="save-settings-btn" class="px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition duration-200 text-lg">
+                                <i class="fa-solid fa-save mr-2"></i>設定を保存する
+                            </button>
+                        </div>
+                        
                     </div>
                 </div>
-                
-                <!-- (削除) ページ: テーブル管理 -->
-                <!-- (削除) ページ: 伝票一覧 -->
-                <!-- (削除) ページ: メニュー管理 -->
-                <!-- (削除) ページ: 売上分析 -->
-                <!-- (削除) ページ: 店舗設定 -->
-                
+
             </div>
         </main>
         <!-- ===== /メインコンテンツ ===== -->
     </div>
 
     <!-- ===== モーダルエリア ===== -->
-    <!-- (重要) ロジックを壊さないため、元のindex.htmlにあった全てのモーダルをコピーする -->
 
     <!-- (新規) 新規伝票 確認モーダル -->
     <div id="new-slip-confirm-modal" class="modal-backdrop">
@@ -639,7 +605,7 @@
                             <option value="bottle">ボトル</option>
                             <option value="food">フード</option>
                             <option value="cast">キャスト料金</option>
-                            <option value="other">その他</option>
+                            <option valueS="other">その他</option>
                         </select>
                     </div>
                     <div>
@@ -673,7 +639,8 @@
 
     <!-- ===== /モーダルエリア ===== -->
 
-    <!-- (変更) ダッシュボード専用のJSファイルを読み込む -->
-    <script type="module" src="dashboard.js"></script>
+    <!-- カスタムJavaScript -->
+    <script type="module" src="settings.js"></script> <!-- (変更) 読み込むJSファイル -->
 </body>
 </html>
+
