@@ -2,6 +2,14 @@
 const DUMMY_SERVICE_CHARGE_RATE = 0.20; // サービス料 20%
 const DUMMY_TAX_RATE = 0.10; // 消費税 10%
 
+/**
+ * UUIDを生成する
+ * @returns {string} UUID
+ */
+const getUUID = () => {
+    return crypto.randomUUID();
+};
+
 // (変更) アプリケーションの状態管理
 const state = {
     currentPage: 'dashboard',
@@ -45,9 +53,9 @@ const state = {
             startTime: '20:30', 
             nomination: 'あい', 
             items: [
-                { id: 1, name: '基本セット (指名)', price: 10000, qty: 1 },
-                { id: 2, name: 'キャストドリンク', price: 1500, qty: 2 },
-                { id: 3, name: '鏡月 (ボトル)', price: 8000, qty: 1 },
+                { id: 'm1', name: '基本セット (指名)', price: 10000, qty: 1 },
+                { id: 'm7', name: 'キャストドリンク', price: 1500, qty: 2 },
+                { id: 'm10', name: '鏡月 (ボトル)', price: 8000, qty: 1 },
             ],
             paidAmount: 0, // (新規) 支払い済み金額
             cancelReason: null, // (新規) ボツ伝理由
@@ -63,8 +71,8 @@ const state = {
             startTime: '21:00', 
             nomination: 'フリー', 
             items: [
-                { id: 1, name: '基本セット (フリー)', price: 8000, qty: 1 }, // (変更) qty: 3 -> 1
-                { id: 4, name: 'ビール', price: 1000, qty: 6 },
+                { id: 'm2', name: '基本セット (フリー)', price: 8000, qty: 1 }, // (変更) qty: 3 -> 1
+                { id: 'm8', name: 'ビール', price: 1000, qty: 6 },
             ],
             paidAmount: 0, // (新規) 支払い済み金額
             cancelReason: null, // (新規) ボツ伝理由
@@ -80,35 +88,49 @@ const state = {
             startTime: '22:15', 
             nomination: 'みう', 
             items: [
-                { id: 1, name: '基本セット (指名)', price: 10000, qty: 1 }, // (変更) qty: 2 -> 1
-                { id: 5, name: 'シャンパン (ゴールド)', price: 50000, qty: 1 },
-                { id: 2, name: 'キャストドリンク', price: 1500, qty: 8 },
+                { id: 'm1', name: '基本セット (指名)', price: 10000, qty: 1 }, // (変更) qty: 2 -> 1
+                { id: 'm12', name: 'シャンパン (ゴールド)', price: 50000, qty: 1 },
+                { id: 'm7', name: 'キャストドリンク', price: 1500, qty: 8 },
             ],
             paidAmount: 0, // (新規) 支払い済み金額
             cancelReason: null, // (新規) ボツ伝理由
             paymentDetails: { cash: 0, card: 0, credit: 0 } // (新規) 支払い内訳
         },
     ],
+    // (変更) メニューデータをカテゴリ別に整理し、ユニークIDを付与
     menu: {
         set: [
-            { id: 1, name: '基本セット (フリー)', price: 8000 },
-            { id: 1, name: '基本セット (指名)', price: 10000 },
-            { id: 6, name: '延長 (30分)', price: 5000 },
+            { id: 'm1', name: '基本セット (指名)', price: 10000, duration: 60 },
+            { id: 'm2', name: '基本セット (フリー)', price: 8000, duration: 60 },
+            { id: 'm3', name: '延長 (自動)', price: 5000, duration: 30 },
         ],
         drink: [
-            { id: 2, name: 'キャストドリンク', price: 1500 },
-            { id: 4, name: 'ビール', price: 1000 },
-            { id: 7, name: 'カクテル各種', price: 1200 },
-            { id: 8, name: 'ソフトドリンク', price: 800 },
+            { id: 'm7', name: 'キャストドリンク', price: 1500 },
+            { id: 'm8', name: 'ビール', price: 1000 },
+            { id: 'm9', name: 'カクテル各種', price: 1200 },
+            { id: 'm10', name: 'ソフトドリンク', price: 800 },
         ],
         bottle: [
-            { id: 3, name: '鏡月 (ボトル)', price: 8000 },
-            { id: 9, name: '黒霧島 (ボトル)', price: 8000 },
-            { id: 5, name: 'シャンパン (ゴールド)', price: 50000 },
-            { id: 10, name: 'シャンパン (ブラック)', price: 80000 },
+            { id: 'm11', name: '鏡月 (ボトル)', price: 8000 },
+            { id: 'm12', name: 'シャンパン (ゴールド)', price: 50000 },
+            { id: 'm13', name: '黒霧島 (ボトル)', price: 8000 },
+        ],
+        food: [
+            { id: 'm4', name: '乾き物盛り合わせ', price: 2000 },
+            { id: 'm5', name: 'フルーツ盛り', price: 8000 },
+        ],
+        cast: [
+            { id: 'm14', name: '本指名料', price: 3000 },
+            { id: 'm15', name: '場内指名料', price: 2000 },
+            { id: 'm16', name: '同伴料', price: 5000 },
+        ],
+        other: [
+            { id: 'm6', name: 'カラオケ', price: 1000 },
+            { id: 'm17', name: 'VIPチャージ', price: 10000 },
         ]
     },
     currentSlipId: null, 
+    currentEditingMenuId: null, // (新規) メニュー編集用
     currentBillingAmount: 0, // (新規) 会計モーダル用の現在請求額
     ranking: {
         period: 'monthly', // 'monthly', 'weekly', 'daily'
@@ -169,101 +191,29 @@ const dummyRankingData = {
 };
 
 // ===== DOM要素 =====
-const navLinks = document.querySelectorAll('.nav-link');
-const pages = document.querySelectorAll('[data-page]');
-const pageTitle = document.getElementById('page-title');
-const tableGrid = document.getElementById('table-grid');
-const dashboardSlips = document.getElementById('dashboard-slips');
-const menuTabs = document.querySelectorAll('.menu-tab');
-const menuTabContents = document.querySelectorAll('.menu-tab-content');
-const allSlipsList = document.getElementById('all-slips-list');
-
-// モーダル関連
-const orderModal = document.getElementById('order-modal');
-const checkoutModal = document.getElementById('checkout-modal');
-const receiptModal = document.getElementById('receipt-modal');
-const slipPreviewModal = document.getElementById('slip-preview-modal');
-const modalCloseBtns = document.querySelectorAll('.modal-close-btn');
-const openSlipPreviewBtn = document.getElementById('open-slip-preview-btn');
-const processPaymentBtn = document.getElementById('process-payment-btn');
-const printSlipBtn = document.getElementById('print-slip-btn');
-const goToCheckoutBtn = document.getElementById('go-to-checkout-btn');
-const reopenSlipBtn = document.getElementById('reopen-slip-btn');
-
-// (新規) ボツ伝モーダル
-const cancelSlipModal = document.getElementById('cancel-slip-modal');
-const openCancelSlipModalBtn = document.getElementById('open-cancel-slip-modal-btn');
-const cancelSlipModalTitle = document.getElementById('cancel-slip-modal-title');
-const cancelSlipNumber = document.getElementById('cancel-slip-number');
-const cancelSlipReasonInput = document.getElementById('cancel-slip-reason-input');
-const cancelSlipError = document.getElementById('cancel-slip-error');
-const confirmCancelSlipBtn = document.getElementById('confirm-cancel-slip-btn');
-
-// (新規) 伝票選択モーダル
-const slipSelectionModal = document.getElementById('slip-selection-modal');
-const slipSelectionModalTitle = document.getElementById('slip-selection-modal-title');
-const slipSelectionList = document.getElementById('slip-selection-list');
-const createNewSlipBtn = document.getElementById('create-new-slip-btn');
-
-// (新規) 新規伝票確認モーダル
-const newSlipConfirmModal = document.getElementById('new-slip-confirm-modal');
-const newSlipConfirmTitle = document.getElementById('new-slip-confirm-title');
-const newSlipConfirmMessage = document.getElementById('new-slip-confirm-message');
-const confirmCreateSlipBtn = document.getElementById('confirm-create-slip-btn');
-
-
-// 伝票モーダル
-const orderModalTitle = document.getElementById('order-modal-title');
-const orderItemsList = document.getElementById('order-items-list');
-const menuOrderGrid = document.getElementById('menu-order-grid');
-const orderSubtotalEl = document.getElementById('order-subtotal');
-const orderCustomerNameSelect = document.getElementById('order-customer-name-select');
-const orderNominationSelect = document.getElementById('order-nomination-select');
-const newCustomerInputGroup = document.getElementById('new-customer-input-group');
-const newCustomerNameInput = document.getElementById('new-customer-name-input');
-const saveNewCustomerBtn = document.getElementById('save-new-customer-btn');
-const newCustomerError = document.getElementById('new-customer-error');
-
-
-// 会計モーダル
-const checkoutModalTitle = document.getElementById('checkout-modal-title');
-const checkoutItemsList = document.getElementById('checkout-items-list');
-const checkoutSubtotalEl = document.getElementById('checkout-subtotal');
-const checkoutServiceChargeEl = document.getElementById('checkout-service-charge');
-const checkoutTaxEl = document.getElementById('checkout-tax');
-const checkoutPaidAmountEl = document.getElementById('checkout-paid-amount');
-const checkoutTotalEl = document.getElementById('checkout-total');
-// (新規) 支払い入力欄
-const paymentCashInput = document.getElementById('payment-cash');
-const paymentCardInput = document.getElementById('payment-card');
-const paymentCreditInput = document.getElementById('payment-credit');
-// (新規) 支払いサマリー
-const checkoutPaymentTotalEl = document.getElementById('checkout-payment-total');
-const checkoutShortageEl = document.getElementById('checkout-shortage');
-const checkoutChangeEl = document.getElementById('checkout-change');
-
-
-// 伝票プレビューモーダル (金額)
-const slipSubtotalEl = document.getElementById('slip-subtotal');
-const slipServiceChargeEl = document.getElementById('slip-service-charge');
-const slipTaxEl = document.getElementById('slip-tax');
-const slipPaidAmountEl = document.getElementById('slip-paid-amount');
-const slipTotalEl = document.getElementById('slip-total');
-
-// Ranking関連
-const castRankingList = document.getElementById('cast-ranking-list');
-const rankingPeriodSelect = document.getElementById('ranking-period-select');
-const rankingTypeBtns = document.querySelectorAll('.ranking-type-btn');
+// (変更) DOM要素の取得は DOMContentLoaded 内で行うように変更
+let navLinks, pages, pageTitle, tableGrid, dashboardSlips, menuTabsContainer, menuTabs,
+    menuTabContents, menuPage, allSlipsList, orderModal, checkoutModal, receiptModal,
+    slipPreviewModal, modalCloseBtns, openSlipPreviewBtn, processPaymentBtn,
+    printSlipBtn, goToCheckoutBtn, reopenSlipBtn, menuEditorModal,
+    menuEditorModalTitle, menuEditorForm, menuCategorySelect, menuNameInput,
+    menuDurationGroup, menuDurationInput, menuPriceInput, menuEditorError,
+    openNewMenuModalBtn, saveMenuItemBtn, setMenuTbody, drinkMenuTbody,
+    bottleMenuTbody, foodMenuTbody, castMenuTbody, otherMenuTbody,
+    cancelSlipModal, openCancelSlipModalBtn, cancelSlipModalTitle, cancelSlipNumber,
+    cancelSlipReasonInput, cancelSlipError, confirmCancelSlipBtn, slipSelectionModal,
+    slipSelectionModalTitle, slipSelectionList, createNewSlipBtn, newSlipConfirmModal,
+    newSlipConfirmTitle, newSlipConfirmMessage, confirmCreateSlipBtn, orderModalTitle,
+    orderItemsList, menuOrderGrid, orderSubtotalEl, orderCustomerNameSelect,
+    orderNominationSelect, newCustomerInputGroup, newCustomerNameInput,
+    saveNewCustomerBtn, newCustomerError, checkoutModalTitle, checkoutItemsList,
+    checkoutSubtotalEl, checkoutServiceChargeEl, checkoutTaxEl, checkoutPaidAmountEl,
+    checkoutTotalEl, paymentCashInput, paymentCardInput, paymentCreditInput,
+    checkoutPaymentTotalEl, checkoutShortageEl, checkoutChangeEl, slipSubtotalEl,
+    slipServiceChargeEl, slipTaxEl, slipPaidAmountEl, slipTotalEl, castRankingList,
+    rankingPeriodSelect, rankingTypeBtns;
 
 // --- 関数 ---
-
-/**
- * UUIDを生成する
- * @returns {string} UUID
- */
-const getUUID = () => {
-    return crypto.randomUUID();
-};
 
 /**
  * 通貨形式（例: ¥10,000）にフォーマットする
@@ -322,11 +272,15 @@ const switchPage = (targetPageId) => {
 
     pageTitle.textContent = targetTitle;
 
+    // (変更) ページ切り替え時にも描画関数を呼ぶ
     if (targetPageId === 'dashboard') {
         renderDashboardSlips();
     }
     if (targetPageId === 'all-slips') {
         renderAllSlipsPage();
+    }
+    if (targetPageId === 'menu') {
+        renderMenuTabs();
     }
 };
 
@@ -475,7 +429,10 @@ const renderAllSlipsPage = () => {
         return;
     }
 
-    state.slips.forEach(slip => {
+    // (変更) 伝票番号の降順でソート
+    const sortedSlips = [...state.slips].sort((a, b) => b.slipNumber - a.slipNumber);
+
+    sortedSlips.forEach(slip => {
         let statusColor, statusText, cardClass;
         switch (slip.status) {
             case 'active':
@@ -587,7 +544,7 @@ const renderOrderModal = () => {
                     <p class="text-sm text-slate-500">${formatCurrency(item.price)}</p>
                 </div>
                 <div class="flex items-center space-x-3">
-                    <input type="number" value="${item.qty}" class="w-16 p-1 border rounded text-center">
+                    <input type="number" value="${item.qty}" class="w-16 p-1 border rounded text-center order-item-qty-input" data-item-id="${item.id}">
                     <span class="font-semibold w-20 text-right">${formatCurrency(item.price * item.qty)}</span>
                     <button class="remove-order-item-btn text-red-500 hover:text-red-700" data-item-id="${item.id}">
                         <i class="fa-solid fa-trash"></i>
@@ -599,32 +556,35 @@ const renderOrderModal = () => {
     
     orderSubtotalEl.textContent = formatCurrency(subtotal);
 
-    // メニュー選択グリッドを描画 (初回のみ)
-    if (menuOrderGrid.children.length === 0) {
-        const allMenuItems = [
-            ...state.menu.set, 
-            ...state.menu.drink, 
-            ...state.menu.bottle
-        ];
-        allMenuItems.forEach(item => {
-            menuOrderGrid.innerHTML += `
-                <button class="menu-order-btn p-3 bg-white rounded-lg shadow border text-left hover:bg-slate-100" data-item-id="${item.id}" data-item-name="${item.name}" data-item-price="${item.price}">
-                    <p class="font-semibold text-sm">${item.name}</p>
-                    <p class="text-xs text-slate-500">${formatCurrency(item.price)}</p>
-                </button>
-            `;
+    // メニュー選択グリッドを描画 (変更)
+    // 毎回クリアして、メニュー管理で変更があった場合に備える
+    menuOrderGrid.innerHTML = '';
+    const allMenuItems = [
+        ...state.menu.set, 
+        ...state.menu.drink, 
+        ...state.menu.bottle,
+        ...state.menu.food,
+        ...state.menu.cast,
+        ...state.menu.other
+    ];
+    allMenuItems.forEach(item => {
+        menuOrderGrid.innerHTML += `
+            <button class="menu-order-btn p-3 bg-white rounded-lg shadow border text-left hover:bg-slate-100" data-item-id="${item.id}" data-item-name="${item.name}" data-item-price="${item.price}">
+                <p class="font-semibold text-sm">${item.name}</p>
+                <p class="text-xs text-slate-500">${formatCurrency(item.price)}</p>
+            </button>
+        `;
+    });
+    
+    document.querySelectorAll('.menu-order-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            addOrderItem(
+                btn.dataset.itemId,
+                btn.dataset.itemName,
+                parseInt(btn.dataset.itemPrice)
+            );
         });
-        
-        document.querySelectorAll('.menu-order-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                addOrderItem(
-                    parseInt(btn.dataset.itemId),
-                    btn.dataset.itemName,
-                    parseInt(btn.dataset.itemPrice)
-                );
-            });
-        });
-    }
+    });
 };
 
 /**
@@ -651,7 +611,7 @@ const updateSlipInfo = () => {
 
 /**
  * 注文リストにアイテムを追加する
- * @param {number} id 商品ID
+ * @param {string} id 商品ID
  * @param {string} name 商品名
  * @param {number} price 価格
  */
@@ -670,7 +630,7 @@ const addOrderItem = (id, name, price) => {
 
 /**
  * (新規) 注文リストからアイテムを削除する
- * @param {number} id 商品ID
+ * @param {string} id 商品ID
  */
 const removeOrderItem = (id) => {
     const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
@@ -683,12 +643,236 @@ const removeOrderItem = (id) => {
 };
 
 /**
+ * (新規) 注文アイテムの数量を変更する
+ * @param {string} id 商品ID
+ * @param {number} qty 数量
+ */
+const updateOrderItemQty = (id, qty) => {
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
+    if (!slipData) return;
+
+    const item = slipData.items.find(item => item.id === id);
+    if (item) {
+        item.qty = qty;
+    }
+    
+    // 数量変更後にモーダルを再描画
+    renderOrderModal();
+};
+
+/**
+ * (新規) メニュー管理タブとリストを描画する
+ */
+const renderMenuTabs = () => {
+    if (!menuTabsContainer) return; // (追加) 念のため
+    
+    const activeTab = menuTabsContainer.querySelector('.menu-tab.active');
+    const activeCategory = activeTab ? activeTab.dataset.category : 'set';
+
+    // 全てのタブコンテンツを非表示に
+    menuTabContents.forEach(content => content.classList.remove('active'));
+    
+    // 対応するタブコンテンツを表示
+    const activeContent = document.getElementById(`tab-${activeCategory}`);
+    if (activeContent) {
+        activeContent.classList.add('active');
+    }
+
+    // 各カテゴリのリストを描画
+    renderMenuList('set', setMenuTbody);
+    renderMenuList('drink', drinkMenuTbody);
+    renderMenuList('bottle', bottleMenuTbody);
+    renderMenuList('food', foodMenuTbody);
+    renderMenuList('cast', castMenuTbody);
+    renderMenuList('other', otherMenuTbody);
+};
+
+/**
+ * (新規) 指定されたカテゴリのメニューリストを描画する
+ * @param {string} category メニューカテゴリ ('set', 'drink' など)
+ * @param {HTMLElement} tbodyElement 描画先の tbody 要素
+ */
+const renderMenuList = (category, tbodyElement) => {
+    if (!tbodyElement) return;
+    tbodyElement.innerHTML = '';
+
+    const items = state.menu[category] || [];
+    
+    if (items.length === 0) {
+        const colSpan = (category === 'set') ? 4 : 3;
+        tbodyElement.innerHTML = `<tr><td class="p-3 text-slate-500 text-sm" colspan="${colSpan}">このカテゴリにはメニューが登録されていません。</td></tr>`;
+        return;
+    }
+
+    items.forEach(item => {
+        const tr = `
+            <tr class="border-b">
+                <td class="p-3 font-medium">${item.name}</td>
+                ${category === 'set' ? `<td class="p-3">${item.duration || '-'} 分</td>` : ''}
+                <td class="p-3">${formatCurrency(item.price)}</td>
+                <td class="p-3 text-right space-x-2">
+                    <button class="edit-menu-btn text-blue-600 hover:text-blue-800" data-menu-id="${item.id}" data-category="${category}">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button class="delete-menu-btn text-red-600 hover:text-red-800" data-menu-id="${item.id}" data-category="${category}">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+        tbodyElement.innerHTML += tr;
+    });
+};
+
+/**
+ * (新規) メニュー編集モーダルを開く
+ * @param {string} mode 'new' または 'edit'
+ * @param {string} category デフォルトで選択するカテゴリ
+ * @param {string|null} menuId 編集対象のメニューID
+ */
+const openMenuEditorModal = (mode = 'new', category = 'set', menuId = null) => {
+    menuEditorForm.reset();
+    menuEditorError.textContent = '';
+    state.currentEditingMenuId = null;
+    
+    // カテゴリ選択に応じて時間フィールドの表示を切り替え
+    const toggleDurationField = (selectedCategory) => {
+        if (selectedCategory === 'set') {
+            menuDurationGroup.classList.remove('hidden');
+        } else {
+            menuDurationGroup.classList.add('hidden');
+            menuDurationInput.value = '';
+        }
+    };
+
+    if (mode === 'new') {
+        menuEditorModalTitle.textContent = '新規メニュー追加';
+        menuCategorySelect.value = category;
+        toggleDurationField(category);
+    } else if (mode === 'edit' && menuId) {
+        menuEditorModalTitle.textContent = 'メニュー編集';
+        
+        let itemToEdit = null;
+        // 全カテゴリから該当IDのアイテムを検索
+        for (const cat of Object.keys(state.menu)) {
+            const found = state.menu[cat].find(item => item.id === menuId);
+            if (found) {
+                itemToEdit = found;
+                category = cat;
+                break;
+            }
+        }
+
+        if (itemToEdit) {
+            state.currentEditingMenuId = menuId;
+            menuCategorySelect.value = category;
+            menuNameInput.value = itemToEdit.name;
+            menuPriceInput.value = itemToEdit.price;
+            if (category === 'set' && itemToEdit.duration) {
+                menuDurationInput.value = itemToEdit.duration;
+            }
+            toggleDurationField(category);
+        } else {
+            // 見つからなかった場合（エラー）
+            console.error('Edit error: Menu item not found');
+            return;
+        }
+    }
+    
+    openModal(menuEditorModal);
+};
+
+/**
+ * (新規) メニューアイテムを保存（新規作成または更新）する
+ */
+const saveMenuItem = () => {
+    const category = menuCategorySelect.value;
+    const name = menuNameInput.value.trim();
+    const price = parseInt(menuPriceInput.value);
+    const duration = (category === 'set') ? (parseInt(menuDurationInput.value) || null) : null;
+
+    // バリデーション
+    if (name === "" || isNaN(price) || price <= 0) {
+        menuEditorError.textContent = "項目名と有効な料金を入力してください。";
+        return;
+    }
+
+    const newItemData = {
+        id: state.currentEditingMenuId || getUUID(), // 編集時は既存ID、新規時は新ID
+        name: name,
+        price: price,
+    };
+
+    if (category === 'set') {
+        newItemData.duration = duration;
+    }
+
+    if (state.currentEditingMenuId) {
+        // --- 編集モード ---
+        let found = false;
+        // 元のカテゴリからアイテムを探して更新
+        for (const cat of Object.keys(state.menu)) {
+            const index = state.menu[cat].findIndex(item => item.id === state.currentEditingMenuId);
+            if (index !== -1) {
+                const originalCategory = cat;
+                
+                if (originalCategory === category) {
+                    // カテゴリに変更なし
+                    state.menu[originalCategory][index] = newItemData;
+                } else {
+                    // カテゴリが変更された
+                    state.menu[originalCategory].splice(index, 1); // 元のカテゴリから削除
+                    state.menu[category].push(newItemData); // 新しいカテゴリに追加
+                }
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            console.error('Save error: Item to edit not found');
+        }
+
+    } else {
+        // --- 新規作成モード ---
+        if (!state.menu[category]) {
+            state.menu[category] = [];
+        }
+        state.menu[category].push(newItemData);
+    }
+
+    // 後処理
+    menuEditorError.textContent = '';
+    state.currentEditingMenuId = null;
+    closeModal(menuEditorModal);
+    renderMenuTabs(); // メニューリストを再描画
+    menuOrderGrid.innerHTML = ''; // 注文用グリッドをリセット（次回更新）
+};
+
+/**
+ * (新規) メニューアイテムを削除する
+ * @param {string} category 
+ * @param {string} menuId 
+ */
+const deleteMenuItem = (category, menuId) => {
+    if (!category || !menuId || !state.menu[category]) {
+        return;
+    }
+    
+    state.menu[category] = state.menu[category].filter(item => item.id !== menuId);
+    
+    renderMenuTabs(); // メニューリストを再描画
+    menuOrderGrid.innerHTML = ''; // 注文用グリッドをリセット（次回更新）
+};
+
+
+/**
  * (新規) 伝票プレビューモーダルを描画する
  */
 const renderSlipPreviewModal = () => {
     const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
     if (!slipData) return;
 
+    // (変更) 伝票プレビュー時にステータスを 'checkout' に変更
     slipData.status = 'checkout';
     renderDashboardSlips();
     renderTableGrid();
@@ -805,13 +989,16 @@ const updatePaymentStatus = () => {
     // 支払い合計が請求額に達しているか
     if (totalPayment >= billingAmount) {
         shortage = 0;
-        // お釣りは「現金」からのみ計算する
-        // (カードや売掛は通常、請求額ぴったりで入力されるため)
-        // (現金支払い額) > (請求額 - カード支払い - 売掛支払い)
+        // (変更) お釣りの計算ロジックを修正
         const cashDue = billingAmount - cardPayment - creditPayment;
-        if (cashPayment > cashDue) {
+        if (cashPayment > cashDue && cashDue >= 0) {
+            // 現金支払い額が (請求額 - カード - 売掛) より多い場合
             change = cashPayment - cashDue;
-        } else {
+        } else if (cashPayment > 0 && cashDue < 0) {
+            // カード・売掛だけで請求額を超え、さらに現金も払った場合 (現金全額がお釣り)
+             change = cashPayment;
+        }
+        else {
             change = 0;
         }
     } else {
@@ -868,7 +1055,9 @@ const renderCancelSlipModal = () => {
  * @param {HTMLElement} modalElement 
  */
 const openModal = (modalElement) => {
-    modalElement.classList.add('active');
+    if (modalElement) {
+        modalElement.classList.add('active');
+    }
 };
 
 /**
@@ -876,7 +1065,9 @@ const openModal = (modalElement) => {
  * @param {HTMLElement} modalElement 
  */
 const closeModal = (modalElement) => {
-    modalElement.classList.remove('active');
+    if (modalElement) {
+        modalElement.classList.remove('active');
+    }
 };
 
 /**
@@ -1074,290 +1265,434 @@ const renderCastRanking = () => {
 
 // --- イベントリスナー ---
 
-// DOM読み込み完了時
+// (変更) DOM読み込み完了時にDOM要素の取得とイベントリスナーの設定を行う
 document.addEventListener('DOMContentLoaded', () => {
+    
+    // ===== DOM要素の取得 =====
+    navLinks = document.querySelectorAll('.nav-link');
+    pages = document.querySelectorAll('[data-page]');
+    pageTitle = document.getElementById('page-title');
+    tableGrid = document.getElementById('table-grid');
+    dashboardSlips = document.getElementById('dashboard-slips');
+    menuTabsContainer = document.getElementById('menu-tabs');
+    menuTabs = document.querySelectorAll('.menu-tab');
+    menuTabContents = document.querySelectorAll('.menu-tab-content');
+    menuPage = document.getElementById('menu');
+    allSlipsList = document.getElementById('all-slips-list');
+    orderModal = document.getElementById('order-modal');
+    checkoutModal = document.getElementById('checkout-modal');
+    receiptModal = document.getElementById('receipt-modal');
+    slipPreviewModal = document.getElementById('slip-preview-modal');
+    modalCloseBtns = document.querySelectorAll('.modal-close-btn');
+    openSlipPreviewBtn = document.getElementById('open-slip-preview-btn');
+    processPaymentBtn = document.getElementById('process-payment-btn');
+    printSlipBtn = document.getElementById('print-slip-btn');
+    goToCheckoutBtn = document.getElementById('go-to-checkout-btn');
+    reopenSlipBtn = document.getElementById('reopen-slip-btn');
+    menuEditorModal = document.getElementById('menu-editor-modal');
+    menuEditorModalTitle = document.getElementById('menu-editor-modal-title');
+    menuEditorForm = document.getElementById('menu-editor-form');
+    menuCategorySelect = document.getElementById('menu-category');
+    menuNameInput = document.getElementById('menu-name');
+    menuDurationGroup = document.getElementById('menu-duration-group');
+    menuDurationInput = document.getElementById('menu-duration');
+    menuPriceInput = document.getElementById('menu-price');
+    menuEditorError = document.getElementById('menu-editor-error');
+    openNewMenuModalBtn = document.getElementById('open-new-menu-modal-btn');
+    saveMenuItemBtn = document.getElementById('save-menu-item-btn');
+    setMenuTbody = document.getElementById('set-menu-tbody');
+    drinkMenuTbody = document.getElementById('drink-menu-tbody');
+    bottleMenuTbody = document.getElementById('bottle-menu-tbody');
+    foodMenuTbody = document.getElementById('food-menu-tbody');
+    castMenuTbody = document.getElementById('cast-menu-tbody');
+    otherMenuTbody = document.getElementById('other-menu-tbody');
+    cancelSlipModal = document.getElementById('cancel-slip-modal');
+    openCancelSlipModalBtn = document.getElementById('open-cancel-slip-modal-btn');
+    cancelSlipModalTitle = document.getElementById('cancel-slip-modal-title');
+    cancelSlipNumber = document.getElementById('cancel-slip-number');
+    cancelSlipReasonInput = document.getElementById('cancel-slip-reason-input');
+    cancelSlipError = document.getElementById('cancel-slip-error');
+    confirmCancelSlipBtn = document.getElementById('confirm-cancel-slip-btn');
+    slipSelectionModal = document.getElementById('slip-selection-modal');
+    slipSelectionModalTitle = document.getElementById('slip-selection-modal-title');
+    slipSelectionList = document.getElementById('slip-selection-list');
+    createNewSlipBtn = document.getElementById('create-new-slip-btn');
+    newSlipConfirmModal = document.getElementById('new-slip-confirm-modal');
+    newSlipConfirmTitle = document.getElementById('new-slip-confirm-title');
+    newSlipConfirmMessage = document.getElementById('new-slip-confirm-message');
+    confirmCreateSlipBtn = document.getElementById('confirm-create-slip-btn');
+    orderModalTitle = document.getElementById('order-modal-title');
+    orderItemsList = document.getElementById('order-items-list');
+    menuOrderGrid = document.getElementById('menu-order-grid');
+    orderSubtotalEl = document.getElementById('order-subtotal');
+    orderCustomerNameSelect = document.getElementById('order-customer-name-select');
+    orderNominationSelect = document.getElementById('order-nomination-select');
+    newCustomerInputGroup = document.getElementById('new-customer-input-group');
+    newCustomerNameInput = document.getElementById('new-customer-name-input');
+    saveNewCustomerBtn = document.getElementById('save-new-customer-btn');
+    newCustomerError = document.getElementById('new-customer-error');
+    checkoutModalTitle = document.getElementById('checkout-modal-title');
+    checkoutItemsList = document.getElementById('checkout-items-list');
+    checkoutSubtotalEl = document.getElementById('checkout-subtotal');
+    checkoutServiceChargeEl = document.getElementById('checkout-service-charge');
+    checkoutTaxEl = document.getElementById('checkout-tax');
+    checkoutPaidAmountEl = document.getElementById('checkout-paid-amount');
+    checkoutTotalEl = document.getElementById('checkout-total');
+    paymentCashInput = document.getElementById('payment-cash');
+    paymentCardInput = document.getElementById('payment-card');
+    paymentCreditInput = document.getElementById('payment-credit');
+    checkoutPaymentTotalEl = document.getElementById('checkout-payment-total');
+    checkoutShortageEl = document.getElementById('checkout-shortage');
+    checkoutChangeEl = document.getElementById('checkout-change');
+    slipSubtotalEl = document.getElementById('slip-subtotal');
+    slipServiceChargeEl = document.getElementById('slip-service-charge');
+    slipTaxEl = document.getElementById('slip-tax');
+    slipPaidAmountEl = document.getElementById('slip-paid-amount');
+    slipTotalEl = document.getElementById('slip-total');
+    castRankingList = document.getElementById('cast-ranking-list');
+    rankingPeriodSelect = document.getElementById('ranking-period-select');
+    rankingTypeBtns = document.querySelectorAll('.ranking-type-btn');
+
+    // ===== 初期化処理 =====
     switchPage('dashboard');
     renderTableGrid();
     renderCastRanking();
     renderDashboardSlips();
     renderAllSlipsPage();
-});
+    renderMenuTabs(); 
+    
+    // ===== イベントリスナーの設定 =====
 
-// ナビゲーションリンク
-navLinks.forEach(link => {
-    link.addEventListener('click', (e) => {
-        e.preventDefault();
-        const targetPage = link.dataset.target;
-        switchPage(targetPage);
-    });
-});
-
-// メニュー管理タブ
-menuTabs.forEach(tab => {
-    tab.addEventListener('click', (e) => {
-        e.preventDefault();
-        const targetContentId = tab.dataset.target;
-
-        menuTabs.forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-
-        menuTabContents.forEach(content => {
-            if (content.id === targetContentId) {
-                content.classList.add('active');
-            } else {
-                content.classList.remove('active');
-            }
+    // ナビゲーションリンク
+    navLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const targetPage = link.dataset.target;
+            switchPage(targetPage);
         });
     });
-});
 
-// (変更) モーダルを閉じるボタン
-modalCloseBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-        closeModal(orderModal);
-        closeModal(checkoutModal);
-        closeModal(receiptModal);
-        closeModal(slipPreviewModal);
-        closeModal(slipSelectionModal);
-        closeModal(newSlipConfirmModal);
-        closeModal(cancelSlipModal);
+    // メニュー管理タブ
+    menuTabs.forEach(tab => {
+        tab.addEventListener('click', (e) => {
+            e.preventDefault();
+            
+            menuTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            renderMenuTabs();
+        });
     });
-});
 
-// (変更) 伝票モーダルの顧客情報入力イベント
-if (orderCustomerNameSelect) {
-    orderCustomerNameSelect.addEventListener('change', (e) => {
-        if (e.target.value === 'new_customer') {
-            newCustomerInputGroup.classList.remove('hidden');
-            newCustomerNameInput.value = '';
-            newCustomerError.textContent = '';
-            newCustomerNameInput.focus();
-        } else {
+    // モーダルを閉じるボタン
+    modalCloseBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            closeModal(orderModal);
+            closeModal(checkoutModal);
+            closeModal(receiptModal);
+            closeModal(slipPreviewModal);
+            closeModal(slipSelectionModal);
+            closeModal(newSlipConfirmModal);
+            closeModal(cancelSlipModal);
+            closeModal(menuEditorModal);
+        });
+    });
+
+    // 伝票モーダルの顧客情報入力イベント
+    if (orderCustomerNameSelect) {
+        orderCustomerNameSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'new_customer') {
+                newCustomerInputGroup.classList.remove('hidden');
+                newCustomerNameInput.value = '';
+                newCustomerError.textContent = '';
+                newCustomerNameInput.focus();
+            } else {
+                newCustomerInputGroup.classList.add('hidden');
+                newCustomerError.textContent = '';
+                updateSlipInfo();
+            }
+        });
+    }
+
+    if (orderNominationSelect) {
+        orderNominationSelect.addEventListener('change', updateSlipInfo);
+    }
+
+    // 新規顧客保存ボタン
+    if (saveNewCustomerBtn) {
+        saveNewCustomerBtn.addEventListener('click', () => {
+            const newName = newCustomerNameInput.value.trim();
+            if (newName === "") {
+                newCustomerError.textContent = "顧客名を入力してください。";
+                return;
+            }
+            
+            const existingCustomer = state.customers.find(c => c.name === newName);
+            if (existingCustomer) {
+                newCustomerError.textContent = "その顧客名は既に使用されています。";
+                return;
+            }
+
+            const newCustomer = { id: getUUID(), name: newName };
+            state.customers.push(newCustomer);
+            
+            const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
+            if (slipData) {
+                slipData.name = newName;
+            }
+            
+            renderOrderModal();
+            
             newCustomerInputGroup.classList.add('hidden');
             newCustomerError.textContent = '';
+            
             updateSlipInfo();
-        }
-    });
-}
+        });
+    }
 
-if (orderNominationSelect) {
-    orderNominationSelect.addEventListener('change', updateSlipInfo);
-}
-
-// (新規) 新規顧客保存ボタン
-if (saveNewCustomerBtn) {
-    saveNewCustomerBtn.addEventListener('click', () => {
-        const newName = newCustomerNameInput.value.trim();
-        if (newName === "") {
-            newCustomerError.textContent = "顧客名を入力してください。";
-            return;
-        }
-        
-        const existingCustomer = state.customers.find(c => c.name === newName);
-        if (existingCustomer) {
-            newCustomerError.textContent = "その顧客名は既に使用されています。";
-            return;
-        }
-
-        const newCustomer = { id: getUUID(), name: newName };
-        state.customers.push(newCustomer);
-        
-        const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
-        if (slipData) {
-            slipData.name = newName;
-        }
-        
-        renderOrderModal();
-        
-        newCustomerInputGroup.classList.add('hidden');
-        newCustomerError.textContent = '';
-        
-        updateSlipInfo();
-    });
-}
-
-
-// (変更) 伝票モーダル -> 伝票プレビューモーダル
-if (openSlipPreviewBtn) {
-    openSlipPreviewBtn.addEventListener('click', () => {
-        updateSlipInfo();
-        renderSlipPreviewModal(); 
-        closeModal(orderModal);
-        openModal(slipPreviewModal);
-    });
-}
-
-// (新規) 伝票モーダル -> ボツ伝理由入力モーダル
-if (openCancelSlipModalBtn) {
-    openCancelSlipModalBtn.addEventListener('click', () => {
-        renderCancelSlipModal();
-    });
-}
-
-// (新規) ボツ伝理由入力モーダル -> 確定処理
-if (confirmCancelSlipBtn) {
-    confirmCancelSlipBtn.addEventListener('click', () => {
-        const reason = cancelSlipReasonInput.value.trim();
-        if (reason === "") {
-            cancelSlipError.textContent = "ボツ伝にする理由を必ず入力してください。";
-            return;
-        }
-
-        const slip = state.slips.find(s => s.slipId === state.currentSlipId);
-        if (slip) {
-            slip.status = 'cancelled';
-            slip.cancelReason = reason;
-            
-            const otherActiveSlips = getActiveSlipCount(slip.tableId);
-            
-            if (otherActiveSlips === 0) {
-                const table = state.tables.find(t => t.id === slip.tableId);
-                if (table) {
-                    table.status = 'available';
-                }
-            }
-            
-            renderTableGrid();
-            renderDashboardSlips();
-            renderAllSlipsPage();
-
+    // 伝票モーダル -> 伝票プレビューモーダル
+    if (openSlipPreviewBtn) {
+        openSlipPreviewBtn.addEventListener('click', () => {
+            updateSlipInfo();
+            renderSlipPreviewModal(); 
             closeModal(orderModal);
-            closeModal(cancelSlipModal);
-        }
-    });
-}
+            openModal(slipPreviewModal);
+        });
+    }
 
+    // 伝票モーダル -> ボツ伝理由入力モーダル
+    if (openCancelSlipModalBtn) {
+        openCancelSlipModalBtn.addEventListener('click', () => {
+            renderCancelSlipModal();
+        });
+    }
 
-// (新規) 伝票プレビューモーダル -> 印刷
-if (printSlipBtn) {
-    printSlipBtn.addEventListener('click', () => {
-        window.print();
-    });
-}
+    // ボツ伝理由入力モーダル -> 確定処理
+    if (confirmCancelSlipBtn) {
+        confirmCancelSlipBtn.addEventListener('click', () => {
+            const reason = cancelSlipReasonInput.value.trim();
+            if (reason === "") {
+                cancelSlipError.textContent = "ボツ伝にする理由を必ず入力してください。";
+                return;
+            }
 
-// (新規) 伝票プレビューモーダル -> 会計モーダル
-if (goToCheckoutBtn) {
-    goToCheckoutBtn.addEventListener('click', () => {
-        renderCheckoutModal();
-        closeModal(slipPreviewModal);
-        openModal(checkoutModal);
-    });
-}
+            const slip = state.slips.find(s => s.slipId === state.currentSlipId);
+            if (slip) {
+                slip.status = 'cancelled';
+                slip.cancelReason = reason;
+                
+                const otherActiveSlips = getActiveSlipCount(slip.tableId);
+                
+                if (otherActiveSlips === 0) {
+                    const table = state.tables.find(t => t.id === slip.tableId);
+                    if (table) {
+                        table.status = 'available';
+                    }
+                }
+                
+                renderTableGrid();
+                renderDashboardSlips();
+                renderAllSlipsPage();
 
-// (新規) 会計モーダル: 支払い金額入力イベント
-if (paymentCashInput) {
-    paymentCashInput.addEventListener('input', updatePaymentStatus);
-}
-if (paymentCardInput) {
-    paymentCardInput.addEventListener('input', updatePaymentStatus);
-}
-if (paymentCreditInput) {
-    paymentCreditInput.addEventListener('input', updatePaymentStatus);
-}
+                closeModal(orderModal);
+                closeModal(cancelSlipModal);
+            }
+        });
+    }
 
+    // 伝票プレビューモーダル -> 印刷
+    if (printSlipBtn) {
+        printSlipBtn.addEventListener('click', () => {
+            window.print();
+        });
+    }
 
-// (変更) 会計モーダル -> 領収書モーダル
-if (processPaymentBtn) {
-    processPaymentBtn.addEventListener('click', () => {
-        renderReceiptModal();
-        closeModal(checkoutModal);
-        openModal(receiptModal);
-        
-        const slip = state.slips.find(s => s.slipId === state.currentSlipId);
-        if (slip) {
+    // 伝票プレビューモーダル -> 会計モーダル
+    if (goToCheckoutBtn) {
+        goToCheckoutBtn.addEventListener('click', () => {
+            renderCheckoutModal();
+            closeModal(slipPreviewModal);
+            openModal(checkoutModal);
+        });
+    }
+
+    // 会計モーダル: 支払い金額入力イベント
+    if (paymentCashInput) {
+        paymentCashInput.addEventListener('input', updatePaymentStatus);
+    }
+    if (paymentCardInput) {
+        paymentCardInput.addEventListener('input', updatePaymentStatus);
+    }
+    if (paymentCreditInput) {
+        paymentCreditInput.addEventListener('input', updatePaymentStatus);
+    }
+
+    // 会計モーダル -> 領収書モーダル
+    if (processPaymentBtn) {
+        processPaymentBtn.addEventListener('click', () => {
+            renderReceiptModal();
+            closeModal(checkoutModal);
+            openModal(receiptModal);
             
-            const total = calculateSlipTotal(slip);
+            const slip = state.slips.find(s => s.slipId === state.currentSlipId);
+            if (slip) {
+                
+                const total = calculateSlipTotal(slip);
 
-            // (変更) 支払い済み金額を、その時点での総合計金額で更新する
-            slip.paidAmount = total; 
-            
-            // (新規) 支払い内訳も保存
-            slip.paymentDetails = {
-                cash: parseInt(paymentCashInput.value) || 0,
-                card: parseInt(paymentCardInput.value) || 0,
-                credit: parseInt(paymentCreditInput.value) || 0
-            };
-            
-            slip.status = 'paid';
-            
-            const otherActiveSlips = getActiveSlipCount(slip.tableId);
-            
-            if (otherActiveSlips === 0) {
+                slip.paidAmount = total; 
+                
+                slip.paymentDetails = {
+                    cash: parseInt(paymentCashInput.value) || 0,
+                    card: parseInt(paymentCardInput.value) || 0,
+                    credit: parseInt(paymentCreditInput.value) || 0
+                };
+                
+                slip.status = 'paid';
+                
+                const otherActiveSlips = getActiveSlipCount(slip.tableId);
+                
+                if (otherActiveSlips === 0) {
+                    const table = state.tables.find(t => t.id === slip.tableId);
+                    if (table) {
+                        table.status = 'available';
+                    }
+                }
+                
+                renderTableGrid();
+                renderDashboardSlips();
+                renderAllSlipsPage();
+            }
+        });
+    }
+
+    // 領収書モーダル -> 伝票復活
+    if (reopenSlipBtn) {
+        reopenSlipBtn.addEventListener('click', () => {
+            const slip = state.slips.find(s => s.slipId === state.currentSlipId);
+            if (slip) {
+                slip.status = 'active'; 
+                
+                slip.paidAmount = 0;
+                slip.paymentDetails = { cash: 0, card: 0, credit: 0 };
+                
                 const table = state.tables.find(t => t.id === slip.tableId);
                 if (table) {
-                    table.status = 'available';
+                    table.status = 'occupied';
                 }
+                
+                renderTableGrid();
+                renderDashboardSlips();
+                renderAllSlipsPage();
+                
+                closeModal(receiptModal);
+                handleSlipClick(state.currentSlipId);
             }
-            
-            renderTableGrid();
-            renderDashboardSlips();
-            renderAllSlipsPage();
-        }
-    });
-}
+        });
+    }
 
-// (新規) 領収書モーダル -> 伝票復活
-if (reopenSlipBtn) {
-    reopenSlipBtn.addEventListener('click', () => {
-        const slip = state.slips.find(s => s.slipId === state.currentSlipId);
-        if (slip) {
-            slip.status = 'active'; 
-            
-            const table = state.tables.find(t => t.id === slip.tableId);
-            if (table) {
-                table.status = 'occupied';
-            }
-            
-            renderTableGrid();
-            renderDashboardSlips();
-            renderAllSlipsPage();
-            
-            closeModal(receiptModal);
-            handleSlipClick(state.currentSlipId);
-        }
-    });
-}
+    // 領収書モーダルを閉じた時
+    if (receiptModal) {
+        receiptModal.querySelectorAll('.modal-close-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                closeModal(receiptModal);
+            });
+        });
+    }
 
+    // Ranking 期間切り替え
+    if (rankingPeriodSelect) {
+        rankingPeriodSelect.addEventListener('change', (e) => {
+            state.ranking.period = e.target.value;
+            renderCastRanking();
+        });
+    }
 
-// 領収書モーダルを閉じた時
-if (receiptModal) {
-    receiptModal.querySelectorAll('.modal-close-btn').forEach(btn => {
+    // Ranking 集計対象切り替え
+    rankingTypeBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            closeModal(receiptModal);
+            rankingTypeBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            state.ranking.type = btn.dataset.type;
+            renderCastRanking();
         });
     });
-}
 
+    // 注文リストのイベント委任（削除・数量変更）
+    if (orderItemsList) {
+        orderItemsList.addEventListener('click', (e) => {
+            const removeBtn = e.target.closest('.remove-order-item-btn');
+            if (removeBtn) {
+                const itemId = removeBtn.dataset.itemId;
+                if (itemId) {
+                    removeOrderItem(itemId);
+                }
+            }
+        });
+        
+        orderItemsList.addEventListener('change', (e) => {
+            if (e.target.classList.contains('order-item-qty-input')) {
+                const itemId = e.target.dataset.itemId;
+                const newQty = parseInt(e.target.value);
+                
+                if (itemId && !isNaN(newQty) && newQty > 0) {
+                    updateOrderItemQty(itemId, newQty);
+                } else if (itemId && (!isNaN(newQty) && newQty <= 0)) {
+                    removeOrderItem(itemId);
+                }
+            }
+        });
+    }
 
-// Ranking 期間切り替え
-if (rankingPeriodSelect) {
-    rankingPeriodSelect.addEventListener('change', (e) => {
-        state.ranking.period = e.target.value;
-        renderCastRanking();
-    });
-}
+    // メニュー管理ページ イベントリスナー
+    if (openNewMenuModalBtn) {
+        openNewMenuModalBtn.addEventListener('click', () => {
+            const activeTab = menuTabsContainer.querySelector('.menu-tab.active');
+            const activeCategory = activeTab ? activeTab.dataset.category : 'set';
+            openMenuEditorModal('new', activeCategory);
+        });
+    }
 
+    // メニュー編集モーダル カテゴリ変更イベント
+    if (menuCategorySelect) {
+        menuCategorySelect.addEventListener('change', (e) => {
+            if (e.target.value === 'set') {
+                menuDurationGroup.classList.remove('hidden');
+            } else {
+                menuDurationGroup.classList.add('hidden');
+                menuDurationInput.value = '';
+            }
+        });
+    }
 
-// Ranking 集計対象切り替え
-rankingTypeBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-        rankingTypeBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        state.ranking.type = btn.dataset.type;
-        renderCastRanking();
-    });
+    // メニュー編集モーダル 保存ボタン
+    if (saveMenuItemBtn) {
+        saveMenuItemBtn.addEventListener('click', (e) => {
+            e.preventDefault(); 
+            saveMenuItem();
+        });
+    }
+
+    // メニュー管理ページ リストのイベント委任 (編集・削除)
+    if (menuPage) {
+        menuPage.addEventListener('click', (e) => {
+            const editBtn = e.target.closest('.edit-menu-btn');
+            if (editBtn) {
+                const menuId = editBtn.dataset.menuId;
+                const category = editBtn.dataset.category;
+                openMenuEditorModal('edit', category, menuId);
+                return;
+            }
+
+            const deleteBtn = e.target.closest('.delete-menu-btn');
+            if (deleteBtn) {
+                const menuId = deleteBtn.dataset.menuId;
+                const category = deleteBtn.dataset.category;
+                
+                // (重要) 本来は確認モーダルを実装すべき
+                deleteMenuItem(category, menuId);
+                return;
+            }
+        });
+    }
 });
 
-// (新規) 注文リストのイベント委任（削除）
-if (orderItemsList) {
-    orderItemsList.addEventListener('click', (e) => {
-        // .remove-order-item-btn またはその子要素（iタグ）がクリックされたか判定
-        const removeBtn = e.target.closest('.remove-order-item-btn');
-        if (removeBtn) {
-            const itemId = parseInt(removeBtn.dataset.itemId);
-            if (!isNaN(itemId)) {
-                removeOrderItem(itemId);
-            }
-        }
-    });
-}
