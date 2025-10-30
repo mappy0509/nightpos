@@ -589,7 +589,7 @@ const renderOrderModal = () => {
                 <div class="flex items-center space-x-3">
                     <input type="number" value="${item.qty}" class="w-16 p-1 border rounded text-center">
                     <span class="font-semibold w-20 text-right">${formatCurrency(item.price * item.qty)}</span>
-                    <button class="text-red-500 hover:text-red-700" data-item-id="${item.id}">
+                    <button class="remove-order-item-btn text-red-500 hover:text-red-700" data-item-id="${item.id}">
                         <i class="fa-solid fa-trash"></i>
                     </button>
                 </div>
@@ -665,6 +665,20 @@ const addOrderItem = (id, name, price) => {
     } else {
         slipData.items.push({ id, name, price, qty: 1 });
     }
+    renderOrderModal();
+};
+
+/**
+ * (新規) 注文リストからアイテムを削除する
+ * @param {number} id 商品ID
+ */
+const removeOrderItem = (id) => {
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
+    if (!slipData) return;
+
+    slipData.items = slipData.items.filter(item => item.id !== id);
+    
+    // 削除後にモーダルを再描画
     renderOrderModal();
 };
 
@@ -1334,3 +1348,16 @@ rankingTypeBtns.forEach(btn => {
     });
 });
 
+// (新規) 注文リストのイベント委任（削除）
+if (orderItemsList) {
+    orderItemsList.addEventListener('click', (e) => {
+        // .remove-order-item-btn またはその子要素（iタグ）がクリックされたか判定
+        const removeBtn = e.target.closest('.remove-order-item-btn');
+        if (removeBtn) {
+            const itemId = parseInt(removeBtn.dataset.itemId);
+            if (!isNaN(itemId)) {
+                removeOrderItem(itemId);
+            }
+        }
+    });
+}

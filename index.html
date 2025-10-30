@@ -205,27 +205,28 @@
                 <div id="menu" data-page>
                     <div class="mb-4 flex justify-between items-center">
                         <h3 class="text-xl font-semibold">メニュー・料金設定</h3>
-                        <button class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition duration-200">
+                        <!-- (変更) IDを追加 -->
+                        <button id="open-new-menu-modal-btn" class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition duration-200">
                             <i class="fa-solid fa-plus mr-2"></i>新規メニュー追加
                         </button>
                     </div>
                     
                     <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
-                        <!-- メニューカテゴリタブ -->
+                        <!-- メニューカテゴリタブ (変更) IDとdata-categoryを追加 -->
                         <div class="border-b border-slate-200">
                             <nav class="flex -mb-px px-6" id="menu-tabs">
-                                <a href="#" class="menu-tab active" data-target="tab-set">セット料金</a>
-                                <a href="#" class="menu-tab" data-target="tab-drink">ドリンク</a>
-                                <a href="#" class="menu-tab" data-target="tab-bottle">ボトル</a>
-                                <a href="#" class="menu-tab" data-target="tab-food">フード</a>
-                                <a href="#" class="menu-tab" data-target="tab-cast">キャスト料金</a>
-                                <a href="#" class="menu-tab" data-target="tab-other">その他</a>
+                                <a href="#" class="menu-tab active" data-category="set">セット料金</a>
+                                <a href="#" class="menu-tab" data-category="drink">ドリンク</a>
+                                <a href="#" class="menu-tab" data-category="bottle">ボトル</a>
+                                <a href="#" class="menu-tab" data-category="food">フード</a>
+                                <a href="#" class="menu-tab" data-category="cast">キャスト料金</a>
+                                <a href="#" class="menu-tab" data-category="other">その他</a>
                             </nav>
                         </div>
                         
                         <!-- メニューコンテンツ -->
                         <div class="p-6">
-                            <!-- セット料金 -->
+                            <!-- セット料金 (変更) tbodyにIDを追加、ダミーデータを削除 -->
                             <div id="tab-set" class="menu-tab-content active">
                                 <table class="w-full text-left text-sm">
                                     <thead>
@@ -236,50 +237,57 @@
                                             <th class="p-3 text-right">操作</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
-                                        <tr class="border-b">
-                                            <td class="p-3 font-medium">基本セット (フリー)</td>
-                                            <td class="p-3">60分</td>
-                                            <td class="p-3">¥8,000</td>
-                                            <td class="p-3 text-right space-x-2">
-                                                <button class="text-blue-600 hover:text-blue-800"><i class="fa-solid fa-pen"></i></button>
-                                                <button class="text-red-600 hover:text-red-800"><i class="fa-solid fa-trash"></i></button>
-                                            </td>
-                                        </tr>
-                                        <tr class="border-b">
-                                            <td class="p-3 font-medium">基本セット (指名)</td>
-                                            <td class="p-3">60分</td>
-                                            <td class="p-3">¥10,000</td>
-                                            <td class="p-3 text-right space-x-2">
-                                                <button class="text-blue-600 hover:text-blue-800"><i class="fa-solid fa-pen"></i></button>
-                                                <button class="text-red-600 hover:text-red-800"><i class="fa-solid fa-trash"></i></button>
-                                            </td>
-                                        </tr>
-                                        <tr class="border-b">
-                                            <td class="p-3 font-medium">延長 (自動)</td>
-                                            <td class="p-3">30分</td>
-                                            <td class="p-3">¥5,000</td>
-                                            <td class="p-3 text-right space-x-2">
-                                                <button class="text-blue-600 hover:text-blue-800"><i class="fa-solid fa-pen"></i></button>
-                                                <button class="text-red-600 hover:text-red-800"><i class="fa-solid fa-trash"></i></button>
-                                            </td>
-                                        </tr>
+                                    <tbody id="set-menu-tbody">
+                                        <!-- JSで動的に生成 -->
                                     </tbody>
                                 </table>
                             </div>
-                            <!-- ドリンク (ダミー) -->
+                            <!-- ドリンク (変更) tbodyにIDを追加、ダミーデータを削除 -->
                             <div id="tab-drink" class="menu-tab-content">
-                                <p>ドリンクメニューの管理画面がここに入ります。</p>
+                                <table class="w-full text-left text-sm">
+                                    <thead>
+                                        <tr class="border-b bg-slate-50 text-slate-600">
+                                            <th class="p-3">項目名</th>
+                                            <th class="p-3">料金 (税抜)</th>
+                                            <th class="p-3 text-right">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="drink-menu-tbody">
+                                        <!-- JSで動的に生成 -->
+                                    </tbody>
+                                </table>
                             </div>
-                            <!-- ボトル (ダミー) -->
+                            <!-- ボトル (変更) tbodyにIDを追加、ダミーデータを削除 -->
                             <div id="tab-bottle" class="menu-tab-content">
-                                <p>ボトルメニューの管理画面がここに入ります。</p>
+                                <table class="w-full text-left text-sm">
+                                    <thead>
+                                        <tr class="border-b bg-slate-50 text-slate-600">
+                                            <th class="p-3">項目名</th>
+                                            <th class="p-3">料金 (税抜)</th>
+                                            <th class="p-3 text-right">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bottle-menu-tbody">
+                                        <!-- JSで動的に生成 -->
+                                    </tbody>
+                                </table>
                             </div>
-                            <!-- フード (ダミー) -->
+                            <!-- フード (変更) tbodyにIDを追加、ダミーデータを削除 -->
                             <div id="tab-food" class="menu-tab-content">
-                                <p>フードメニューの管理画面がここに入ります。</p>
+                                <table class="w-full text-left text-sm">
+                                    <thead>
+                                        <tr class="border-b bg-slate-50 text-slate-600">
+                                            <th class="p-3">項目名</th>
+                                            <th class="p-3">料金 (税抜)</th>
+                                            <th class="p-3 text-right">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="food-menu-tbody">
+                                        <!-- JSで動的に生成 -->
+                                    </tbody>
+                                </table>
                             </div>
-                            <!-- キャスト料金 -->
+                            <!-- キャスト料金 (変更) tbodyにIDを追加、ダミーデータを削除 -->
                             <div id="tab-cast" class="menu-tab-content">
                                 <table class="w-full text-left text-sm">
                                     <thead>
@@ -289,37 +297,25 @@
                                             <th class="p-3 text-right">操作</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
-                                        <tr class="border-b">
-                                            <td class="p-3 font-medium">本指名料</td>
-                                            <td class="p-3">¥3,000</td>
-                                            <td class="p-3 text-right space-x-2">
-                                                <button class="text-blue-600 hover:text-blue-800"><i class="fa-solid fa-pen"></i></button>
-                                                <button class="text-red-600 hover:text-red-800"><i class="fa-solid fa-trash"></i></button>
-                                            </td>
-                                        </tr>
-                                        <tr class="border-b">
-                                            <td class="p-3 font-medium">場内指名料</td>
-                                            <td class="p-3">¥2,000</td>
-                                            <td class="p-3 text-right space-x-2">
-                                                <button class="text-blue-600 hover:text-blue-800"><i class="fa-solid fa-pen"></i></button>
-                                                <button class="text-red-600 hover:text-red-800"><i class="fa-solid fa-trash"></i></button>
-                                            </td>
-                                        </tr>
-                                        <tr class="border-b">
-                                            <td class="p-3 font-medium">同伴料</td>
-                                            <td class="p-3">¥5,000</td>
-                                            <td class="p-3 text-right space-x-2">
-                                                <button class="text-blue-600 hover:text-blue-800"><i class="fa-solid fa-pen"></i></button>
-                                                <button class="text-red-600 hover:text-red-800"><i class="fa-solid fa-trash"></i></button>
-                                            </td>
-                                        </tr>
+                                    <tbody id="cast-menu-tbody">
+                                        <!-- JSで動的に生成 -->
                                     </tbody>
                                 </table>
                             </div>
-                            <!-- その他 (ダミー) -->
+                            <!-- その他 (変更) tbodyにIDを追加、ダミーデータを削除 -->
                             <div id="tab-other" class="menu-tab-content">
-                                <p>その他の料金（カラオケ、VIPチャージ等）の管理画面がここに入ります。</p>
+                                <table class="w-full text-left text-sm">
+                                    <thead>
+                                        <tr class="border-b bg-slate-50 text-slate-600">
+                                            <th class="p-3">項目名</th>
+                                            <th class="p-3">料金 (税抜)</th>
+                                            <th class="p-3 text-right">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="other-menu-tbody">
+                                        <!-- JSで動的に生成 -->
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -774,10 +770,63 @@
         </div>
     </div>
     
+    <!-- (新規) メニュー編集モーダル -->
+    <div id="menu-editor-modal" class="modal-backdrop">
+        <div class="modal-content w-full max-w-lg">
+            <form id="menu-editor-form">
+                <!-- モーダルヘッダー -->
+                <div class="flex justify-between items-center p-5 border-b">
+                    <h3 class="text-xl font-semibold" id="menu-editor-modal-title">新規メニュー追加</h3>
+                    <button type="button" class="modal-close-btn text-slate-400 hover:text-slate-600">
+                        <i class="fa-solid fa-xmark fa-xl"></i>
+                    </button>
+                </div>
+                
+                <!-- モーダルボディ -->
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label for="menu-category" class="text-sm font-semibold text-slate-600">カテゴリ</label>
+                        <select id="menu-category" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="set">セット料金</option>
+                            <option value="drink">ドリンク</option>
+                            <option value="bottle">ボトル</option>
+                            <option value="food">フード</option>
+                            <option value="cast">キャスト料金</option>
+                            <option value="other">その他</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="menu-name" class="text-sm font-semibold text-slate-600">項目名</label>
+                        <input type="text" id="menu-name" class="w-full p-2 border border-slate-300 rounded-lg mt-1" required>
+                    </div>
+                    <!-- セット料金の場合のみ表示 -->
+                    <div id="menu-duration-group">
+                        <label for="menu-duration" class="text-sm font-semibold text-slate-600">時間 (分)</label>
+                        <input type="number" id="menu-duration" placeholder="例: 60" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
+                    </div>
+                    <div>
+                        <label for="menu-price" class="text-sm font-semibold text-slate-600">料金 (税抜)</label>
+                        <input type="number" id="menu-price" placeholder="例: 10000" class="w-full p-2 border border-slate-300 rounded-lg mt-1" required>
+                    </div>
+                    <p id="menu-editor-error" class="text-xs text-red-600"></p>
+                </div>
+
+                <!-- モーダルフッター -->
+                <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
+                    <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                        キャンセル
+                    </button>
+                    <button id="save-menu-item-btn" type="submit" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
+                        保存する
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- ===== /モーダルエリア ===== -->
 
     <!-- カスタムJavaScript -->
     <script type="module" src="script.js"></script>
 </body>
 </html>
-
