@@ -41,8 +41,9 @@ const getDefaultState = () => ({
         { id: 'cust5', name: '渡辺様', nominatedCastId: 'c3' }, // さくらの指名
         { id: 'cust6', name: '伊藤様', nominatedCastId: null }, // フリー
     ],
+    // (変更) テーブル設定をデフォルトで定義 (これが編集対象になる)
     tables: [
-        { id: 'V1', status: 'occupied' },
+        { id: 'V1', status: 'occupied' }, // (変更) statusは保持する
         { id: 'V2', status: 'available' },
         { id: 'V3', status: 'occupied' },
         { id: 'V4', status: 'available' },
@@ -166,6 +167,11 @@ const loadState = () => {
             rates: { ...defaultState.rates, ...parsedState.rates },
             ranking: { ...defaultState.ranking, ...parsedState.ranking },
             menu: { ...defaultState.menu, ...parsedState.menu },
+            // (新規) tables, slips, casts, customers もマージ対象にする
+            tables: parsedState.tables || defaultState.tables, 
+            slips: parsedState.slips || defaultState.slips,
+            casts: parsedState.casts || defaultState.casts,
+            customers: parsedState.customers || defaultState.customers,
             currentPage: 'settings' // (変更) このページのデフォルト
         };
         
@@ -176,6 +182,22 @@ const loadState = () => {
         if (mergedState.rates.service > 1) {
             mergedState.rates.service = mergedState.rates.service / 100;
         }
+
+        // (新規) 起動時にテーブルのステータスを伝票情報に基づいて更新する
+        // (settingsページでは slips もロードするため、ここでステータスを同期できる)
+        const activeTableIds = new Set(
+            mergedState.slips
+                .filter(s => s.status === 'active' || s.status === 'checkout')
+                .map(s => s.tableId)
+        );
+        mergedState.tables.forEach(table => {
+            if (activeTableIds.has(table.id)) {
+                table.status = 'occupied';
+            } else {
+                table.status = 'available';
+            }
+        });
+
 
         return mergedState;
     } else {
@@ -211,7 +233,9 @@ const updateState = (newState) => {
 let modalCloseBtns,
     storeNameInput, storeAddressInput, storeTelInput,
     taxRateInput, serviceRateInput,
-    saveSettingsBtn, settingsFeedback;
+    saveSettingsBtn, settingsFeedback,
+    // (新規) テーブル設定用DOM
+    newTableIdInput, addTableBtn, currentTablesList, tableSettingsError;
 
 // --- 関数 ---
 
@@ -293,18 +317,23 @@ const loadSettingsToForm = () => {
     // (変更) 0.10 -> 10 のように % に変換して表示
     if (taxRateInput) taxRateInput.value = state.rates.tax * 100;
     if (serviceRateInput) serviceRateInput.value = state.rates.service * 100;
+    
+    // (新規) テーブル設定リストを描画
+    renderTableSettingsList();
 };
 
 /**
  * (新規) フォームから設定を保存する
  */
 const saveSettingsFromForm = () => {
+    // --- 店舗情報 ---
     const newStoreInfo = {
         name: storeNameInput.value.trim(),
         address: storeAddressInput.value.trim(),
         tel: storeTelInput.value.trim(),
     };
 
+    // --- 税率 ---
     // (変更) 10 -> 0.10 のように 小数点に変換して保存
     const newTaxRate = parseFloat(taxRateInput.value) / 100;
     const newServiceRate = parseFloat(serviceRateInput.value) / 100;
@@ -323,7 +352,13 @@ const saveSettingsFromForm = () => {
     };
 
     // (変更) stateを更新
-    updateState({ ...state, storeInfo: newStoreInfo, rates: newRates });
+    // (テーブル設定は既に追加/削除時に state.tables が直接更新されている)
+    updateState({ 
+        ...state, 
+        storeInfo: newStoreInfo, 
+        rates: newRates 
+        // state.tables は add/deleteTableSetting で既に更新済み
+    });
 
     if (settingsFeedback) {
         settingsFeedback.textContent = "設定を保存しました。";
@@ -332,6 +367,102 @@ const saveSettingsFromForm = () => {
             settingsFeedback.textContent = "";
         }, 3000);
     }
+};
+
+/**
+ * (新規) テーブル設定リストをUIに描画する
+ */
+const renderTableSettingsList = () => {
+    if (!currentTablesList) return;
+    
+    currentTablesList.innerHTML = '';
+    if (tableSettingsError) tableSettingsError.textContent = '';
+    
+    if (state.tables.length === 0) {
+        currentTablesList.innerHTML = '<p class="text-sm text-slate-500">テーブルが登録されていません。</p>';
+        return;
+    }
+
+    // (新規) ID順 (V1, V10, V2 -> V1, V2, V10) でソート
+    const sortedTables = [...state.tables].sort((a, b) => 
+        a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
+    );
+
+    sortedTables.forEach(table => {
+        const isOccupied = table.status === 'occupied';
+        const itemHTML = `
+            <div class="flex justify-between items-center bg-slate-50 p-3 rounded-lg border">
+                <span class="font-semibold">${table.id}</span>
+                ${isOccupied ? 
+                    `<span class="text-xs text-red-600 font-medium">(利用中のため削除不可)</span>` : 
+                    `<button type="button" class="delete-table-btn text-red-500 hover:text-red-700" data-table-id="${table.id}">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>`
+                }
+            </div>
+        `;
+        currentTablesList.innerHTML += itemHTML;
+    });
+
+    // (新規) 削除ボタンにイベントリスナーを追加
+    currentTablesList.querySelectorAll('.delete-table-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            deleteTableSetting(btn.dataset.tableId);
+        });
+    });
+};
+
+/**
+ * (新規) テーブル設定を追加する
+ */
+const addTableSetting = () => {
+    if (!newTableIdInput || !tableSettingsError) return;
+    
+    const newId = newTableIdInput.value.trim().toUpperCase(); // (変更) 大文字に統一
+    
+    if (newId === "") {
+        tableSettingsError.textContent = "テーブル名を入力してください。";
+        return;
+    }
+    
+    const exists = state.tables.some(table => table.id === newId);
+    if (exists) {
+        tableSettingsError.textContent = "そのテーブル名は既に使用されています。";
+        return;
+    }
+    
+    const newTable = {
+        id: newId,
+        status: 'available' // 新規テーブルは必ず「空席」
+    };
+    
+    // (変更) stateを更新
+    const newTables = [...state.tables, newTable];
+    updateState({ ...state, tables: newTables });
+    
+    newTableIdInput.value = '';
+    tableSettingsError.textContent = '';
+    renderTableSettingsList(); // リストを再描画
+};
+
+/**
+ * (新規) テーブル設定を削除する
+ * @param {string} tableId 
+ */
+const deleteTableSetting = (tableId) => {
+    const table = state.tables.find(t => t.id === tableId);
+    
+    // (安全装置) 利用中のテーブルは削除しない
+    if (!table || table.status === 'occupied') {
+        tableSettingsError.textContent = `${tableId} は利用中のため削除できません。`;
+        return;
+    }
+
+    // (変更) stateを更新
+    const newTables = state.tables.filter(t => t.id !== tableId);
+    updateState({ ...state, tables: newTables });
+    
+    renderTableSettingsList(); // リストを再描C画
 };
 
 
@@ -349,11 +480,17 @@ document.addEventListener('DOMContentLoaded', () => {
     serviceRateInput = document.getElementById('service-rate');
     saveSettingsBtn = document.getElementById('save-settings-btn');
     settingsFeedback = document.getElementById('settings-feedback');
+    // (新規) テーブル設定用DOM
+    newTableIdInput = document.getElementById('new-table-id-input');
+    addTableBtn = document.getElementById('add-table-btn');
+    currentTablesList = document.getElementById('current-tables-list');
+    tableSettingsError = document.getElementById('table-settings-error');
 
     
     // ===== 初期化処理 =====
     if (saveSettingsBtn) { // (変更) settingsページ以外では実行しない
         loadSettingsToForm();
+        // (変更) loadSettingsToForm 内で renderTableSettingsList も呼ばれる
     }
     
     // ===== イベントリスナーの設定 =====
@@ -371,6 +508,23 @@ document.addEventListener('DOMContentLoaded', () => {
         saveSettingsBtn.addEventListener('click', (e) => {
             e.preventDefault(); // (変更) formの送信を止める
             saveSettingsFromForm();
+        });
+    }
+    
+    // (新規) テーブル追加ボタン
+    if (addTableBtn) {
+        addTableBtn.addEventListener('click', () => {
+            addTableSetting();
+        });
+    }
+
+    // (新規) テーブル入力欄でEnterキー
+    if (newTableIdInput) {
+        newTableIdInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addTableSetting();
+            }
         });
     }
 
