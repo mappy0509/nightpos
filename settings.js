@@ -141,6 +141,8 @@ const getDefaultState = () => ({
         tax: 0.10, // 消費税 10%
         service: 0.20 // サービス料 20%
     },
+    // (新規) 営業日付の変更時刻
+    dayChangeTime: "05:00", // デフォルト AM 5:00
     currentSlipId: null, 
     currentEditingMenuId: null,
     currentBillingAmount: 0, 
@@ -172,6 +174,7 @@ const loadState = () => {
             slips: parsedState.slips || defaultState.slips,
             casts: parsedState.casts || defaultState.casts,
             customers: parsedState.customers || defaultState.customers,
+            dayChangeTime: parsedState.dayChangeTime || defaultState.dayChangeTime, // (新規)
             currentPage: 'settings' // (変更) このページのデフォルト
         };
         
@@ -233,6 +236,7 @@ const updateState = (newState) => {
 let modalCloseBtns,
     storeNameInput, storeAddressInput, storeTelInput,
     taxRateInput, serviceRateInput,
+    dayChangeTimeInput, // (新規)
     saveSettingsBtn, settingsFeedback,
     // (新規) テーブル設定用DOM
     newTableIdInput, addTableBtn, currentTablesList, tableSettingsError;
@@ -318,6 +322,8 @@ const loadSettingsToForm = () => {
     if (taxRateInput) taxRateInput.value = state.rates.tax * 100;
     if (serviceRateInput) serviceRateInput.value = state.rates.service * 100;
     
+    if (dayChangeTimeInput) dayChangeTimeInput.value = state.dayChangeTime; // (新規)
+    
     // (新規) テーブル設定リストを描画
     renderTableSettingsList();
 };
@@ -351,12 +357,23 @@ const saveSettingsFromForm = () => {
         service: newServiceRate,
     };
 
+    // (新規) 日付変更時刻
+    const newDayChangeTime = dayChangeTimeInput.value;
+    if (!newDayChangeTime) { // (新規) バリデーション
+        if (settingsFeedback) {
+            settingsFeedback.textContent = "営業日付の変更時刻を有効な形式で入力してください。";
+            settingsFeedback.className = "text-sm text-red-600";
+        }
+        return;
+    }
+
     // (変更) stateを更新
     // (テーブル設定は既に追加/削除時に state.tables が直接更新されている)
     updateState({ 
         ...state, 
         storeInfo: newStoreInfo, 
-        rates: newRates 
+        rates: newRates,
+        dayChangeTime: newDayChangeTime // (新規)
         // state.tables は add/deleteTableSetting で既に更新済み
     });
 
@@ -478,6 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
     storeTelInput = document.getElementById('store-tel');
     taxRateInput = document.getElementById('tax-rate');
     serviceRateInput = document.getElementById('service-rate');
+    dayChangeTimeInput = document.getElementById('day-change-time'); // (新規)
     saveSettingsBtn = document.getElementById('save-settings-btn');
     settingsFeedback = document.getElementById('settings-feedback');
     // (新規) テーブル設定用DOM

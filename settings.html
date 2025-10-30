@@ -120,7 +120,8 @@
                                 <!-- 税率・サービス料 -->
                                 <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
                                     <h3 class="text-lg font-semibold mb-5 border-b pb-3">税率・サービス料</h3>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <!-- (変更) grid-cols-3 に -->
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                                         <div>
                                             <label for="tax-rate" class="text-sm font-semibold text-slate-600">消費税 (%)</label>
                                             <input type="number" id="tax-rate" placeholder="10" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
@@ -129,10 +130,16 @@
                                             <label for="service-rate" class="text-sm font-semibold text-slate-600">サービス料 (%)</label>
                                             <input type="number" id="service-rate" placeholder="20" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
                                         </div>
+                                        <!-- (新規) 日付変更時刻 -->
+                                        <div>
+                                            <label for="day-change-time" class="text-sm font-semibold text-slate-600">営業日付の変更時刻</label>
+                                            <input type="time" id="day-change-time" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
+                                            <p class="text-xs text-slate-500 mt-1">例: AM 5:00</p>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <!-- (新規) テーブル設定 -->
+                                <!-- テーブル設定 -->
                                 <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
                                     <h3 class="text-lg font-semibold mb-5 border-b pb-3">テーブル設定</h3>
                                     
