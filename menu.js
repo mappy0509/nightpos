@@ -1,18 +1,15 @@
-// ===== Firebase =====
-// (新規) Firebase SDK と 初期化モジュールをインポート
-import { getFirebaseServices } from './firebase-init.js';
-import {
-    doc,
-    onSnapshot,
-    setDoc
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-// (新規) Firebaseサービス (db, auth, userId, appId) を保持するグローバル変数
-let db, auth, userId, appId;
-let stateDocRef; // (新規) Firestore の state ドキュメント参照
-let unsubscribeState = null; // (新規) onSnapshot の購読解除関数
+// (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
+import { 
+    db, 
+    auth, 
+    onSnapshot, 
+    setDoc, 
+    doc 
+} from './firebase-init.js';
+// (削除) getFirebaseServices のインポートを削除
 
 // ===== グローバル定数・変数 =====
+
 /**
  * UUIDを生成する
  * @returns {string} UUID
@@ -21,126 +18,36 @@ const getUUID = () => {
     return crypto.randomUUID();
 };
 
-// (変更) ===== state管理 =====
-
-// (削除) const LOCAL_STORAGE_KEY = 'nightPosState';
-
-/**
- * (変更) デフォルトのstateを定義する関数 (Firestore新規作成用)
- * @returns {object} デフォルトのstateオブジェクト
- */
-const getDefaultState = () => ({
-    currentPage: 'menu', // (変更) このページのデフォルト
-    currentStore: 'store1',
-    slipCounter: 0,
-    slipTagsMaster: [
-        { id: 'tag1', name: '指名' },
-        { id: 'tag2', name: '初指名' },
-        { id: 'tag3', name: '初回' },
-        { id: 'tag4', name: '枝' },
-        { id: 'tag5', name: '切替' },
-        { id: 'tag6', name: '案内所' },
-        { id: 'tag7', name: '20歳未満' },
-        { id: 'tag8', name: '同業' },
-    ],
-    casts: [
-        { id: 'c1', name: 'あい' },
-        { id: 'c2', name: 'みう' },
-        { id: 'c3', name: 'さくら' },
-    ],
-    customers: [
-        { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
-        { id: 'cust2', name: '田中様', nominatedCastId: null },
-    ],
-    tables: [
-        { id: 'V1', status: 'available' },
-        { id: 'V2', status: 'available' },
-        { id: 'T1', status: 'available' },
-    ],
-    slips: [],
-    menu: {
-        set: [
-            { id: 'm1', name: '基本セット (指名)', price: 10000, duration: 60 },
-            { id: 'm2', name: '基本セット (フリー)', price: 8000, duration: 60 },
-        ],
-        drink: [
-            { id: 'm7', name: 'キャストドリンク', price: 1500 },
-            { id: 'm8', name: 'ビール', price: 1000 },
-        ],
-        bottle: [],
-        food: [],
-        cast: [
-            { id: 'm14', name: '本指名料', price: 3000 },
-        ],
-        other: []
-    },
-    storeInfo: {
-        name: "Night POS 新宿本店",
-        address: "東京都新宿区歌舞伎町1-1-1",
-        tel: "03-0000-0000"
-    },
-    rates: {
-        tax: 0.10,
-        service: 0.20
-    },
-    dayChangeTime: "05:00",
-    performanceSettings: {
-        menuItems: {},
-        serviceCharge: { salesType: 'percentage', salesValue: 0 },
-        tax: { salesType: 'percentage', salesValue: 0 },
-        sideCustomer: { salesValue: 100, countNomination: true }
-    },
-    currentSlipId: null,
-    currentEditingMenuId: null,
-    currentBillingAmount: 0,
-    ranking: {
-        period: 'monthly',
-        type: 'nominations'
-    }
-});
-
-// (削除) loadState 関数
-// (削除) saveState 関数
-
-// (変更) グローバルな state は Firestore からのデータで上書きされる
-let state = getDefaultState();
-
-/**
- * (変更) state変更時にFirestoreに保存する
- * @param {object} newState 更新後のstateオブジェクト
- */
-const updateStateInFirestore = async (newState) => {
-    state = newState; // ローカルのstateを即時更新
-    if (stateDocRef) {
-        try {
-            await setDoc(stateDocRef, state);
-            console.log("State updated in Firestore");
-        } catch (e) {
-            console.error("Error updating state in Firestore:", e);
-        }
-    } else {
-        console.warn("stateDocRef is not ready. State not saved to Firestore.");
-    }
-};
-
-// (変更) 従来の updateState を updateStateInFirestore を呼ぶように変更
-const updateState = (newState) => {
-    state = newState;
-    updateStateInFirestore(newState);
-};
-
+// (変更) state は onSnapshot で取得するため、ローカルの state オブジェクトを削除
+let state = null;
+let stateDocRef = null; // (変更) stateDocRef をグローバルで保持
 
 // ===== DOM要素 =====
-// (変更) menu.js で不要なDOMを削除
-let navLinks, pages, pageTitle, menuTabsContainer, menuTabs,
-    menuTabContents, menuPage,
-    orderModal, checkoutModal, receiptModal,
-    slipPreviewModal, modalCloseBtns, menuEditorModal,
+// (変更) DOM要素をグローバルスコープに移動
+let navLinks, pages, pageTitle, tableGrid, dashboardSlips, menuTabsContainer, menuTabs,
+    menuTabContents, menuPage, allSlipsList, orderModal, checkoutModal, receiptModal,
+    slipPreviewModal, modalCloseBtns, openSlipPreviewBtn, processPaymentBtn,
+    printSlipBtn, goToCheckoutBtn, reopenSlipBtn, menuEditorModal,
     menuEditorModalTitle, menuEditorForm, menuCategorySelect, menuNameInput,
     menuDurationGroup, menuDurationInput, menuPriceInput, menuEditorError,
     openNewMenuModalBtn, saveMenuItemBtn, setMenuTbody, drinkMenuTbody,
     bottleMenuTbody, foodMenuTbody, castMenuTbody, otherMenuTbody,
-    cancelSlipModal, slipSelectionModal, newSlipConfirmModal;
+    cancelSlipModal, openCancelSlipModalBtn, cancelSlipModalTitle, cancelSlipNumber,
+    cancelSlipReasonInput, cancelSlipError, confirmCancelSlipBtn, slipSelectionModal,
+    slipSelectionModalTitle, slipSelectionList, createNewSlipBtn, newSlipConfirmModal,
+    newSlipConfirmTitle, newSlipConfirmMessage, confirmCreateSlipBtn, orderModalTitle,
+    orderItemsList, menuOrderGrid, orderSubtotalEl, orderCustomerNameSelect,
+    orderNominationSelect, newCustomerInputGroup, newCustomerNameInput,
+    saveNewCustomerBtn, newCustomerError, checkoutModalTitle, checkoutItemsList,
+    checkoutSubtotalEl, checkoutServiceChargeEl, checkoutTaxEl, checkoutPaidAmountEl,
+    checkoutTotalEl, paymentCashInput, paymentCardInput, paymentCreditInput,
+    checkoutPaymentTotalEl, checkoutShortageEl, checkoutChangeEl, slipSubtotalEl,
+    slipServiceChargeEl, slipTaxEl, slipPaidAmountEl, slipTotalEl, castRankingList,
+    rankingPeriodSelect, rankingTypeBtns,
+    // (新規) HTML側で追加したID
+    slipStoreName, slipStoreTel, slipServiceRate, slipTaxRate,
+    checkoutStoreName, checkoutStoreTel, checkoutServiceRate, checkoutTaxRate,
+    receiptStoreName, receiptAddress, receiptTel;
 
 
 // --- 関数 ---
@@ -160,22 +67,17 @@ const formatCurrency = (amount) => {
  * @returns {number} 合計金額
  */
 const calculateSlipTotal = (slip) => {
-    if (!slip || slip.status === 'cancelled') {
+    if (!state) return 0; // (変更) state がロードされるまで待つ
+    if (slip.status === 'cancelled') {
         return 0;
     }
     let subtotal = 0;
-    // (変更) slip.items が存在するかチェック
-    (slip.items || []).forEach(item => {
+    slip.items.forEach(item => {
         subtotal += item.price * item.qty;
     });
-    
-    // (変更) state.rates が存在するかチェック
-    const taxRate = (state.rates && state.rates.tax) ? state.rates.tax : 0.10;
-    const serviceRate = (state.rates && state.rates.service) ? state.rates.service : 0.20;
-
-    const serviceCharge = subtotal * serviceRate;
+    const serviceCharge = subtotal * state.rates.service;
     const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * taxRate;
+    const tax = subtotalWithService * state.rates.tax;
     const total = subtotalWithService + tax;
     return Math.round(total);
 };
@@ -192,9 +94,9 @@ const calculateSlipTotal = (slip) => {
  * @returns {string} キャスト名
  */
 const getCastNameById = (castId) => {
+    if (!state) return '不明'; // (変更) state がロードされるまで待つ
     if (!castId) return 'フリー';
-    // (変更) state.casts が存在するかチェック
-    const cast = (state.casts || []).find(c => c.id === castId);
+    const cast = state.casts.find(c => c.id === castId);
     return cast ? cast.name : '不明';
 };
 
@@ -205,8 +107,8 @@ const getCastNameById = (castId) => {
  * @returns {number} 未会計伝票数
  */
 const getActiveSlipCount = (tableId) => {
-    // (変更) state.slips が存在するかチェック
-    return (state.slips || []).filter(
+    if (!state) return 0; // (変更) state がロードされるまで待つ
+    return state.slips.filter(
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     ).length;
 };
@@ -254,29 +156,24 @@ const getActiveSlipCount = (tableId) => {
  * (新規) メニュー管理タブとリストを描画する
  */
 const renderMenuTabs = () => {
-    if (!menuTabsContainer) return; 
+    if (!menuTabsContainer || !state) return; // (変更) state がロードされるまで待つ
     
     const activeTab = menuTabsContainer.querySelector('.menu-tab.active');
     const activeCategory = activeTab ? activeTab.dataset.category : 'set';
 
-    // 全てのタブコンテンツを非表示に
-    if (menuTabContents) { // (変更) nullチェック
-        menuTabContents.forEach(content => content.classList.remove('active'));
-    }
+    menuTabContents.forEach(content => content.classList.remove('active'));
     
-    // 対応するタブコンテンツを表示
     const activeContent = document.getElementById(`tab-${activeCategory}`);
     if (activeContent) {
         activeContent.classList.add('active');
     }
 
-    // (変更) state.menu[category] が undefined の場合も考慮
-    renderMenuList('set', setMenuTbody, state.menu?.set || []);
-    renderMenuList('drink', drinkMenuTbody, state.menu?.drink || []);
-    renderMenuList('bottle', bottleMenuTbody, state.menu?.bottle || []);
-    renderMenuList('food', foodMenuTbody, state.menu?.food || []);
-    renderMenuList('cast', castMenuTbody, state.menu?.cast || []);
-    renderMenuList('other', otherMenuTbody, state.menu?.other || []);
+    renderMenuList('set', setMenuTbody, state.menu.set || []);
+    renderMenuList('drink', drinkMenuTbody, state.menu.drink || []);
+    renderMenuList('bottle', bottleMenuTbody, state.menu.bottle || []);
+    renderMenuList('food', foodMenuTbody, state.menu.food || []);
+    renderMenuList('cast', castMenuTbody, state.menu.cast || []);
+    renderMenuList('other', otherMenuTbody, state.menu.other || []);
 };
 
 /**
@@ -323,12 +220,13 @@ const renderMenuList = (category, tbodyElement, items) => {
  * @param {string|null} menuId 編集対象のメニューID
  */
 const openMenuEditorModal = (mode = 'new', category = 'set', menuId = null) => {
+    if (!state) return; // (変更) state がロードされるまで待つ
     menuEditorForm.reset();
     menuEditorError.textContent = '';
-    // (変更) stateを更新
-    updateState({ ...state, currentEditingMenuId: null });
     
-    // カテゴリ選択に応じて時間フィールドの表示を切り替え
+    // (変更) state を丸ごと保存
+    state.currentEditingMenuId = null;
+    
     const toggleDurationField = (selectedCategory) => {
         if (selectedCategory === 'set') {
             menuDurationGroup.classList.remove('hidden');
@@ -346,7 +244,6 @@ const openMenuEditorModal = (mode = 'new', category = 'set', menuId = null) => {
         menuEditorModalTitle.textContent = 'メニュー編集';
         
         let itemToEdit = null;
-        // (変更) state.menu の全カテゴリを安全に検索
         for (const cat of Object.keys(state.menu)) {
             const items = state.menu[cat] || [];
             const found = items.find(item => item.id === menuId);
@@ -358,8 +255,7 @@ const openMenuEditorModal = (mode = 'new', category = 'set', menuId = null) => {
         }
 
         if (itemToEdit) {
-            // (変更) stateを更新
-            updateState({ ...state, currentEditingMenuId: menuId });
+            state.currentEditingMenuId = menuId;
             menuCategorySelect.value = category;
             menuNameInput.value = itemToEdit.name;
             menuPriceInput.value = itemToEdit.price;
@@ -373,6 +269,8 @@ const openMenuEditorModal = (mode = 'new', category = 'set', menuId = null) => {
         }
     }
     
+    // (変更) state の保存はモーダルを開くだけなら不要
+    // updateStateInFirestore(state); 
     openModal(menuEditorModal);
 };
 
@@ -380,6 +278,7 @@ const openMenuEditorModal = (mode = 'new', category = 'set', menuId = null) => {
  * (新規) メニューアイテムを保存（新規作成または更新）する
  */
 const saveMenuItem = () => {
+    if (!state) return; // (変更) state がロードされるまで待つ
     const category = menuCategorySelect.value;
     const name = menuNameInput.value.trim();
     const price = parseInt(menuPriceInput.value);
@@ -400,28 +299,24 @@ const saveMenuItem = () => {
         newItemData.duration = duration;
     }
     
-    // (変更) stateのコピーを作成して変更
-    const newMenuState = { ...(state.menu || {}) };
-
+    // (変更) state を直接変更
     if (state.currentEditingMenuId) {
         // --- 編集モード ---
         let found = false;
-        for (const cat of Object.keys(newMenuState)) {
-            const items = newMenuState[cat] || [];
+        for (const cat of Object.keys(state.menu)) {
+            const items = state.menu[cat] || [];
             const index = items.findIndex(item => item.id === state.currentEditingMenuId);
             if (index !== -1) {
                 const originalCategory = cat;
                 
                 if (originalCategory === category) {
-                    // カテゴリに変更なし
-                    newMenuState[originalCategory][index] = newItemData;
+                    state.menu[originalCategory][index] = newItemData;
                 } else {
-                    // カテゴリが変更された
-                    newMenuState[originalCategory] = newMenuState[originalCategory].filter(item => item.id !== state.currentEditingMenuId); // 元のカテゴリから削除
-                    if (!newMenuState[category]) {
-                        newMenuState[category] = [];
+                    state.menu[originalCategory] = state.menu[originalCategory].filter(item => item.id !== state.currentEditingMenuId);
+                    if (!state.menu[category]) {
+                        state.menu[category] = [];
                     }
-                    newMenuState[category].push(newItemData); // 新しいカテゴリに追加
+                    state.menu[category].push(newItemData);
                 }
                 found = true;
                 break;
@@ -433,21 +328,20 @@ const saveMenuItem = () => {
 
     } else {
         // --- 新規作成モード ---
-        if (!newMenuState[category]) {
-            newMenuState[category] = [];
+        if (!state.menu[category]) {
+            state.menu[category] = [];
         }
-        newMenuState[category].push(newItemData);
+        state.menu[category].push(newItemData);
     }
 
-    // 後処理
     menuEditorError.textContent = '';
+    state.currentEditingMenuId = null;
     
-    // (変更) stateを更新
-    updateState({ ...state, menu: newMenuState, currentEditingMenuId: null });
+    // (変更) state を丸ごと保存
+    updateStateInFirestore(state);
     
     closeModal(menuEditorModal);
-    // (変更) UI更新はonSnapshotに任せる
-    // renderMenuTabs(); 
+    // (変更) renderMenuTabs() は onSnapshot が自動で呼び出す
 };
 
 /**
@@ -456,18 +350,46 @@ const saveMenuItem = () => {
  * @param {string} menuId 
  */
 const deleteMenuItem = (category, menuId) => {
-    // (変更) state.menu, state.menu[category] が存在するかチェック
-    if (!category || !menuId || !state.menu || !state.menu[category]) {
+    if (!state || !category || !menuId || !state.menu[category]) { // (変更) state チェック
         return;
     }
     
-    // (変更) stateを更新
-    const newMenuCategory = state.menu[category].filter(item => item.id !== menuId);
-    const newMenu = { ...state.menu, [category]: newMenuCategory };
-    updateState({ ...state, menu: newMenu });
+    // (変更) state を直接変更
+    state.menu[category] = state.menu[category].filter(item => item.id !== menuId);
     
-    // (変更) UI更新はonSnapshotに任せる
-    // renderMenuTabs(); 
+    // (変更) state を丸ごと保存
+    updateStateInFirestore(state);
+    
+    // (変更) renderMenuTabs() は onSnapshot が自動で呼び出す
+};
+
+
+/**
+ * (変更) 伝票・会計・領収書モーダルの共通情報を更新する
+ * (店舗名、税率など)
+ */
+const updateModalCommonInfo = () => {
+    if (!state) return;
+
+    const store = state.storeInfo;
+    const rates = state.rates;
+
+    // 伝票プレビュー
+    if (slipStoreName) slipStoreName.textContent = store.name;
+    if (slipStoreTel) slipStoreTel.textContent = `TEL: ${store.tel}`;
+    if (slipServiceRate) slipServiceRate.textContent = `サービス料 (${rates.service * 100}%)`;
+    if (slipTaxRate) slipTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
+
+    // 会計
+    if (checkoutStoreName) checkoutStoreName.textContent = store.name;
+    if (checkoutStoreTel) checkoutStoreTel.textContent = `TEL: ${store.tel}`;
+    if (checkoutServiceRate) checkoutServiceRate.textContent = `サービス料 (${rates.service * 100}%)`;
+    if (checkoutTaxRate) checkoutTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
+
+    // 領収書
+    if (receiptStoreName) receiptStoreName.textContent = store.name;
+    if (receiptAddress) receiptAddress.innerHTML = `〒${store.zip || ''}<br>${store.address || ''}`;
+    if (receiptTel) receiptTel.textContent = `TEL: ${store.tel}`;
 };
 
 
@@ -556,27 +478,148 @@ const closeModal = (modalElement) => {
  */
 // const renderCastRanking = () => { ... };
 
+// (新規) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+const getDefaultState = () => ({
+    currentPage: 'menu',
+    currentStore: 'store1',
+    slipCounter: 0,
+    slipTagsMaster: [
+        { id: 'tag1', name: '指名' }, { id: 'tag2', name: '初指名' },
+        { id: 'tag3', name: '初回' }, { id: 'tag4', name: '枝' },
+        { id: 'tag5', name: '切替' }, { id: 'tag6', name: '案内所' },
+        { id: 'tag7', name: '20歳未満' }, { id: 'tag8', name: '同業' },
+    ],
+    casts: [ 
+        { id: 'c1', name: 'あい' }, { id: 'c2', name: 'みう' },
+        { id: 'c3', name: 'さくら' }, { id: 'c4', name: 'れな' },
+        { id: 'c5', name: 'ひな' }, { id: 'c6', name: '体験A' },
+    ],
+    customers: [
+        { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
+        { id: 'cust2', name: '田中様', nominatedCastId: null },
+        { id: 'cust3', name: '佐藤様', nominatedCastId: 'c2' },
+    ],
+    tables: [
+        { id: 'V1', status: 'available' }, { id: 'V2', status: 'available' },
+        { id: 'T1', status: 'available' }, { id: 'T2', status: 'available' },
+        { id: 'C1', status: 'available' }, { id: 'C2', status: 'available' },
+    ],
+    slips: [],
+    menu: {
+        set: [
+            { id: 'm1', name: '基本セット (指名)', price: 10000, duration: 60 },
+            { id: 'm2', name: '基本セット (フリー)', price: 8000, duration: 60 },
+        ],
+        drink: [{ id: 'm7', name: 'キャストドリンク', price: 1500 }],
+        bottle: [{ id: 'm11', name: '鏡月 (ボトル)', price: 8000 }],
+        food: [],
+        cast: [{ id: 'm14', name: '本指名料', price: 3000 }],
+        other: [],
+    },
+    storeInfo: {
+        name: "Night POS",
+        address: "東京都新宿区歌舞伎町1-1-1",
+        tel: "03-0000-0000"
+    },
+    rates: { tax: 0.10, service: 0.20 },
+    dayChangeTime: "05:00",
+    performanceSettings: {
+        menuItems: {
+            'm14': { salesType: 'percentage', salesValue: 100, countNomination: true }
+        },
+        serviceCharge: { salesType: 'percentage', salesValue: 0 },
+        tax: { salesType: 'percentage', salesValue: 0 },
+        sideCustomer: { salesValue: 100, countNomination: true }
+    },
+    currentSlipId: null, 
+    currentEditingMenuId: null,
+    currentBillingAmount: 0, 
+    ranking: { period: 'monthly', type: 'nominations' }
+});
+
+// (新規) Firestore への state 保存関数（エラーハンドリング付き）
+const updateStateInFirestore = async (newState) => {
+    if (!stateDocRef) {
+        console.error("stateDocRef is not ready. State not saved to Firestore.");
+        return;
+    }
+    try {
+        await setDoc(stateDocRef, newState); 
+    } catch (error) {
+        console.error("Error saving state to Firestore:", error);
+    }
+};
+
+// (変更) --- Firestore リアルタイムリスナー ---
+// firebaseReady イベントを待ってからリスナーを設定
+document.addEventListener('firebaseReady', (e) => {
+    const { db, auth, userId, stateRef: ref } = e.detail;
+    
+    if (!ref) {
+        console.error("Firestore reference (stateRef) is not available.");
+        return;
+    }
+    
+    stateDocRef = ref;
+
+    onSnapshot(stateDocRef, async (docSnap) => {
+        if (docSnap.exists()) {
+            console.log("Firestore data loaded.");
+            state = docSnap.data();
+            
+            // (重要) state がロードされたら、UIを初回描画
+            renderMenuTabs();
+            updateModalCommonInfo(); // (新規) モーダル内の共通情報を更新
+            
+        } else {
+            console.log("No state document found. Creating default state...");
+            const defaultState = getDefaultState();
+            state = defaultState;
+            
+            try {
+                await setDoc(stateDocRef, defaultState);
+                console.log("Default state saved to Firestore.");
+                // (重要) state がロードされたら、UIを初回描画
+                renderMenuTabs();
+                updateModalCommonInfo(); // (新規) モーダル内の共通情報を更新
+                
+            } catch (error) {
+                console.error("Error saving default state to Firestore:", error);
+            }
+        }
+    }, (error) => {
+        console.error("Error listening to Firestore snapshot:", error);
+        if (error.code === 'permission-denied') {
+            document.body.innerHTML = `<div class="p-8 text-center text-red-600">データベースへのアクセスが拒否されました。Firestoreのセキュリティルール（state/{userId}）が正しく設定されているか確認してください。</div>`;
+        }
+    });
+});
+
 
 // --- イベントリスナー ---
-
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
     
     // ===== DOM要素の取得 =====
     navLinks = document.querySelectorAll('.nav-link');
     pages = document.querySelectorAll('[data-page]');
     pageTitle = document.getElementById('page-title');
-    // (変更) menu.js に不要なDOM取得を削除
+    tableGrid = document.getElementById('table-grid'); 
+    dashboardSlips = document.getElementById('dashboard-slips'); 
+    allSlipsList = document.getElementById('all-slips-list'); 
     orderModal = document.getElementById('order-modal');
     checkoutModal = document.getElementById('checkout-modal');
     receiptModal = document.getElementById('receipt-modal');
     slipPreviewModal = document.getElementById('slip-preview-modal');
-    // (変更) menu.js に必要なDOM取得
     menuTabsContainer = document.getElementById('menu-tabs'); 
     menuTabs = document.querySelectorAll('.menu-tab'); 
     menuTabContents = document.querySelectorAll('.menu-tab-content'); 
     menuPage = document.getElementById('menu'); 
     modalCloseBtns = document.querySelectorAll('.modal-close-btn');
-    // (変更) menu.js に必要なDOM取得
+    openSlipPreviewBtn = document.getElementById('open-slip-preview-btn');
+    processPaymentBtn = document.getElementById('process-payment-btn');
+    printSlipBtn = document.getElementById('print-slip-btn');
+    goToCheckoutBtn = document.getElementById('go-to-checkout-btn');
+    reopenSlipBtn = document.getElementById('reopen-slip-btn');
     menuEditorModal = document.getElementById('menu-editor-modal');
     menuEditorModalTitle = document.getElementById('menu-editor-modal-title');
     menuEditorForm = document.getElementById('menu-editor-form');
@@ -594,81 +637,71 @@ document.addEventListener('DOMContentLoaded', async () => {
     foodMenuTbody = document.getElementById('food-menu-tbody'); 
     castMenuTbody = document.getElementById('cast-menu-tbody'); 
     otherMenuTbody = document.getElementById('other-menu-tbody'); 
-    // (変更) menu.js に不要なDOM取得を削除
     cancelSlipModal = document.getElementById('cancel-slip-modal');
+    openCancelSlipModalBtn = document.getElementById('open-cancel-slip-modal-btn');
+    cancelSlipModalTitle = document.getElementById('cancel-slip-modal-title');
+    cancelSlipNumber = document.getElementById('cancel-slip-number');
+    cancelSlipReasonInput = document.getElementById('cancel-slip-reason-input');
+    cancelSlipError = document.getElementById('cancel-slip-error');
+    confirmCancelSlipBtn = document.getElementById('confirm-cancel-slip-btn');
     slipSelectionModal = document.getElementById('slip-selection-modal');
+    slipSelectionModalTitle = document.getElementById('slip-selection-modal-title');
+    slipSelectionList = document.getElementById('slip-selection-list');
+    createNewSlipBtn = document.getElementById('create-new-slip-btn');
     newSlipConfirmModal = document.getElementById('new-slip-confirm-modal');
-    
-    // ===== (新規) Firebase 初期化とデータリッスン =====
-    try {
-        const services = await getFirebaseServices();
-        db = services.db;
-        auth = services.auth;
-        userId = services.userId;
-        appId = services.appId;
+    newSlipConfirmTitle = document.getElementById('new-slip-confirm-title');
+    newSlipConfirmMessage = document.getElementById('new-slip-confirm-message');
+    confirmCreateSlipBtn = document.getElementById('confirm-create-slip-btn');
+    orderModalTitle = document.getElementById('order-modal-title');
+    orderItemsList = document.getElementById('order-items-list');
+    menuOrderGrid = document.getElementById('menu-order-grid');
+    orderSubtotalEl = document.getElementById('order-subtotal');
+    orderCustomerNameSelect = document.getElementById('order-customer-name-select');
+    orderNominationSelect = document.getElementById('order-nomination-select');
+    newCustomerInputGroup = document.getElementById('new-customer-input-group');
+    newCustomerNameInput = document.getElementById('new-customer-name-input');
+    saveNewCustomerBtn = document.getElementById('save-new-customer-btn');
+    newCustomerError = document.getElementById('new-customer-error');
+    checkoutModalTitle = document.getElementById('checkout-modal-title');
+    checkoutItemsList = document.getElementById('checkout-items-list');
+    checkoutSubtotalEl = document.getElementById('checkout-subtotal');
+    checkoutServiceChargeEl = document.getElementById('checkout-service-charge');
+    checkoutTaxEl = document.getElementById('checkout-tax');
+    checkoutPaidAmountEl = document.getElementById('checkout-paid-amount');
+    checkoutTotalEl = document.getElementById('checkout-total');
+    paymentCashInput = document.getElementById('payment-cash');
+    paymentCardInput = document.getElementById('payment-card');
+    paymentCreditInput = document.getElementById('payment-credit');
+    checkoutPaymentTotalEl = document.getElementById('checkout-payment-total');
+    checkoutShortageEl = document.getElementById('checkout-shortage');
+    checkoutChangeEl = document.getElementById('checkout-change');
+    slipSubtotalEl = document.getElementById('slip-subtotal');
+    slipServiceChargeEl = document.getElementById('slip-service-charge');
+    slipTaxEl = document.getElementById('slip-tax');
+    slipPaidAmountEl = document.getElementById('slip-paid-amount');
+    slipTotalEl = document.getElementById('slip-total');
+    castRankingList = document.getElementById('cast-ranking-list'); 
+    rankingPeriodSelect = document.getElementById('ranking-period-select'); 
+    rankingTypeBtns = document.querySelectorAll('.ranking-type-btn'); 
 
-        // (新規) ユーザーの state ドキュメントへの参照を作成
-        stateDocRef = doc(db, "artifacts", appId, "users", userId, "data", "mainState");
+    // (新規) モーダル共通情報のDOM
+    slipStoreName = document.getElementById('slip-store-name');
+    slipStoreTel = document.getElementById('slip-store-tel');
+    slipServiceRate = document.getElementById('slip-service-rate');
+    slipTaxRate = document.getElementById('slip-tax-rate');
+    checkoutStoreName = document.getElementById('checkout-store-name');
+    checkoutStoreTel = document.getElementById('checkout-store-tel');
+    checkoutServiceRate = document.getElementById('checkout-service-rate');
+    checkoutTaxRate = document.getElementById('checkout-tax-rate');
+    receiptStoreName = document.getElementById('receipt-store-name');
+    receiptAddress = document.getElementById('receipt-address');
+    receiptTel = document.getElementById('receipt-tel');
 
-        // (新規) Firestore の state をリアルタイムでリッスン
-        if (unsubscribeState) unsubscribeState(); 
-        
-        unsubscribeState = onSnapshot(stateDocRef, (doc) => {
-            if (doc.exists()) {
-                const firestoreState = doc.data();
-                const defaultState = getDefaultState();
-                state = { 
-                    ...defaultState, 
-                    ...firestoreState,
-                    storeInfo: { ...defaultState.storeInfo, ...(firestoreState.storeInfo || {}) },
-                    rates: { ...defaultState.rates, ...(firestoreState.rates || {}) },
-                    ranking: { ...defaultState.ranking, ...(firestoreState.ranking || {}) },
-                    menu: { ...defaultState.menu, ...(firestoreState.menu || {}) },
-                    performanceSettings: { 
-                        ...defaultState.performanceSettings, 
-                        ...(firestoreState.performanceSettings || {}),
-                        menuItems: { ...defaultState.performanceSettings.menuItems, ...(firestoreState.performanceSettings?.menuItems || {}) },
-                        serviceCharge: { ...defaultState.performanceSettings.serviceCharge, ...(firestoreState.performanceSettings?.serviceCharge || {}) },
-                        tax: { ...defaultState.performanceSettings.tax, ...(firestoreState.performanceSettings?.tax || {}) },
-                        sideCustomer: { ...defaultState.performanceSettings.sideCustomer, ...(firestoreState.performanceSettings?.sideCustomer || {}) },
-                    },
-                };
-                console.log("Local state updated from Firestore");
-            } else {
-                console.log("No state document found. Creating new one...");
-                state = getDefaultState();
-                updateStateInFirestore(state); 
-            }
-
-            // (新規) ページが menu の場合のみUIを更新
-            renderMenuTabs();
-            
-            // (新規) 現在開いているモーダルがあれば再描画 (menuEditorModal)
-            if (menuEditorModal.classList.contains('active') && state.currentEditingMenuId) {
-                // (重要) 編集中にリロードされると入力がリセットされるため、
-                // 基本的にはモーダルを閉じるか、開かない。
-                // ただし、他端末で削除された場合などを考慮し、
-                // IDが存在しなくなったら閉じるなどの処理が本来は必要。
-                // ここではシンプルに、再描画はしない。
-                console.log("Menu editor is active, skipping modal refresh to preserve input.");
-            }
-
-        }, (error) => {
-            console.error("Error listening to state document:", error);
-        });
-
-    } catch (e) {
-        console.error("Failed to initialize Firebase or auth:", e);
-        // (新規) Firebaseが失敗した場合でも、ローカルのデフォルトstateでUIを描画
-        renderMenuTabs();
-    }
-
+    // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
+    // renderMenuTabs(); 
     
     // ===== イベントリスナーの設定 =====
-
-    // (変更) menu.js に必要なイベントリスナー
     
-    // メニュー管理タブ
     if (menuTabsContainer) { 
         menuTabs.forEach(tab => {
             tab.addEventListener('click', (e) => {
@@ -685,7 +718,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // モーダルを閉じるボタン
     modalCloseBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            // (変更) menu.js で開く可能性のあるモーダルのみ
             closeModal(menuEditorModal);
             // (変更) 他のモーダルもHTMLには存在するため、閉じるロジックは残す
             closeModal(orderModal);
@@ -698,11 +730,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
     
-    // (変更) menu.js に不要なイベントリスナーを削除
-
-    // (変更) menu.js に必要なイベントリスナー
-    
-    // メニュー管理ページ イベントリスナー
     if (openNewMenuModalBtn) {
         openNewMenuModalBtn.addEventListener('click', () => {
             const activeTab = menuTabsContainer.querySelector('.menu-tab.active');
@@ -711,7 +738,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // メニュー編集モーダル カテゴリ変更イベント
     if (menuCategorySelect) {
         menuCategorySelect.addEventListener('change', (e) => {
             if (e.target.value === 'set') {
@@ -723,7 +749,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // メニュー編集モーダル 保存ボタン
     if (saveMenuItemBtn) {
         saveMenuItemBtn.addEventListener('click', (e) => {
             e.preventDefault(); 
@@ -731,7 +756,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // メニュー管理ページ リストのイベント委任 (編集・削除)
     if (menuPage) {
         menuPage.addEventListener('click', (e) => {
             const editBtn = e.target.closest('.edit-menu-btn');
@@ -747,11 +771,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const menuId = deleteBtn.dataset.menuId;
                 const category = deleteBtn.dataset.category;
                 
-                // (重要) 本来は確認モーダルを実装すべき
-                // (変更) 確認なしで削除
-                deleteMenuItem(category, menuId);
+                // (重要) 確認モーダルを実装すべき
+                // (変更) 確認モーダルを挟む
+                if (confirm(`「${deleteBtn.closest('tr').querySelector('td').textContent}」を削除しますか？\nこの操作は取り消せません。`)) {
+                    deleteMenuItem(category, menuId);
+                }
                 return;
             }
         });
     }
 });
+

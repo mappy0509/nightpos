@@ -1,18 +1,15 @@
-// ===== Firebase =====
-// (新規) Firebase SDK と 初期化モジュールをインポート
-import { getFirebaseServices } from './firebase-init.js';
-import {
-    doc,
-    onSnapshot,
-    setDoc
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-// (新規) Firebaseサービス (db, auth, userId, appId) を保持するグローバル変数
-let db, auth, userId, appId;
-let stateDocRef; // (新規) Firestore の state ドキュメント参照
-let unsubscribeState = null; // (新規) onSnapshot の購読解除関数
+// (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
+import { 
+    db, 
+    auth, 
+    onSnapshot, 
+    setDoc, 
+    doc 
+} from './firebase-init.js';
+// (削除) getFirebaseServices のインポートを削除
 
 // ===== グローバル定数・変数 =====
+
 /**
  * UUIDを生成する
  * @returns {string} UUID
@@ -21,121 +18,20 @@ const getUUID = () => {
     return crypto.randomUUID();
 };
 
-// (変更) ===== state管理 =====
-
-// (削除) const LOCAL_STORAGE_KEY = 'nightPosState';
-
-/**
- * (変更) デフォルトのstateを定義する関数 (Firestore新規作成用)
- * @returns {object} デフォルトのstateオブジェクト
- */
-const getDefaultState = () => ({
-    currentPage: 'tables', // (変更) このページのデフォルト
-    currentStore: 'store1',
-    slipCounter: 0,
-    slipTagsMaster: [
-        { id: 'tag1', name: '指名' },
-        { id: 'tag2', name: '初指名' },
-        { id: 'tag3', name: '初回' },
-        { id: 'tag4', name: '枝' },
-        { id: 'tag5', name: '切替' },
-        { id: 'tag6', name: '案内所' },
-        { id: 'tag7', name: '20歳未満' },
-        { id: 'tag8', name: '同業' },
-    ],
-    casts: [
-        { id: 'c1', name: 'あい' },
-        { id: 'c2', name: 'みう' },
-        { id: 'c3', name: 'さくら' },
-    ],
-    customers: [
-        { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
-        { id: 'cust2', name: '田中様', nominatedCastId: null },
-    ],
-    tables: [
-        { id: 'V1', status: 'available' },
-        { id: 'V2', status: 'available' },
-        { id: 'T1', status: 'available' },
-    ],
-    slips: [],
-    menu: {
-        set: [
-            { id: 'm1', name: '基本セット (指名)', price: 10000, duration: 60 },
-            { id: 'm2', name: '基本セット (フリー)', price: 8000, duration: 60 },
-        ],
-        drink: [
-            { id: 'm7', name: 'キャストドリンク', price: 1500 },
-            { id: 'm8', name: 'ビール', price: 1000 },
-        ],
-        bottle: [],
-        food: [],
-        cast: [
-            { id: 'm14', name: '本指名料', price: 3000 },
-        ],
-        other: []
-    },
-    storeInfo: {
-        name: "Night POS 新宿本店",
-        address: "東京都新宿区歌舞伎町1-1-1",
-        tel: "03-0000-0000"
-    },
-    rates: {
-        tax: 0.10,
-        service: 0.20
-    },
-    dayChangeTime: "05:00",
-    performanceSettings: {
-        menuItems: {},
-        serviceCharge: { salesType: 'percentage', salesValue: 0 },
-        tax: { salesType: 'percentage', salesValue: 0 },
-        sideCustomer: { salesValue: 100, countNomination: true }
-    },
-    currentSlipId: null,
-    currentEditingMenuId: null,
-    currentBillingAmount: 0,
-    ranking: {
-        period: 'monthly',
-        type: 'nominations'
-    }
-});
-
-// (削除) loadState 関数
-// (削除) saveState 関数
-
-// (変更) グローバルな state は Firestore からのデータで上書きされる
-let state = getDefaultState();
-
-/**
- * (変更) state変更時にFirestoreに保存する
- * @param {object} newState 更新後のstateオブジェクト
- */
-const updateStateInFirestore = async (newState) => {
-    state = newState; // ローカルのstateを即時更新
-    if (stateDocRef) {
-        try {
-            await setDoc(stateDocRef, state);
-            console.log("State updated in Firestore");
-        } catch (e) {
-            console.error("Error updating state in Firestore:", e);
-        }
-    } else {
-        console.warn("stateDocRef is not ready. State not saved to Firestore.");
-    }
-};
-
-// (変更) 従来の updateState を updateStateInFirestore を呼ぶように変更
-const updateState = (newState) => {
-    state = newState;
-    updateStateInFirestore(newState);
-};
-
+// (変更) state は onSnapshot で取得するため、ローカルの state オブジェクトを削除
+let state = null;
+let stateDocRef = null; // (変更) stateDocRef をグローバルで保持
 
 // ===== DOM要素 =====
-// (変更) tables.js で不要なDOMを削除
-let navLinks, pages, pageTitle, tableGrid, 
-    orderModal, checkoutModal, receiptModal,
+// (変更) DOM要素をグローバルスコープに移動
+let navLinks, pages, pageTitle, tableGrid, dashboardSlips, menuTabsContainer, menuTabs,
+    menuTabContents, menuPage, allSlipsList, orderModal, checkoutModal, receiptModal,
     slipPreviewModal, modalCloseBtns, openSlipPreviewBtn, processPaymentBtn,
     printSlipBtn, goToCheckoutBtn, reopenSlipBtn, menuEditorModal,
+    menuEditorModalTitle, menuEditorForm, menuCategorySelect, menuNameInput,
+    menuDurationGroup, menuDurationInput, menuPriceInput, menuEditorError,
+    openNewMenuModalBtn, saveMenuItemBtn, setMenuTbody, drinkMenuTbody,
+    bottleMenuTbody, foodMenuTbody, castMenuTbody, otherMenuTbody,
     cancelSlipModal, openCancelSlipModalBtn, cancelSlipModalTitle, cancelSlipNumber,
     cancelSlipReasonInput, cancelSlipError, confirmCancelSlipBtn, slipSelectionModal,
     slipSelectionModalTitle, slipSelectionList, createNewSlipBtn, newSlipConfirmModal,
@@ -146,7 +42,13 @@ let navLinks, pages, pageTitle, tableGrid,
     checkoutSubtotalEl, checkoutServiceChargeEl, checkoutTaxEl, checkoutPaidAmountEl,
     checkoutTotalEl, paymentCashInput, paymentCardInput, paymentCreditInput,
     checkoutPaymentTotalEl, checkoutShortageEl, checkoutChangeEl, slipSubtotalEl,
-    slipServiceChargeEl, slipTaxEl, slipPaidAmountEl, slipTotalEl;
+    slipServiceChargeEl, slipTaxEl, slipPaidAmountEl, slipTotalEl, castRankingList,
+    rankingPeriodSelect, rankingTypeBtns,
+    // (新規) HTML側で追加したID
+    slipStoreName, slipStoreTel, slipServiceRate, slipTaxRate,
+    checkoutStoreName, checkoutStoreTel, checkoutServiceRate, checkoutTaxRate,
+    receiptStoreName, receiptAddress, receiptTel;
+
 
 // --- 関数 ---
 
@@ -165,22 +67,17 @@ const formatCurrency = (amount) => {
  * @returns {number} 合計金額
  */
 const calculateSlipTotal = (slip) => {
-    if (!slip || slip.status === 'cancelled') {
+    if (!state) return 0; // (変更) state がロードされるまで待つ
+    if (slip.status === 'cancelled') {
         return 0;
     }
     let subtotal = 0;
-    // (変更) slip.items が存在するかチェック
-    (slip.items || []).forEach(item => {
+    slip.items.forEach(item => {
         subtotal += item.price * item.qty;
     });
-    
-    // (変更) state.rates が存在するかチェック
-    const taxRate = (state.rates && state.rates.tax) ? state.rates.tax : 0.10;
-    const serviceRate = (state.rates && state.rates.service) ? state.rates.service : 0.20;
-
-    const serviceCharge = subtotal * serviceRate;
+    const serviceCharge = subtotal * state.rates.service;
     const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * taxRate;
+    const tax = subtotalWithService * state.rates.tax;
     const total = subtotalWithService + tax;
     return Math.round(total);
 };
@@ -197,9 +94,9 @@ const calculateSlipTotal = (slip) => {
  * @returns {string} キャスト名
  */
 const getCastNameById = (castId) => {
+    if (!state) return '不明'; // (変更) state がロードされるまで待つ
     if (!castId) return 'フリー';
-    // (変更) state.casts が存在するかチェック
-    const cast = (state.casts || []).find(c => c.id === castId);
+    const cast = state.casts.find(c => c.id === castId);
     return cast ? cast.name : '不明';
 };
 
@@ -210,8 +107,8 @@ const getCastNameById = (castId) => {
  * @returns {number} 未会計伝票数
  */
 const getActiveSlipCount = (tableId) => {
-    // (変更) state.slips が存在するかチェック
-    return (state.slips || []).filter(
+    if (!state) return 0; // (変更) state がロードされるまで待つ
+    return state.slips.filter(
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     ).length;
 };
@@ -226,11 +123,11 @@ const createTableCardHTML = (table) => {
     const activeSlips = getActiveSlipCount(table.id);
     const tableStatus = activeSlips > 0 ? 'occupied' : 'available';
     
-    // (変更) state.tables[N].status を直接更新 (ただし、Firestoreへの保存は呼び出し元で行う)
-    const tableInState = (state.tables || []).find(t => t.id === table.id);
-    if (tableInState) {
-        tableInState.status = tableStatus;
-    }
+    // (変更) state.tables[N].status を直接更新する (onSnapshot側で処理されるためローカルでの変更は不要かも)
+    // const tableInState = state.tables.find(t => t.id === table.id);
+    // if (tableInState) {
+    //     tableInState.status = tableStatus;
+    // }
 
     switch (tableStatus) {
         case 'available':
@@ -272,11 +169,15 @@ const createTableCardHTML = (table) => {
  * (変更) テーブル管理画面を描画する
  */
 const renderTableGrid = () => {
-    if (!tableGrid) return;
+    if (!tableGrid || !state) return; // (変更) state がロードされるまで待つ
     tableGrid.innerHTML = ''; 
 
-    // (変更) state.tables が存在するかチェック
-    (state.tables || []).forEach(table => {
+    // (変更) state.tables をソートして表示
+    const sortedTables = [...state.tables].sort((a, b) => 
+        a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
+    );
+
+    sortedTables.forEach(table => {
         tableGrid.innerHTML += createTableCardHTML(table);
     });
 
@@ -299,23 +200,21 @@ const renderTableGrid = () => {
  * (変更) 伝票モーダル（注文入力）を描画する
  */
 const renderOrderModal = () => {
-    // (変更) state.slips が存在するかチェック
-    const slipData = (state.slips || []).find(s => s.slipId === state.currentSlipId);
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
     if (!slipData) return;
     
     orderModalTitle.textContent = `テーブル ${slipData.tableId} (No.${slipData.slipNumber} - ${slipData.name})`;
 
     orderNominationSelect.innerHTML = '<option value="null">フリー</option>';
-    // (変更) state.casts が存在するかチェック
-    (state.casts || []).forEach(cast => {
+    state.casts.forEach(cast => {
         orderNominationSelect.innerHTML += `<option value="${cast.id}">${cast.name}</option>`;
     });
     orderNominationSelect.value = slipData.nominationCastId || 'null';
 
     renderCustomerDropdown(slipData.nominationCastId);
     
-    // (変更) state.customers が存在するかチェック
-    const customerExists = (state.customers || []).find(c => c.name === slipData.name);
+    const customerExists = state.customers.find(c => c.name === slipData.name);
     if (customerExists) {
         orderCustomerNameSelect.value = slipData.name;
         newCustomerInputGroup.classList.add('hidden');
@@ -325,11 +224,13 @@ const renderOrderModal = () => {
         newCustomerNameInput.value = (slipData.name === "新規のお客様") ? "" : slipData.name;
     }
     newCustomerError.textContent = '';
+
+    // (新規) 伝票タグを描画
+    renderSlipTags(slipData);
     
     orderItemsList.innerHTML = '';
     let subtotal = 0;
-    // (変更) slipData.items が存在するかチェック
-    (slipData.items || []).forEach(item => {
+    slipData.items.forEach(item => {
         subtotal += item.price * item.qty;
         orderItemsList.innerHTML += `
             <div class="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border">
@@ -350,15 +251,15 @@ const renderOrderModal = () => {
     
     orderSubtotalEl.textContent = formatCurrency(subtotal);
 
+    // メニュー選択グリッドを描画 (変更)
     if (menuOrderGrid.innerHTML === '') { 
-        // (変更) state.menu の全カテゴリを安全に結合
         const allMenuItems = [
-            ...(state.menu?.set || []), 
-            ...(state.menu?.drink || []), 
-            ...(state.menu?.bottle || []),
-            ...(state.menu?.food || []),
-            ...(state.menu?.cast || []),
-            ...(state.menu?.other || [])
+            ...(state.menu.set || []), 
+            ...(state.menu.drink || []), 
+            ...(state.menu.bottle || []),
+            ...(state.menu.food || []),
+            ...(state.menu.cast || []),
+            ...(state.menu.other || [])
         ];
         allMenuItems.forEach(item => {
             menuOrderGrid.innerHTML += `
@@ -375,14 +276,58 @@ const renderOrderModal = () => {
 };
 
 /**
+ * (新規) 伝票タグを描画する
+ * @param {object} slipData 
+ */
+const renderSlipTags = (slipData) => {
+    const container = document.getElementById('order-tags-container');
+    if (!container || !state) return;
+    container.innerHTML = '';
+    
+    state.slipTagsMaster.forEach(tag => {
+        const isSelected = slipData.tags.includes(tag.name);
+        const tagClass = isSelected 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-slate-200 text-slate-700 hover:bg-slate-300';
+        
+        container.innerHTML += `
+            <button class="slip-tag-btn px-3 py-1.5 rounded-full text-sm font-medium ${tagClass}" data-tag-name="${tag.name}">
+                ${tag.name}
+            </button>
+        `;
+    });
+};
+
+/**
+ * (新規) 伝票にタグを追加/削除する
+ * @param {string} tagName 
+ */
+const toggleSlipTag = (tagName) => {
+    if (!state) return;
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
+    if (!slipData) return;
+    
+    const tagIndex = slipData.tags.indexOf(tagName);
+    if (tagIndex > -1) {
+        slipData.tags.splice(tagIndex, 1);
+    } else {
+        slipData.tags.push(tagName);
+    }
+    
+    updateStateInFirestore(state);
+    renderSlipTags(slipData);
+};
+
+
+/**
  * (新規) 顧客ドロップダウンを描画する
  * @param {string | null} selectedCastId 選択中のキャストID ('null' 文字列または実際のID)
  */
 const renderCustomerDropdown = (selectedCastId) => {
+    if (!state) return; // (変更) state がロードされるまで待つ
     const targetCastId = selectedCastId === 'null' ? null : selectedCastId;
 
-    // (変更) state.customers が存在するかチェック
-    const filteredCustomers = (state.customers || []).filter(
+    const filteredCustomers = state.customers.filter(
         customer => customer.nominatedCastId === targetCastId
     );
 
@@ -403,23 +348,21 @@ const renderCustomerDropdown = (selectedCastId) => {
  * (変更) 伝票モーダルの顧客情報フォームの変更をstate.slipsに反映する
  */
 const updateSlipInfo = () => {
-    // (変更) state.slips が存在するかチェック
-    const slipData = (state.slips || []).find(s => s.slipId === state.currentSlipId);
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
     if (!slipData) return;
 
     const customerName = orderCustomerNameSelect.value;
     const nominationCastId = orderNominationSelect.value === 'null' ? null : orderNominationSelect.value; 
 
-    if (customerName !== 'new_customer' && customerName !== "") {
+    if (customerName !== 'new_customer' && customerName !== "") { 
         slipData.name = customerName;
     }
-    slipData.nominationCastId = nominationCastId;
+    slipData.nominationCastId = nominationCastId; 
     
     orderModalTitle.textContent = `テーブル ${slipData.tableId} (No.${slipData.slipNumber} - ${slipData.name})`;
 
-    // (変更) stateを保存
-    updateState(state);
-    // (変更) UI更新はonSnapshotに任せる
+    updateStateInFirestore(state);
 };
 
 
@@ -430,14 +373,9 @@ const updateSlipInfo = () => {
  * @param {number} price 価格
  */
 const addOrderItem = (id, name, price) => {
-    // (変更) state.slips が存在するかチェック
-    const slipData = (state.slips || []).find(s => s.slipId === state.currentSlipId);
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
     if (!slipData) return;
-    
-    // (変更) slipData.items がない場合は初期化
-    if (!slipData.items) {
-        slipData.items = [];
-    }
 
     const existingItem = slipData.items.find(item => item.id === id);
     if (existingItem) {
@@ -446,9 +384,8 @@ const addOrderItem = (id, name, price) => {
         slipData.items.push({ id, name, price, qty: 1 });
     }
     
-    // (変更) stateを保存
-    updateState(state);
-    // (変更) UI更新はonSnapshotに任せる
+    updateStateInFirestore(state);
+    renderOrderModal();
 };
 
 /**
@@ -456,15 +393,14 @@ const addOrderItem = (id, name, price) => {
  * @param {string} id 商品ID
  */
 const removeOrderItem = (id) => {
-    // (変更) state.slips が存在するかチェック
-    const slipData = (state.slips || []).find(s => s.slipId === state.currentSlipId);
-    if (!slipData || !slipData.items) return;
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
+    if (!slipData) return;
 
     slipData.items = slipData.items.filter(item => item.id !== id);
     
-    // (変更) stateを保存
-    updateState(state);
-    // (変更) UI更新はonSnapshotに任せる
+    updateStateInFirestore(state);
+    renderOrderModal();
 };
 
 /**
@@ -473,18 +409,17 @@ const removeOrderItem = (id) => {
  * @param {number} qty 数量
  */
 const updateOrderItemQty = (id, qty) => {
-    // (変更) state.slips が存在するかチェック
-    const slipData = (state.slips || []).find(s => s.slipId === state.currentSlipId);
-    if (!slipData || !slipData.items) return;
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
+    if (!slipData) return;
 
     const item = slipData.items.find(item => item.id === id);
     if (item) {
         item.qty = qty;
     }
     
-    // (変更) stateを保存
-    updateState(state);
-    // (変更) UI更新はonSnapshotに任せる
+    updateStateInFirestore(state);
+    renderOrderModal();
 };
 
 /**
@@ -494,19 +429,44 @@ const updateOrderItemQty = (id, qty) => {
 
 
 /**
+ * (変更) 伝票・会計・領収書モーダルの共通情報を更新する
+ * (店舗名、税率など)
+ */
+const updateModalCommonInfo = () => {
+    if (!state) return;
+
+    const store = state.storeInfo;
+    const rates = state.rates;
+
+    // 伝票プレビュー
+    if (slipStoreName) slipStoreName.textContent = store.name;
+    if (slipStoreTel) slipStoreTel.textContent = `TEL: ${store.tel}`;
+    if (slipServiceRate) slipServiceRate.textContent = `サービス料 (${rates.service * 100}%)`;
+    if (slipTaxRate) slipTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
+
+    // 会計
+    if (checkoutStoreName) checkoutStoreName.textContent = store.name;
+    if (checkoutStoreTel) checkoutStoreTel.textContent = `TEL: ${store.tel}`;
+    if (checkoutServiceRate) checkoutServiceRate.textContent = `サービス料 (${rates.service * 100}%)`;
+    if (checkoutTaxRate) checkoutTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
+
+    // 領収書
+    if (receiptStoreName) receiptStoreName.textContent = store.name;
+    if (receiptAddress) receiptAddress.innerHTML = `〒${store.zip || ''}<br>${store.address || ''}`;
+    if (receiptTel) receiptTel.textContent = `TEL: ${store.tel}`;
+};
+
+
+/**
  * (変更) 伝票プレビューモーダルを描画する
  */
 const renderSlipPreviewModal = () => {
-    // (変更) state.slips が存在するかチェック
-    const slipData = (state.slips || []).find(s => s.slipId === state.currentSlipId);
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
     if (!slipData) return;
-
+    
     slipData.status = 'checkout';
-    // (変更) stateを保存
-    updateState(state);
-
-    // (変更) UI更新はonSnapshotに任せる
-    // renderTableGrid(); 
+    updateStateInFirestore(state);
 
     document.getElementById('slip-preview-title').textContent = `伝票プレビュー (No.${slipData.slipNumber})`;
     
@@ -521,8 +481,7 @@ const renderSlipPreviewModal = () => {
     const slipItemsList = document.getElementById('slip-items-list');
     slipItemsList.innerHTML = '';
     let subtotal = 0;
-    // (変更) slipData.items が存在するかチェック
-    (slipData.items || []).forEach(item => {
+    slipData.items.forEach(item => {
         subtotal += item.price * item.qty;
         slipItemsList.innerHTML += `
             <div class="flex justify-between">
@@ -532,23 +491,18 @@ const renderSlipPreviewModal = () => {
         `;
     });
     
-    // (変更) stateの税率を使用 (calculateSlipTotalヘルパー関数経由)
-    const total = calculateSlipTotal(slipData);
-    
-    // (変更) 税率計算を calculateSlipTotal に依存
-    const serviceRate = (state.rates && state.rates.service) ? state.rates.service : 0.20;
-    const taxRate = (state.rates && state.rates.tax) ? state.rates.tax : 0.10;
-    const serviceCharge = subtotal * serviceRate;
+    const serviceCharge = subtotal * state.rates.service;
     const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * taxRate;
-    
+    const tax = subtotalWithService * state.rates.tax;
+    const total = Math.round(subtotalWithService + tax);
     const paidAmount = slipData.paidAmount || 0;
     const billingAmount = total - paidAmount;
 
     slipSubtotalEl.textContent = formatCurrency(subtotal);
-    slipServiceChargeEl.textContent = formatCurrency(serviceCharge);
-    slipTaxEl.textContent = formatCurrency(tax);
-    slipPaidAmountEl.textContent = formatCurrency(paidAmount);
+    slipServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
+    slipTaxEl.textContent = formatCurrency(Math.round(tax));
+    slipPaidAmountEl.parentElement.style.display = paidAmount > 0 ? 'flex' : 'none';
+    slipPaidAmountEl.textContent = `-${formatCurrency(paidAmount)}`;
     slipTotalEl.textContent = formatCurrency(billingAmount);
 };
 
@@ -557,16 +511,15 @@ const renderSlipPreviewModal = () => {
  * 会計モーダルを描画する
  */
 const renderCheckoutModal = () => {
-    // (変更) state.slips が存在するかチェック
-    const slipData = (state.slips || []).find(s => s.slipId === state.currentSlipId);
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
     if (!slipData) return;
 
     checkoutModalTitle.textContent = `テーブル ${slipData.tableId} (No.${slipData.slipNumber} - ${slipData.name}) - お会計`;
     
     let subtotal = 0;
     checkoutItemsList.innerHTML = '';
-    // (変更) slipData.items が存在するかチェック
-    (slipData.items || []).forEach(item => {
+    slipData.items.forEach(item => {
         subtotal += item.price * item.qty;
         checkoutItemsList.innerHTML += `
             <div class="flex justify-between">
@@ -576,28 +529,22 @@ const renderCheckoutModal = () => {
         `;
     });
     
-    // (変更) stateの税率を使用 (calculateSlipTotalヘルパー関数経由)
-    const total = calculateSlipTotal(slipData);
-    
-    // (変更) 税率計算を calculateSlipTotal に依存
-    const serviceRate = (state.rates && state.rates.service) ? state.rates.service : 0.20;
-    const taxRate = (state.rates && state.rates.tax) ? state.rates.tax : 0.10;
-    const serviceCharge = subtotal * serviceRate;
-    const tax = (subtotal + serviceCharge) * taxRate;
-    
+    const serviceCharge = subtotal * state.rates.service;
+    const subtotalWithService = subtotal + serviceCharge;
+    const tax = subtotalWithService * state.rates.tax;
+    const total = Math.round(subtotalWithService + tax);
     const paidAmount = slipData.paidAmount || 0;
     const billingAmount = total - paidAmount; 
 
     const finalBillingAmount = billingAmount; 
 
-    // (変更) ローカルの state のみを更新し、Firestoreへの保存はしない
     state.currentBillingAmount = finalBillingAmount;
 
-
     checkoutSubtotalEl.textContent = formatCurrency(subtotal);
-    checkoutServiceChargeEl.textContent = formatCurrency(serviceCharge);
-    checkoutTaxEl.textContent = formatCurrency(tax);
-    checkoutPaidAmountEl.textContent = formatCurrency(paidAmount);
+    checkoutServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
+    checkoutTaxEl.textContent = formatCurrency(Math.round(tax));
+    checkoutPaidAmountEl.parentElement.style.display = paidAmount > 0 ? 'flex' : 'none';
+    checkoutPaidAmountEl.textContent = `-${formatCurrency(paidAmount)}`;
     checkoutTotalEl.textContent = formatCurrency(finalBillingAmount);
     
     paymentCashInput.value = '';
@@ -613,6 +560,7 @@ const renderCheckoutModal = () => {
  * (新規) 会計モーダルの支払い状況を計算・更新する
  */
 const updatePaymentStatus = () => {
+    if (!state) return; // (変更) state がロードされるまで待つ
     const billingAmount = state.currentBillingAmount;
 
     const cashPayment = parseInt(paymentCashInput.value) || 0;
@@ -656,11 +604,11 @@ const updatePaymentStatus = () => {
  * 領収書モーダルを描画する
  */
 const renderReceiptModal = () => {
+    if (!state) return; // (変更) state がロードされるまで待つ
     const now = new Date();
     document.getElementById('receipt-date').textContent = now.toLocaleDateString('ja-JP');
     
-    // (変更) state.slips が存在するかチェック
-    const slipData = (state.slips || []).find(s => s.slipId === state.currentSlipId);
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
     if (slipData) {
         document.querySelector('#receipt-content input[type="text"]').value = slipData.name || '';
     }
@@ -670,8 +618,8 @@ const renderReceiptModal = () => {
  * (新規) ボツ伝理由入力モーダルを描画する
  */
 const renderCancelSlipModal = () => {
-    // (変更) state.slips が存在するかチェック
-    const slip = (state.slips || []).find(s => s.slipId === state.currentSlipId);
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const slip = state.slips.find(s => s.slipId === state.currentSlipId);
     if (!slip) return;
 
     cancelSlipNumber.textContent = slip.slipNumber;
@@ -706,11 +654,11 @@ const closeModal = (modalElement) => {
  * @param {string} tableId 
  */
 const createNewSlip = (tableId) => {
-    // (変更) state.tables が存在するかチェック
-    const table = (state.tables || []).find(t => t.id === tableId);
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const table = state.tables.find(t => t.id === tableId);
     if (!table) return;
 
-    const newSlipCounter = state.slipCounter + 1;
+    const newSlipCounter = (state.slipCounter || 0) + 1;
     const newSlipNumber = newSlipCounter;
 
     const newSlip = {
@@ -720,7 +668,7 @@ const createNewSlip = (tableId) => {
         status: 'active',
         name: "新規のお客様",
         startTime: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-        nominationCastId: null,
+        nominationCastId: null, 
         items: [],
         tags: [],
         paidAmount: 0,
@@ -728,26 +676,14 @@ const createNewSlip = (tableId) => {
         paymentDetails: { cash: 0, card: 0, credit: 0 }
     };
     
-    // (変更) stateを更新
-    const newSlips = [...(state.slips || []), newSlip];
-    const newTables = (state.tables || []).map(t => 
-        t.id === tableId ? { ...t, status: 'occupied' } : t
-    );
-    
-    // (変更) currentSlipId を設定してから updateState を呼ぶ
+    state.slips.push(newSlip);
+    // (変更) state.tables のステータスは onSnapshot で自動更新されるので、直接変更しない
+    // state.tables.find(t => t.id === tableId).status = 'occupied';
+    state.slipCounter = newSlipCounter;
     state.currentSlipId = newSlip.slipId;
-    updateState({ 
-        ...state, 
-        slips: newSlips, 
-        tables: newTables, 
-        slipCounter: newSlipCounter,
-        currentSlipId: newSlip.slipId
-    });
-
-    // (変更) UI更新はonSnapshotに任せる
-    // renderTableGrid(); 
     
-    // (変更) renderOrderModal は即時実行
+    updateStateInFirestore(state);
+
     renderOrderModal();
     openModal(orderModal);
 };
@@ -757,11 +693,11 @@ const createNewSlip = (tableId) => {
  * @param {string} tableId 
  */
 const renderSlipSelectionModal = (tableId) => {
+    if (!state) return; // (変更) state がロードされるまで待つ
     slipSelectionModalTitle.textContent = `テーブル ${tableId} の伝票一覧`;
     slipSelectionList.innerHTML = '';
 
-    // (変更) state.slips が存在するかチェック
-    const activeSlips = (state.slips || []).filter(
+    const activeSlips = state.slips.filter(
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     );
     
@@ -795,14 +731,9 @@ const renderSlipSelectionModal = (tableId) => {
             `;
         });
     }
-
-    // (変更) イベントリスナーは DOMContentLoaded 内で一括設定
-    // slipSelectionList.querySelectorAll('button[data-slip-id]').forEach(btn => { ... });
-
-    // (新規) モーダルを開くたびに、ボタンに現在のテーブルIDをセット
-    if(createNewSlipBtn) createNewSlipBtn.dataset.tableId = tableId;
-
-
+    
+    // (変更) createNewSlipBtn に tableId を設定
+    createNewSlipBtn.dataset.tableId = tableId;
     openModal(slipSelectionModal);
 };
 
@@ -814,11 +745,8 @@ const renderNewSlipConfirmModal = (tableId) => {
     newSlipConfirmTitle.textContent = `伝票の新規作成 (${tableId})`;
     newSlipConfirmMessage.textContent = `テーブル ${tableId} で新しい伝票を作成しますか？`;
 
-    // (変更) イベントリスナーは DOMContentLoaded 内で一括設定
-    // confirmCreateSlipBtn.onclick = null; 
-    
-    // (新規) モーダルを開くたびに、ボタンに現在のテーブルIDをセット
-    if(confirmCreateSlipBtn) confirmCreateSlipBtn.dataset.tableId = tableId;
+    // (変更) confirmCreateSlipBtn に tableId を設定
+    confirmCreateSlipBtn.dataset.tableId = tableId; 
 
     openModal(newSlipConfirmModal);
 };
@@ -829,8 +757,8 @@ const renderNewSlipConfirmModal = (tableId) => {
  * @param {string} tableId 
  */
 const handleTableClick = (tableId) => {
-    // (変更) state.tables が存在するかチェック
-    const tableData = (state.tables || []).find(t => t.id === tableId);
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const tableData = state.tables.find(t => t.id === tableId);
     if (!tableData) return;
     
     const activeSlips = getActiveSlipCount(tableId);
@@ -848,12 +776,13 @@ const handleTableClick = (tableId) => {
  * @param {string} slipId 
  */
 const handleSlipClick = (slipId) => {
-    // (変更) state.slips が存在するかチェック
-    const slipData = (state.slips || []).find(s => s.slipId === slipId);
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const slipData = state.slips.find(s => s.slipId === slipId);
     if (!slipData) return;
 
-    // (変更) stateで管理
-    updateState({ ...state, currentSlipId: slipId });
+    state.currentSlipId = slipId;
+    updateStateInFirestore(state);
+    
     renderOrderModal();
     openModal(orderModal);
 };
@@ -863,8 +792,10 @@ const handleSlipClick = (slipId) => {
  * @param {string} slipId 
  */
 const handlePaidSlipClick = (slipId) => {
-    // (変更) stateで管理
-    updateState({ ...state, currentSlipId: slipId });
+    if (!state) return; // (変更) state がロードされるまで待つ
+
+    state.currentSlipId = slipId;
+    updateStateInFirestore(state);
     
     renderCheckoutModal(); 
     renderReceiptModal();
@@ -877,23 +808,138 @@ const handlePaidSlipClick = (slipId) => {
  */
 // const renderCastRanking = () => { ... };
 
+// (新規) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+const getDefaultState = () => ({
+    currentPage: 'tables',
+    currentStore: 'store1',
+    slipCounter: 0,
+    slipTagsMaster: [
+        { id: 'tag1', name: '指名' }, { id: 'tag2', name: '初指名' },
+        { id: 'tag3', name: '初回' }, { id: 'tag4', name: '枝' },
+        { id: 'tag5', name: '切替' }, { id: 'tag6', name: '案内所' },
+        { id: 'tag7', name: '20歳未満' }, { id: 'tag8', name: '同業' },
+    ],
+    casts: [ 
+        { id: 'c1', name: 'あい' }, { id: 'c2', name: 'みう' },
+        { id: 'c3', name: 'さくら' }, { id: 'c4', name: 'れな' },
+        { id: 'c5', name: 'ひな' }, { id: 'c6', name: '体験A' },
+    ],
+    customers: [
+        { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
+        { id: 'cust2', name: '田中様', nominatedCastId: null },
+        { id: 'cust3', name: '佐藤様', nominatedCastId: 'c2' },
+    ],
+    tables: [
+        { id: 'V1', status: 'available' }, { id: 'V2', status: 'available' },
+        { id: 'T1', status: 'available' }, { id: 'T2', status: 'available' },
+        { id: 'C1', status: 'available' }, { id: 'C2', status: 'available' },
+    ],
+    slips: [],
+    menu: {
+        set: [
+            { id: 'm1', name: '基本セット (指名)', price: 10000, duration: 60 },
+            { id: 'm2', name: '基本セット (フリー)', price: 8000, duration: 60 },
+        ],
+        drink: [{ id: 'm7', name: 'キャストドリンク', price: 1500 }],
+        bottle: [{ id: 'm11', name: '鏡月 (ボトル)', price: 8000 }],
+        food: [],
+        cast: [{ id: 'm14', name: '本指名料', price: 3000 }],
+        other: [],
+    },
+    storeInfo: {
+        name: "Night POS",
+        address: "東京都新宿区歌舞伎町1-1-1",
+        tel: "03-0000-0000"
+    },
+    rates: { tax: 0.10, service: 0.20 },
+    dayChangeTime: "05:00",
+    performanceSettings: {
+        menuItems: {
+            'm14': { salesType: 'percentage', salesValue: 100, countNomination: true }
+        },
+        serviceCharge: { salesType: 'percentage', salesValue: 0 },
+        tax: { salesType: 'percentage', salesValue: 0 },
+        sideCustomer: { salesValue: 100, countNomination: true }
+    },
+    currentSlipId: null, 
+    currentEditingMenuId: null,
+    currentBillingAmount: 0, 
+    ranking: { period: 'monthly', type: 'nominations' }
+});
+
+// (新規) Firestore への state 保存関数（エラーハンドリング付き）
+const updateStateInFirestore = async (newState) => {
+    if (!stateDocRef) {
+        console.error("stateDocRef is not ready. State not saved to Firestore.");
+        return;
+    }
+    try {
+        await setDoc(stateDocRef, newState); 
+    } catch (error) {
+        console.error("Error saving state to Firestore:", error);
+    }
+};
+
+// (変更) --- Firestore リアルタイムリスナー ---
+// firebaseReady イベントを待ってからリスナーを設定
+document.addEventListener('firebaseReady', (e) => {
+    const { db, auth, userId, stateRef: ref } = e.detail;
+    
+    if (!ref) {
+        console.error("Firestore reference (stateRef) is not available.");
+        return;
+    }
+    
+    stateDocRef = ref;
+
+    onSnapshot(stateDocRef, async (docSnap) => {
+        if (docSnap.exists()) {
+            console.log("Firestore data loaded.");
+            state = docSnap.data();
+            
+            // (重要) state がロードされたら、UIを初回描画
+            renderTableGrid();
+            updateModalCommonInfo(); // (新規) モーダル内の共通情報を更新
+            
+        } else {
+            console.log("No state document found. Creating default state...");
+            const defaultState = getDefaultState();
+            state = defaultState;
+            
+            try {
+                await setDoc(stateDocRef, defaultState);
+                console.log("Default state saved to Firestore.");
+                // (重要) state がロードされたら、UIを初回描画
+                renderTableGrid();
+                updateModalCommonInfo(); // (新規) モーダル内の共通情報を更新
+                
+            } catch (error) {
+                console.error("Error saving default state to Firestore:", error);
+            }
+        }
+    }, (error) => {
+        console.error("Error listening to Firestore snapshot:", error);
+        if (error.code === 'permission-denied') {
+            document.body.innerHTML = `<div class="p-8 text-center text-red-600">データベースへのアクセスが拒否されました。Firestoreのセキュリティルール（state/{userId}）が正しく設定されているか確認してください。</div>`;
+        }
+    });
+});
+
 
 // --- イベントリスナー ---
-
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
     
     // ===== DOM要素の取得 =====
     navLinks = document.querySelectorAll('.nav-link');
     pages = document.querySelectorAll('[data-page]');
     pageTitle = document.getElementById('page-title');
     tableGrid = document.getElementById('table-grid'); 
-    // (変更) tables.js で不要なDOMを削除
-    // dashboardSlips = document.getElementById('dashboard-slips');
-    // menuTabsContainer = document.getElementById('menu-tabs');
-    // menuTabs = document.querySelectorAll('.menu-tab');
-    // menuTabContents = document.querySelectorAll('.menu-tab-content');
-    // menuPage = document.getElementById('menu'); 
-    // allSlipsList = document.getElementById('all-slips-list'); 
+    dashboardSlips = document.getElementById('dashboard-slips'); 
+    menuTabsContainer = document.getElementById('menu-tabs'); 
+    menuTabs = document.querySelectorAll('.menu-tab'); 
+    menuTabContents = document.querySelectorAll('.menu-tab-content'); 
+    menuPage = document.getElementById('menu'); 
+    allSlipsList = document.getElementById('all-slips-list'); 
     orderModal = document.getElementById('order-modal');
     checkoutModal = document.getElementById('checkout-modal');
     receiptModal = document.getElementById('receipt-modal');
@@ -905,23 +951,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     goToCheckoutBtn = document.getElementById('go-to-checkout-btn');
     reopenSlipBtn = document.getElementById('reopen-slip-btn');
     menuEditorModal = document.getElementById('menu-editor-modal');
-    // (変更) tables.js で不要なDOMを削除
-    // menuEditorModalTitle = document.getElementById('menu-editor-modal-title');
-    // menuEditorForm = document.getElementById('menu-editor-form');
-    // menuCategorySelect = document.getElementById('menu-category');
-    // menuNameInput = document.getElementById('menu-name');
-    // menuDurationGroup = document.getElementById('menu-duration-group');
-    // menuDurationInput = document.getElementById('menu-duration');
-    // menuPriceInput = document.getElementById('menu-price');
-    // menuEditorError = document.getElementById('menu-editor-error');
-    // openNewMenuModalBtn = document.getElementById('open-new-menu-modal-btn'); 
-    // saveMenuItemBtn = document.getElementById('save-menu-item-btn');
-    // setMenuTbody = document.getElementById('set-menu-tbody'); 
-    // drinkMenuTbody = document.getElementById('drink-menu-tbody'); 
-    // bottleMenuTbody = document.getElementById('bottle-menu-tbody'); 
-    // foodMenuTbody = document.getElementById('food-menu-tbody'); 
-    // castMenuTbody = document.getElementById('cast-menu-tbody'); 
-    // otherMenuTbody = document.getElementById('other-menu-tbody'); 
+    menuEditorModalTitle = document.getElementById('menu-editor-modal-title');
+    menuEditorForm = document.getElementById('menu-editor-form');
+    menuCategorySelect = document.getElementById('menu-category');
+    menuNameInput = document.getElementById('menu-name');
+    menuDurationGroup = document.getElementById('menu-duration-group');
+    menuDurationInput = document.getElementById('menu-duration');
+    menuPriceInput = document.getElementById('menu-price');
+    menuEditorError = document.getElementById('menu-editor-error');
+    openNewMenuModalBtn = document.getElementById('open-new-menu-modal-btn'); 
+    saveMenuItemBtn = document.getElementById('save-menu-item-btn');
+    setMenuTbody = document.getElementById('set-menu-tbody'); 
+    drinkMenuTbody = document.getElementById('drink-menu-tbody'); 
+    bottleMenuTbody = document.getElementById('bottle-menu-tbody'); 
+    foodMenuTbody = document.getElementById('food-menu-tbody'); 
+    castMenuTbody = document.getElementById('cast-menu-tbody'); 
+    otherMenuTbody = document.getElementById('other-menu-tbody'); 
     cancelSlipModal = document.getElementById('cancel-slip-modal');
     openCancelSlipModalBtn = document.getElementById('open-cancel-slip-modal-btn');
     cancelSlipModalTitle = document.getElementById('cancel-slip-modal-title');
@@ -965,79 +1010,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     slipTaxEl = document.getElementById('slip-tax');
     slipPaidAmountEl = document.getElementById('slip-paid-amount');
     slipTotalEl = document.getElementById('slip-total');
-    // (変更) tables.js で不要なDOMを削除
-    // castRankingList = document.getElementById('cast-ranking-list');
-    // rankingPeriodSelect = document.getElementById('ranking-period-select');
-    // rankingTypeBtns = document.querySelectorAll('.ranking-type-btn');
+    castRankingList = document.getElementById('cast-ranking-list'); 
+    rankingPeriodSelect = document.getElementById('ranking-period-select'); 
+    rankingTypeBtns = document.querySelectorAll('.ranking-type-btn'); 
 
-    // ===== (新規) Firebase 初期化とデータリッスン =====
-    try {
-        const services = await getFirebaseServices();
-        db = services.db;
-        auth = services.auth;
-        userId = services.userId;
-        appId = services.appId;
+    // (新規) モーダル共通情報のDOM
+    slipStoreName = document.getElementById('slip-store-name');
+    slipStoreTel = document.getElementById('slip-store-tel');
+    slipServiceRate = document.getElementById('slip-service-rate');
+    slipTaxRate = document.getElementById('slip-tax-rate');
+    checkoutStoreName = document.getElementById('checkout-store-name');
+    checkoutStoreTel = document.getElementById('checkout-store-tel');
+    checkoutServiceRate = document.getElementById('checkout-service-rate');
+    checkoutTaxRate = document.getElementById('checkout-tax-rate');
+    receiptStoreName = document.getElementById('receipt-store-name');
+    receiptAddress = document.getElementById('receipt-address');
+    receiptTel = document.getElementById('receipt-tel');
 
-        // (新規) ユーザーの state ドキュメントへの参照を作成
-        stateDocRef = doc(db, "artifacts", appId, "users", userId, "data", "mainState");
-
-        // (新規) Firestore の state をリアルタイムでリッスン
-        if (unsubscribeState) unsubscribeState(); 
-        
-        unsubscribeState = onSnapshot(stateDocRef, (doc) => {
-            if (doc.exists()) {
-                const firestoreState = doc.data();
-                const defaultState = getDefaultState();
-                state = { 
-                    ...defaultState, 
-                    ...firestoreState,
-                    storeInfo: { ...defaultState.storeInfo, ...(firestoreState.storeInfo || {}) },
-                    rates: { ...defaultState.rates, ...(firestoreState.rates || {}) },
-                    ranking: { ...defaultState.ranking, ...(firestoreState.ranking || {}) },
-                    menu: { ...defaultState.menu, ...(firestoreState.menu || {}) },
-                    performanceSettings: { 
-                        ...defaultState.performanceSettings, 
-                        ...(firestoreState.performanceSettings || {}),
-                        menuItems: { ...defaultState.performanceSettings.menuItems, ...(firestoreState.performanceSettings?.menuItems || {}) },
-                        serviceCharge: { ...defaultState.performanceSettings.serviceCharge, ...(firestoreState.performanceSettings?.serviceCharge || {}) },
-                        tax: { ...defaultState.performanceSettings.tax, ...(firestoreState.performanceSettings?.tax || {}) },
-                        sideCustomer: { ...defaultState.performanceSettings.sideCustomer, ...(firestoreState.performanceSettings?.sideCustomer || {}) },
-                    },
-                };
-                console.log("Local state updated from Firestore");
-            } else {
-                console.log("No state document found. Creating new one...");
-                state = getDefaultState();
-                updateStateInFirestore(state); 
-            }
-
-            // (新規) ページが tables の場合のみUIを更新
-            renderTableGrid();
-            
-            // (新規) 現在開いているモーダルがあれば再描画
-            if (orderModal.classList.contains('active')) {
-                renderOrderModal();
-            }
-            if (slipPreviewModal.classList.contains('active')) {
-                renderSlipPreviewModal();
-            }
-            if (checkoutModal.classList.contains('active')) {
-                // (変更) 会計モーダルは支払い入力中は再描画しない
-                // renderCheckoutModal();
-            }
-            if (receiptModal.classList.contains('active')) {
-                renderReceiptModal();
-            }
-
-        }, (error) => {
-            console.error("Error listening to state document:", error);
-        });
-
-    } catch (e) {
-        console.error("Failed to initialize Firebase or auth:", e);
-        // (新規) Firebaseが失敗した場合でも、ローカルのデフォルトstateでUIを描画
-        renderTableGrid();
-    }
+    // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
+    // renderTableGrid(); 
     
     // ===== イベントリスナーの設定 =====
 
@@ -1065,16 +1056,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
     
-    // (新規) 伝票モーダル: キャスト選択の変更イベント
     if (orderNominationSelect) {
         orderNominationSelect.addEventListener('change', (e) => {
             const selectedCastId = e.target.value;
-            renderCustomerDropdown(selectedCastId); 
+            renderCustomerDropdown(selectedCastId);
             updateSlipInfo(); 
         });
     }
 
-    // 伝票モーダルの顧客情報入力イベント
     if (orderCustomerNameSelect) {
         orderCustomerNameSelect.addEventListener('change', (e) => {
             if (e.target.value === 'new_customer') {
@@ -1083,10 +1072,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 newCustomerError.textContent = '';
                 newCustomerNameInput.focus();
                 
-                const slipData = (state.slips || []).find(s => s.slipId === state.currentSlipId);
-                if (slipData) {
-                    slipData.name = "新規のお客様";
-                    updateSlipInfo();
+                if (state) {
+                    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
+                    if (slipData) {
+                        slipData.name = "新規のお客様";
+                        updateSlipInfo();
+                    }
                 }
 
             } else {
@@ -1097,16 +1088,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // 新規顧客保存ボタン
     if (saveNewCustomerBtn) {
         saveNewCustomerBtn.addEventListener('click', () => {
+            if (!state) return;
             const newName = newCustomerNameInput.value.trim();
             if (newName === "") {
                 newCustomerError.textContent = "顧客名を入力してください。";
                 return;
             }
             
-            const existingCustomer = (state.customers || []).find(c => c.name === newName);
+            const existingCustomer = state.customers.find(c => c.name === newName);
             if (existingCustomer) {
                 newCustomerError.textContent = "その顧客名は既に使用されています。";
                 return;
@@ -1115,81 +1106,67 @@ document.addEventListener('DOMContentLoaded', async () => {
             const currentCastId = orderNominationSelect.value === 'null' ? null : orderNominationSelect.value;
             const newCustomer = { id: getUUID(), name: newName, nominatedCastId: currentCastId };
             
-            const newCustomers = [...(state.customers || []), newCustomer];
+            state.customers.push(newCustomer);
             
-            const slipData = (state.slips || []).find(s => s.slipId === state.currentSlipId);
+            const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
             if (slipData) {
                 slipData.name = newName;
             }
             
-            // (変更) stateを更新
-            updateState({ ...state, customers: newCustomers, slips: [...(state.slips || [])] });
+            renderCustomerDropdown(currentCastId);
+            orderCustomerNameSelect.value = newName;
             
-            // (変更) UI更新はonSnapshotに任せる
+            newCustomerInputGroup.classList.add('hidden');
+            newCustomerError.textContent = '';
+            
+            updateSlipInfo();
         });
     }
 
-    // 伝票モーダル -> 伝票プレビューモーダル
     if (openSlipPreviewBtn) {
         openSlipPreviewBtn.addEventListener('click', () => {
+            updateSlipInfo();
             renderSlipPreviewModal(); 
             closeModal(orderModal);
             openModal(slipPreviewModal);
         });
     }
 
-    // 伝票モーダル -> ボツ伝理由入力モーダル
     if (openCancelSlipModalBtn) {
         openCancelSlipModalBtn.addEventListener('click', () => {
             renderCancelSlipModal();
         });
     }
 
-    // ボツ伝理由入力モーダル -> 確定処理
     if (confirmCancelSlipBtn) {
         confirmCancelSlipBtn.addEventListener('click', () => {
+            if (!state) return;
             const reason = cancelSlipReasonInput.value.trim();
             if (reason === "") {
                 cancelSlipError.textContent = "ボツ伝にする理由を必ず入力してください。";
                 return;
             }
 
-            const slip = (state.slips || []).find(s => s.slipId === state.currentSlipId);
+            const slip = state.slips.find(s => s.slipId === state.currentSlipId);
             if (slip) {
                 slip.status = 'cancelled';
                 slip.cancelReason = reason;
                 
-                const otherActiveSlips = getActiveSlipCount(slip.tableId);
+                // (変更) state を丸ごと保存
+                updateStateInFirestore(state);
                 
-                let newTables = state.tables;
-                if (otherActiveSlips === 0) {
-                    const table = (state.tables || []).find(t => t.id === slip.tableId);
-                    if (table) {
-                        table.status = 'available';
-                        newTables = [...(state.tables || [])];
-                    }
-                }
-                
-                // (変更) stateを保存
-                updateState({ ...state, slips: [...(state.slips || [])], tables: newTables });
-                
-                // (変更) UI更新はonSnapshotに任せる
-                // renderTableGrid(); 
-
                 closeModal(orderModal);
                 closeModal(cancelSlipModal);
             }
         });
     }
 
-    // 伝票プレビューモーダル -> 印刷
     if (printSlipBtn) {
         printSlipBtn.addEventListener('click', () => {
             window.print();
         });
     }
 
-    // 伝票プレビューモーダル -> 会計モーダル
     if (goToCheckoutBtn) {
         goToCheckoutBtn.addEventListener('click', () => {
             renderCheckoutModal();
@@ -1198,7 +1175,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // 会計モーダル: 支払い金額入力イベント
     if (paymentCashInput) {
         paymentCashInput.addEventListener('input', updatePaymentStatus);
     }
@@ -1209,10 +1185,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         paymentCreditInput.addEventListener('input', updatePaymentStatus);
     }
 
-    // 会計モーダル -> 領収書モーダル
     if (processPaymentBtn) {
         processPaymentBtn.addEventListener('click', () => {
-            const slip = (state.slips || []).find(s => s.slipId === state.currentSlipId);
+            if (!state) return;
+            const slip = state.slips.find(s => s.slipId === state.currentSlipId);
             if (!slip) return;
 
             const total = calculateSlipTotal(slip);
@@ -1224,47 +1200,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
             slip.status = 'paid';
             
-            const otherActiveSlips = getActiveSlipCount(slip.tableId);
-            let newTables = state.tables;
-            if (otherActiveSlips === 0) {
-                const table = (state.tables || []).find(t => t.id === slip.tableId);
-                if (table) {
-                    table.status = 'available';
-                    newTables = [...(state.tables || [])];
-                }
-            }
-            
-            // (変更) stateを保存
-            updateState({ ...state, slips: [...(state.slips || [])], tables: newTables });
+            updateStateInFirestore(state);
 
             renderReceiptModal();
             closeModal(checkoutModal);
             openModal(receiptModal);
-            
-            // (変更) UI更新はonSnapshotに任せる
-            // renderTableGrid(); 
         });
     }
 
-    // 領収書モーダル -> 伝票復活
     if (reopenSlipBtn) {
         reopenSlipBtn.addEventListener('click', () => {
-            const slip = (state.slips || []).find(s => s.slipId === state.currentSlipId);
+            if (!state) return;
+            const slip = state.slips.find(s => s.slipId === state.currentSlipId);
             if (slip) {
                 slip.status = 'active'; 
                 slip.paidAmount = 0;
                 slip.paymentDetails = { cash: 0, card: 0, credit: 0 };
                 
-                const table = (state.tables || []).find(t => t.id === slip.tableId);
-                if (table) {
-                    table.status = 'occupied';
-                }
-                
-                // (変更) stateを保存
-                updateState({ ...state, slips: [...(state.slips || [])], tables: [...(state.tables || [])] });
-                
-                // (変更) UI更新はonSnapshotに任せる
-                // renderTableGrid(); 
+                updateStateInFirestore(state);
                 
                 closeModal(receiptModal);
                 handleSlipClick(state.currentSlipId);
@@ -1272,7 +1225,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // 注文リストのイベント委任（削除・数量変更）
     if (orderItemsList) {
         orderItemsList.addEventListener('click', (e) => {
             const removeBtn = e.target.closest('.remove-order-item-btn');
@@ -1298,50 +1250,63 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     
-    // (新規) メニューオーダーグリッドのイベント委任
+    // (新規) 伝票タグのイベント委任
+    const tagsContainer = document.getElementById('order-tags-container');
+    if (tagsContainer) {
+        tagsContainer.addEventListener('click', (e) => {
+            const tagBtn = e.target.closest('.slip-tag-btn');
+            if (tagBtn) {
+                toggleSlipTag(tagBtn.dataset.tagName);
+            }
+        });
+    }
+    
+    // (新規) 注文メニューのイベント委任
     if (menuOrderGrid) {
         menuOrderGrid.addEventListener('click', (e) => {
-            const addBtn = e.target.closest('.menu-order-btn');
-            if (addBtn) {
+            const menuBtn = e.target.closest('.menu-order-btn');
+            if (menuBtn) {
                 addOrderItem(
-                    addBtn.dataset.itemId,
-                    addBtn.dataset.itemName,
-                    parseInt(addBtn.dataset.itemPrice)
+                    menuBtn.dataset.itemId,
+                    menuBtn.dataset.itemName,
+                    parseInt(menuBtn.dataset.itemPrice)
                 );
             }
         });
     }
-
+    
     // (新規) 伝票選択モーダルのイベント委任
     if (slipSelectionList) {
         slipSelectionList.addEventListener('click', (e) => {
-            const btn = e.target.closest('button[data-slip-id]');
-            if (btn) {
-                handleSlipClick(btn.dataset.slipId);
+            const slipBtn = e.target.closest('button[data-slip-id]');
+            if (slipBtn) {
+                handleSlipClick(slipBtn.dataset.slipId);
                 closeModal(slipSelectionModal);
             }
         });
     }
 
-    // (新規) 伝票選択モーダル -> 新規作成ボタン
+    // (新規) 伝票選択モーダル -> 新規伝票作成
     if (createNewSlipBtn) {
         createNewSlipBtn.addEventListener('click', () => {
-            const currentTableId = createNewSlipBtn.dataset.tableId;
-            if (currentTableId) {
-                createNewSlip(currentTableId);
+            const tableId = createNewSlipBtn.dataset.tableId;
+            if (tableId) {
+                createNewSlip(tableId);
                 closeModal(slipSelectionModal);
             }
         });
     }
-
-    // (新規) 新規伝票確認モーダル -> 作成するボタン
+    
+    // (新規) 新規伝票確認モーダル -> OK
     if (confirmCreateSlipBtn) {
         confirmCreateSlipBtn.addEventListener('click', () => {
-            const currentTableId = confirmCreateSlipBtn.dataset.tableId;
-            if (currentTableId) {
-                createNewSlip(currentTableId);
+            const tableId = confirmCreateSlipBtn.dataset.tableId;
+            if (tableId) {
+                createNewSlip(tableId);
                 closeModal(newSlipConfirmModal);
             }
         });
     }
+    
 });
+

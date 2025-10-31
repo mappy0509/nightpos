@@ -1,18 +1,15 @@
-// ===== Firebase =====
-// (新規) Firebase SDK と 初期化モジュールをインポート
-import { getFirebaseServices } from './firebase-init.js';
-import {
-    doc,
-    onSnapshot,
-    setDoc
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-// (新規) Firebaseサービス (db, auth, userId, appId) を保持するグローバル変数
-let db, auth, userId, appId;
-let stateDocRef; // (新規) Firestore の state ドキュメント参照
-let unsubscribeState = null; // (新規) onSnapshot の購読解除関数
+// (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
+import { 
+    db, 
+    auth, 
+    onSnapshot, 
+    setDoc, 
+    doc 
+} from './firebase-init.js';
+// (削除) getFirebaseServices のインポートを削除
 
 // ===== グローバル定数・変数 =====
+
 /**
  * UUIDを生成する
  * @returns {string} UUID
@@ -21,130 +18,24 @@ const getUUID = () => {
     return crypto.randomUUID();
 };
 
-// (変更) ===== state管理 =====
-
-// (削除) const LOCAL_STORAGE_KEY = 'nightPosState';
-
-/**
- * (変更) デフォルトのstateを定義する関数 (Firestore新規作成用)
- * @returns {object} デフォルトのstateオブジェクト
- */
-const getDefaultState = () => ({
-    currentPage: 'settings', // (変更) このページのデフォルト
-    currentStore: 'store1',
-    slipCounter: 0,
-    slipTagsMaster: [
-        { id: 'tag1', name: '指名' },
-        { id: 'tag2', name: '初指名' },
-        { id: 'tag3', name: '初回' },
-        { id: 'tag4', name: '枝' },
-        { id: 'tag5', name: '切替' },
-        { id: 'tag6', name: '案内所' },
-        { id: 'tag7', name: '20歳未満' },
-        { id: 'tag8', name: '同業' },
-    ],
-    casts: [
-        { id: 'c1', name: 'あい' },
-        { id: 'c2', name: 'みう' },
-        { id: 'c3', name: 'さくら' },
-    ],
-    customers: [
-        { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
-        { id: 'cust2', name: '田中様', nominatedCastId: null },
-    ],
-    tables: [
-        { id: 'V1', status: 'available' },
-        { id: 'V2', status: 'available' },
-        { id: 'T1', status: 'available' },
-    ],
-    slips: [],
-    menu: {
-        set: [
-            { id: 'm1', name: '基本セット (指名)', price: 10000, duration: 60 },
-            { id: 'm2', name: '基本セット (フリー)', price: 8000, duration: 60 },
-        ],
-        drink: [
-            { id: 'm7', name: 'キャストドリンク', price: 1500 },
-            { id: 'm8', name: 'ビール', price: 1000 },
-        ],
-        bottle: [],
-        food: [],
-        cast: [
-            { id: 'm14', name: '本指名料', price: 3000 },
-        ],
-        other: []
-    },
-    storeInfo: {
-        name: "Night POS 新宿本店",
-        address: "東京都新宿区歌舞伎町1-1-1",
-        tel: "03-0000-0000"
-    },
-    rates: {
-        tax: 0.10,
-        service: 0.20
-    },
-    dayChangeTime: "05:00",
-    performanceSettings: {
-        menuItems: {},
-        serviceCharge: { salesType: 'percentage', salesValue: 0 },
-        tax: { salesType: 'percentage', salesValue: 0 },
-        sideCustomer: { salesValue: 100, countNomination: true }
-    },
-    currentSlipId: null,
-    currentEditingMenuId: null,
-    currentBillingAmount: 0,
-    ranking: {
-        period: 'monthly',
-        type: 'nominations'
-    }
-});
-
-// (削除) loadState 関数
-// (削除) saveState 関数
-
-// (変更) グローバルな state は Firestore からのデータで上書きされる
-let state = getDefaultState();
-
-/**
- * (変更) state変更時にFirestoreに保存する
- * @param {object} newState 更新後のstateオブジェクト
- */
-const updateStateInFirestore = async (newState) => {
-    state = newState; // ローカルのstateを即時更新
-    if (stateDocRef) {
-        try {
-            await setDoc(stateDocRef, state);
-            console.log("State updated in Firestore");
-        } catch (e) {
-            console.error("Error updating state in Firestore:", e);
-        }
-    } else {
-        console.warn("stateDocRef is not ready. State not saved to Firestore.");
-    }
-};
-
-// (変更) 従来の updateState を updateStateInFirestore を呼ぶように変更
-const updateState = (newState) => {
-    state = newState;
-    updateStateInFirestore(newState);
-};
-
+// (変更) state は onSnapshot で取得するため、ローカルの state オブジェクトを削除
+let state = null;
+let stateDocRef = null; // (変更) stateDocRef をグローバルで保持
 
 // ===== DOM要素 =====
-// (変更) settings.jsで必要なDOMのみ
+// (変更) DOM要素をグローバルスコープに移動
 let modalCloseBtns,
     storeNameInput, storeAddressInput, storeTelInput,
     taxRateInput, serviceRateInput,
-    dayChangeTimeInput, // (新規)
+    dayChangeTimeInput,
     saveSettingsBtn, settingsFeedback,
-    // (新規) テーブル設定用DOM
     newTableIdInput, addTableBtn, currentTablesList, tableSettingsError,
-    // (新規) 成績設定用DOM
-    performanceCastItemsContainer, // (変更) IDに合わせて変更
-    settingServiceCharge, // (変更) IDに合わせて変更
-    settingTax, // (変更) IDに合わせて変更
-    settingBranchSales, // (変更) IDに合わせて変更
-    settingBranchNoms; // (変更) IDに合わせて変更
+    // (変更) 成績設定用DOM
+    performanceCastItemsContainer, // (変更) ID を修正
+    settingServiceCharge, // (変更) ID を修正
+    settingTax, // (変更) ID を修正
+    settingBranchSales, // (変更) ID を修正
+    settingBranchNoms; // (変更) ID を修正
 
 // --- 関数 ---
 
@@ -163,22 +54,17 @@ const formatCurrency = (amount) => {
  * @returns {number} 合計金額
  */
 const calculateSlipTotal = (slip) => {
-    if (!slip || slip.status === 'cancelled') {
+    if (!state) return 0; // (変更) state がロードされるまで待つ
+    if (slip.status === 'cancelled') {
         return 0;
     }
     let subtotal = 0;
-    // (変更) slip.items が存在するかチェック
-    (slip.items || []).forEach(item => {
+    slip.items.forEach(item => {
         subtotal += item.price * item.qty;
     });
-    
-    // (変更) state.rates が存在するかチェック
-    const taxRate = (state.rates && state.rates.tax) ? state.rates.tax : 0.10;
-    const serviceRate = (state.rates && state.rates.service) ? state.rates.service : 0.20;
-
-    const serviceCharge = subtotal * serviceRate;
+    const serviceCharge = subtotal * state.rates.service;
     const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * taxRate;
+    const tax = subtotalWithService * state.rates.tax;
     const total = subtotalWithService + tax;
     return Math.round(total);
 };
@@ -190,9 +76,9 @@ const calculateSlipTotal = (slip) => {
  * @returns {string} キャスト名
  */
 const getCastNameById = (castId) => {
+    if (!state) return '不明'; // (変更) state がロードされるまで待つ
     if (!castId) return 'フリー';
-    // (変更) state.casts が存在するかチェック
-    const cast = (state.casts || []).find(c => c.id === castId);
+    const cast = state.casts.find(c => c.id === castId);
     return cast ? cast.name : '不明';
 };
 
@@ -203,8 +89,8 @@ const getCastNameById = (castId) => {
  * @returns {number} 未会計伝票数
  */
 const getActiveSlipCount = (tableId) => {
-    // (変更) state.slips が存在するかチェック
-    return (state.slips || []).filter(
+    if (!state) return 0; // (変更) state がロードされるまで待つ
+    return state.slips.filter(
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     ).length;
 };
@@ -226,21 +112,18 @@ const closeModal = (modalElement) => {
  * (新規) 設定フォームに現在の値を読み込む
  */
 const loadSettingsToForm = () => {
-    // (変更) state.storeInfo が存在するかチェック
-    if (storeNameInput && state.storeInfo) storeNameInput.value = state.storeInfo.name;
-    if (storeAddressInput && state.storeInfo) storeAddressInput.value = state.storeInfo.address;
-    if (storeTelInput && state.storeInfo) storeTelInput.value = state.storeInfo.tel;
+    if (!state) return; // (変更) state がロードされるまで待つ
 
-    // (変更) 0.10 -> 10 のように % に変換して表示
-    if (taxRateInput && state.rates) taxRateInput.value = state.rates.tax * 100;
-    if (serviceRateInput && state.rates) serviceRateInput.value = state.rates.service * 100;
+    if (storeNameInput) storeNameInput.value = state.storeInfo.name;
+    if (storeAddressInput) storeAddressInput.value = state.storeInfo.address;
+    if (storeTelInput) storeTelInput.value = state.storeInfo.tel;
+
+    if (taxRateInput) taxRateInput.value = state.rates.tax * 100;
+    if (serviceRateInput) serviceRateInput.value = state.rates.service * 100;
     
-    if (dayChangeTimeInput) dayChangeTimeInput.value = state.dayChangeTime; // (新規)
+    if (dayChangeTimeInput) dayChangeTimeInput.value = state.dayChangeTime; 
     
-    // (新規) テーブル設定リストを描画
     renderTableSettingsList();
-    
-    // (新規) 成績反映設定を描画
     renderPerformanceSettings();
 };
 
@@ -248,17 +131,18 @@ const loadSettingsToForm = () => {
  * (新規) キャスト成績反映設定セクションを描画する
  */
 const renderPerformanceSettings = () => {
+    if (!state) return; // (変更) state がロードされるまで待つ
+    
     // 1. キャスト料金項目の動的生成
     if (performanceCastItemsContainer) {
         performanceCastItemsContainer.innerHTML = '';
-        const castMenuItems = state.menu?.cast || [];
+        const castMenuItems = state.menu.cast || [];
         
         if (castMenuItems.length === 0) {
             performanceCastItemsContainer.innerHTML = '<p class="text-sm text-slate-500">メニュー管理で「キャスト料金」カテゴリに項目を追加してください。</p>';
         } else {
             castMenuItems.forEach(item => {
-                // (変更) state.performanceSettings が存在するかチェック
-                const setting = state.performanceSettings?.menuItems?.[item.id] || {
+                const setting = state.performanceSettings.menuItems[item.id] || {
                     salesType: 'percentage',
                     salesValue: 100,
                     countNomination: true
@@ -289,32 +173,28 @@ const renderPerformanceSettings = () => {
             });
         }
     }
+
+    // 2. 全体項目の読み込み (HTMLのID変更に対応)
+    // (変更) 簡略化されたロジック（HTMLのID変更を反映）
+    const scSetting = state.performanceSettings.serviceCharge.salesValue > 0 ? 'personal_100' : 'store';
+    const taxSetting = state.performanceSettings.tax.salesValue > 0 ? 'personal_100' : 'store';
     
-    // (変更) HTMLのID変更に合わせて、ロジックを修正
+    if (settingServiceCharge) settingServiceCharge.value = scSetting;
+    if (settingTax) settingTax.value = taxSetting;
     
-    // 2. サービス料・税
-    const perfSettings = state.performanceSettings || {};
-    const scSetting = perfSettings.serviceCharge || { salesType: 'percentage', salesValue: 0 };
-    const taxSetting = perfSettings.tax || { salesType: 'percentage', salesValue: 0 };
+    // 3. 枝（サイド）設定の読み込み (HTMLのID変更に対応)
+    const branchSalesMapping = {
+        100: 'personal_100',
+        50: 'personal_50',
+        0: 'personal_0'
+    };
+    const branchSalesValue = state.performanceSettings.sideCustomer.salesValue;
+    const branchSalesKey = branchSalesMapping[branchSalesValue] || 'store';
     
-    if (settingServiceCharge) {
-        settingServiceCharge.value = (scSetting.salesValue === 100 && scSetting.salesType === 'percentage') ? 'personal_100' : 'store';
-    }
-    if (settingTax) {
-        settingTax.value = (taxSetting.salesValue === 100 && taxSetting.salesType === 'percentage') ? 'personal_100' : 'store';
-    }
+    const branchNomsKey = state.performanceSettings.sideCustomer.countNomination ? 'personal' : 'none';
     
-    // 3. 枝（サイド）設定の読み込み
-    const sideSetting = perfSettings.sideCustomer || { salesValue: 100, countNomination: true };
-    if (settingBranchSales) {
-        if (sideSetting.salesValue === 100) settingBranchSales.value = 'personal_100';
-        else if (sideSetting.salesValue === 50) settingBranchSales.value = 'personal_50';
-        else if (sideSetting.salesValue === 0) settingBranchSales.value = 'personal_0';
-        else settingBranchSales.value = 'store'; // デフォルト
-    }
-    if (settingBranchNoms) {
-        settingBranchNoms.value = sideSetting.countNomination ? 'personal' : 'none';
-    }
+    if (settingBranchSales) settingBranchSales.value = branchSalesKey;
+    if (settingBranchNoms) settingBranchNoms.value = branchNomsKey;
 };
 
 
@@ -322,6 +202,8 @@ const renderPerformanceSettings = () => {
  * (新規) フォームから設定を保存する
  */
 const saveSettingsFromForm = () => {
+    if (!state) return; // (変更) state がロードされるまで待つ
+    
     // --- 店舗情報 ---
     const newStoreInfo = {
         name: storeNameInput.value.trim(),
@@ -330,7 +212,6 @@ const saveSettingsFromForm = () => {
     };
 
     // --- 税率 ---
-    // (変更) 10 -> 0.10 のように 小数点に変換して保存
     const newTaxRate = parseFloat(taxRateInput.value) / 100;
     const newServiceRate = parseFloat(serviceRateInput.value) / 100;
 
@@ -347,9 +228,8 @@ const saveSettingsFromForm = () => {
         service: newServiceRate,
     };
 
-    // (新規) 日付変更時刻
     const newDayChangeTime = dayChangeTimeInput.value;
-    if (!newDayChangeTime) { // (新規) バリデーション
+    if (!newDayChangeTime) { 
         if (settingsFeedback) {
             settingsFeedback.textContent = "営業日付の変更時刻を有効な形式で入力してください。";
             settingsFeedback.className = "text-sm text-red-600";
@@ -357,28 +237,28 @@ const saveSettingsFromForm = () => {
         return;
     }
     
-    // (新規) 成績反映設定
+    // (変更) 成績反映設定 (HTMLのID変更に対応)
     const newPerformanceSettings = {
         menuItems: {},
-        // (変更) HTMLのID変更に合わせて、ロジックを修正
-        serviceCharge: settingServiceCharge.value === 'personal_100' ? 
-            { salesType: 'percentage', salesValue: 100 } : 
-            { salesType: 'percentage', salesValue: 0 },
-        tax: settingTax.value === 'personal_100' ? 
-            { salesType: 'percentage', salesValue: 100 } : 
-            { salesType: 'percentage', salesValue: 0 },
+        serviceCharge: {
+            salesValue: settingServiceCharge.value === 'personal_100' ? 100 : 0,
+            salesType: 'percentage' // (変更) 簡易的に percentage に固定
+        },
+        tax: {
+            salesValue: settingTax.value === 'personal_100' ? 100 : 0,
+            salesType: 'percentage' // (変更) 簡易的に percentage に固定
+        },
         sideCustomer: {
             salesValue: parseInt(settingBranchSales.value.replace('personal_', '')) || 0,
             countNomination: settingBranchNoms.value === 'personal'
         }
     };
-    // 'store' (NaN) は 0 になる
-    if (settingBranchSales.value === 'store') {
-        newPerformanceSettings.sideCustomer.salesValue = 0; // 'store' は 0% 反映として扱う (要確認)
-    }
-
     
-    // 動的に生成されたキャスト料金項目を収集
+    // (変更) 'store' (店舗売上) の場合は salesValue を 0 にする
+    if (settingBranchSales.value === 'store') {
+        newPerformanceSettings.sideCustomer.salesValue = 0;
+    }
+    
     if (performanceCastItemsContainer) {
         const itemInputs = performanceCastItemsContainer.querySelectorAll('.setting-menu-sales-value');
         const itemTypes = performanceCastItemsContainer.querySelectorAll('.setting-menu-sales-type');
@@ -397,16 +277,17 @@ const saveSettingsFromForm = () => {
     }
 
 
-    // (変更) stateを更新
-    // (テーブル設定は既に追加/削除時に state.tables が直接更新されている)
-    updateState({ 
+    // (変更) state を丸ごと更新
+    const newState = { 
         ...state, 
         storeInfo: newStoreInfo, 
         rates: newRates,
-        dayChangeTime: newDayChangeTime, // (新規)
-        performanceSettings: newPerformanceSettings // (新規)
+        dayChangeTime: newDayChangeTime,
+        performanceSettings: newPerformanceSettings
         // state.tables は add/deleteTableSetting で既に更新済み
-    });
+    };
+    
+    updateStateInFirestore(newState);
 
     if (settingsFeedback) {
         settingsFeedback.textContent = "設定を保存しました。";
@@ -421,30 +302,24 @@ const saveSettingsFromForm = () => {
  * (新規) テーブル設定リストをUIに描画する
  */
 const renderTableSettingsList = () => {
-    if (!currentTablesList) return;
+    if (!currentTablesList || !state) return; // (変更) state がロードされるまで待つ
     
     currentTablesList.innerHTML = '';
     if (tableSettingsError) tableSettingsError.textContent = '';
     
-    // (変更) state.tables が存在するかチェック
-    const tables = state.tables || [];
-    
-    if (tables.length === 0) {
+    if (!state.tables || state.tables.length === 0) {
         currentTablesList.innerHTML = '<p class="text-sm text-slate-500">テーブルが登録されていません。</p>';
         return;
     }
 
-    const sortedTables = [...tables].sort((a, b) => 
+    const sortedTables = [...state.tables].sort((a, b) => 
         a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' })
     );
 
     sortedTables.forEach(table => {
-        // (変更) state.slips が存在するかチェック
-        const activeSlips = (state.slips || []).filter(
-            s => s.tableId === table.id && (s.status === 'active' || s.status === 'checkout')
-        ).length;
-        const isOccupied = activeSlips > 0;
-
+        // (変更) state.slips を参照して最新のステータスをチェック
+        const isOccupied = state.slips.some(s => s.tableId === table.id && (s.status === 'active' || s.status === 'checkout'));
+        
         const itemHTML = `
             <div class="flex justify-between items-center bg-slate-50 p-3 rounded-lg border">
                 <span class="font-semibold">${table.id}</span>
@@ -459,25 +334,23 @@ const renderTableSettingsList = () => {
         currentTablesList.innerHTML += itemHTML;
     });
 
-    // (新規) 削除ボタンにイベントリスナーを追加 (イベント委任に変更)
-    // currentTablesList.querySelectorAll('.delete-table-btn').forEach(btn => { ... });
+    // (削除) 削除ボタンのリスナーは DOMContentLoaded に移動
 };
 
 /**
  * (新規) テーブル設定を追加する
  */
 const addTableSetting = () => {
-    if (!newTableIdInput || !tableSettingsError) return;
+    if (!newTableIdInput || !tableSettingsError || !state) return; // (変更) state がロードされるまで待つ
     
-    const newId = newTableIdInput.value.trim().toUpperCase(); 
+    const newId = newTableIdInput.value.trim().toUpperCase();
     
     if (newId === "") {
         tableSettingsError.textContent = "テーブル名を入力してください。";
         return;
     }
     
-    // (変更) state.tables が存在するかチェック
-    const exists = (state.tables || []).some(table => table.id === newId);
+    const exists = state.tables.some(table => table.id === newId);
     if (exists) {
         tableSettingsError.textContent = "そのテーブル名は既に使用されています。";
         return;
@@ -485,17 +358,16 @@ const addTableSetting = () => {
     
     const newTable = {
         id: newId,
-        status: 'available' // 新規テーブルは必ず「空席」
+        status: 'available' 
     };
     
-    // (変更) stateを更新
-    const newTables = [...(state.tables || []), newTable];
-    updateState({ ...state, tables: newTables });
+    // (変更) state を直接変更
+    state.tables.push(newTable);
+    updateStateInFirestore(state);
     
     newTableIdInput.value = '';
     tableSettingsError.textContent = '';
-    // (変更) UI更新はonSnapshotに任せる
-    // renderTableSettingsList(); 
+    // (変更) renderTableSettingsList() は onSnapshot が自動で呼び出す
 };
 
 /**
@@ -503,138 +375,204 @@ const addTableSetting = () => {
  * @param {string} tableId 
  */
 const deleteTableSetting = (tableId) => {
-    // (変更) state.tables が存在するかチェック
-    const table = (state.tables || []).find(t => t.id === tableId);
+    if (!state) return; // (変更) state がロードされるまで待つ
+    const table = state.tables.find(t => t.id === tableId);
     
-    // (安全装置) 利用中のテーブルは削除しない (getActiveSlipCount を使用)
-    const activeSlips = getActiveSlipCount(tableId);
-    if (!table || activeSlips > 0) {
-        if (tableSettingsError) tableSettingsError.textContent = `${tableId} は利用中のため削除できません。`;
+    // (変更) state.slips を参照して最新のステータスをチェック
+    const isOccupied = state.slips.some(s => s.tableId === tableId && (s.status === 'active' || s.status === 'checkout'));
+
+    if (!table || isOccupied) {
+        tableSettingsError.textContent = `${tableId} は利用中のため削除できません。`;
         return;
     }
 
-    // (変更) stateを更新
-    const newTables = (state.tables || []).filter(t => t.id !== tableId);
-    updateState({ ...state, tables: newTables });
+    // (変更) state を直接変更
+    state.tables = state.tables.filter(t => t.id !== tableId);
+    updateStateInFirestore(state);
     
-    // (変更) UI更新はonSnapshotに任せる
-    // renderTableSettingsList(); 
+    // (変更) renderTableSettingsList() は onSnapshot が自動で呼び出す
+};
+
+/**
+ * (変更) 伝票・会計・領収書モーダルの共通情報を更新する
+ * (店舗名、税率など)
+ */
+const updateModalCommonInfo = () => {
+    if (!state) return;
+    // (変更) settings.js でモーダル内のDOM要素は取得しないため、中身を空にする
+    // (ただし、HTMLにはモーダルが存在するため、関数自体は残す)
 };
 
 
-// --- イベントリスナー ---
+// (新規) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+const getDefaultState = () => ({
+    currentPage: 'settings',
+    currentStore: 'store1',
+    slipCounter: 0,
+    slipTagsMaster: [
+        { id: 'tag1', name: '指名' }, { id: 'tag2', name: '初指名' },
+        { id: 'tag3', name: '初回' }, { id: 'tag4', name: '枝' },
+        { id: 'tag5', name: '切替' }, { id: 'tag6', name: '案内所' },
+        { id: 'tag7', name: '20歳未満' }, { id: 'tag8', name: '同業' },
+    ],
+    casts: [ 
+        { id: 'c1', name: 'あい' }, { id: 'c2', name: 'みう' },
+        { id: 'c3', name: 'さくら' }, { id: 'c4', name: 'れな' },
+        { id: 'c5', name: 'ひな' }, { id: 'c6', name: '体験A' },
+    ],
+    customers: [
+        { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
+        { id: 'cust2', name: '田中様', nominatedCastId: null },
+        { id: 'cust3', name: '佐藤様', nominatedCastId: 'c2' },
+    ],
+    tables: [
+        { id: 'V1', status: 'available' }, { id: 'V2', status: 'available' },
+        { id: 'T1', status: 'available' }, { id: 'T2', status: 'available' },
+        { id: 'C1', status: 'available' }, { id: 'C2', status: 'available' },
+    ],
+    slips: [],
+    menu: {
+        set: [
+            { id: 'm1', name: '基本セット (指名)', price: 10000, duration: 60 },
+            { id: 'm2', name: '基本セット (フリー)', price: 8000, duration: 60 },
+        ],
+        drink: [{ id: 'm7', name: 'キャストドリンク', price: 1500 }],
+        bottle: [{ id: 'm11', name: '鏡月 (ボトル)', price: 8000 }],
+        food: [],
+        cast: [{ id: 'm14', name: '本指名料', price: 3000 }],
+        other: [],
+    },
+    storeInfo: {
+        name: "Night POS",
+        address: "東京都新宿区歌舞伎町1-1-1",
+        tel: "03-0000-0000"
+    },
+    rates: { tax: 0.10, service: 0.20 },
+    dayChangeTime: "05:00",
+    performanceSettings: {
+        menuItems: {
+            'm14': { salesType: 'percentage', salesValue: 100, countNomination: true }
+        },
+        serviceCharge: { salesType: 'percentage', salesValue: 0 },
+        tax: { salesType: 'percentage', salesValue: 0 },
+        sideCustomer: { salesValue: 100, countNomination: true }
+    },
+    currentSlipId: null, 
+    currentEditingMenuId: null,
+    currentBillingAmount: 0, 
+    ranking: { period: 'monthly', type: 'nominations' }
+});
 
-document.addEventListener('DOMContentLoaded', async () => {
+// (新規) Firestore への state 保存関数（エラーハンドリング付き）
+const updateStateInFirestore = async (newState) => {
+    if (!stateDocRef) {
+        console.error("stateDocRef is not ready. State not saved to Firestore.");
+        return;
+    }
+    try {
+        await setDoc(stateDocRef, newState); 
+    } catch (error) {
+        console.error("Error saving state to Firestore:", error);
+    }
+};
+
+// (変更) --- Firestore リアルタイムリスナー ---
+// firebaseReady イベントを待ってからリスナーを設定
+document.addEventListener('firebaseReady', (e) => {
+    const { db, auth, userId, stateRef: ref } = e.detail;
+    
+    if (!ref) {
+        console.error("Firestore reference (stateRef) is not available.");
+        return;
+    }
+    
+    stateDocRef = ref;
+
+    onSnapshot(stateDocRef, async (docSnap) => {
+        if (docSnap.exists()) {
+            console.log("Firestore data loaded.");
+            state = docSnap.data();
+            
+            // (重要) state がロードされたら、UIを初回描画
+            loadSettingsToForm();
+            updateModalCommonInfo(); // (新規) モーダル内の共通情報を更新
+            
+        } else {
+            console.log("No state document found. Creating default state...");
+            const defaultState = getDefaultState();
+            state = defaultState;
+            
+            try {
+                await setDoc(stateDocRef, defaultState);
+                console.log("Default state saved to Firestore.");
+                // (重要) state がロードされたら、UIを初回描画
+                loadSettingsToForm();
+                updateModalCommonInfo(); // (新規) モーダル内の共通情報を更新
+                
+            } catch (error) {
+                console.error("Error saving default state to Firestore:", error);
+            }
+        }
+    }, (error) => {
+        console.error("Error listening to Firestore snapshot:", error);
+        if (error.code === 'permission-denied') {
+            document.body.innerHTML = `<div class="p-8 text-center text-red-600">データベースへのアクセスが拒否されました。Firestoreのセキュリティルール（state/{userId}）が正しく設定されているか確認してください。</div>`;
+        }
+    });
+});
+
+
+// --- イベントリスナー ---
+document.addEventListener('DOMContentLoaded', () => {
     
     // ===== DOM要素の取得 =====
-    // (変更) settings.js で必要なDOMのみ取得
     modalCloseBtns = document.querySelectorAll('.modal-close-btn');
     storeNameInput = document.getElementById('store-name');
     storeAddressInput = document.getElementById('store-address');
     storeTelInput = document.getElementById('store-tel');
     taxRateInput = document.getElementById('tax-rate');
     serviceRateInput = document.getElementById('service-rate');
-    dayChangeTimeInput = document.getElementById('day-change-time'); // (新規)
+    dayChangeTimeInput = document.getElementById('day-change-time'); 
     saveSettingsBtn = document.getElementById('save-settings-btn');
     settingsFeedback = document.getElementById('settings-feedback');
-    // (新規) テーブル設定用DOM
     newTableIdInput = document.getElementById('new-table-id-input');
     addTableBtn = document.getElementById('add-table-btn');
     currentTablesList = document.getElementById('current-tables-list');
     tableSettingsError = document.getElementById('table-settings-error');
-    // (新規) 成績設定用DOM
-    performanceCastItemsContainer = document.getElementById('performance-cast-items-container'); // (変更) ID
-    settingServiceCharge = document.getElementById('setting-service-charge'); // (変更) ID
-    settingTax = document.getElementById('setting-tax'); // (変更) ID
-    settingBranchSales = document.getElementById('setting-branch-sales'); // (変更) ID
-    settingBranchNoms = document.getElementById('setting-branch-noms'); // (変更) ID
+    
+    // (変更) 成績設定用DOM (HTMLのID変更を反映)
+    performanceCastItemsContainer = document.getElementById('performance-cast-items-container');
+    settingServiceCharge = document.getElementById('setting-service-charge');
+    settingTax = document.getElementById('setting-tax');
+    settingBranchSales = document.getElementById('setting-branch-sales');
+    settingBranchNoms = document.getElementById('setting-branch-noms');
 
     
-    // ===== (新規) Firebase 初期化とデータリッスン =====
-    try {
-        const services = await getFirebaseServices();
-        db = services.db;
-        auth = services.auth;
-        userId = services.userId;
-        appId = services.appId;
-
-        // (新規) ユーザーの state ドキュメントへの参照を作成
-        stateDocRef = doc(db, "artifacts", appId, "users", userId, "data", "mainState");
-
-        // (新規) Firestore の state をリアルタイムでリッスン
-        if (unsubscribeState) unsubscribeState(); 
-        
-        unsubscribeState = onSnapshot(stateDocRef, (doc) => {
-            if (doc.exists()) {
-                const firestoreState = doc.data();
-                const defaultState = getDefaultState();
-                state = { 
-                    ...defaultState, 
-                    ...firestoreState,
-                    storeInfo: { ...defaultState.storeInfo, ...(firestoreState.storeInfo || {}) },
-                    rates: { ...defaultState.rates, ...(firestoreState.rates || {}) },
-                    ranking: { ...defaultState.ranking, ...(firestoreState.ranking || {}) },
-                    menu: { ...defaultState.menu, ...(firestoreState.menu || {}) },
-                    // (変更) settings.js では slips のマージも必要 (テーブル削除判定のため)
-                    slips: (firestoreState.slips || []).map(slip => ({
-                        ...slip,
-                        tags: slip.tags || []
-                    })),
-                    performanceSettings: { 
-                        ...defaultState.performanceSettings, 
-                        ...(firestoreState.performanceSettings || {}),
-                        menuItems: { ...defaultState.performanceSettings.menuItems, ...(firestoreState.performanceSettings?.menuItems || {}) },
-                        serviceCharge: { ...defaultState.performanceSettings.serviceCharge, ...(firestoreState.performanceSettings?.serviceCharge || {}) },
-                        tax: { ...defaultState.performanceSettings.tax, ...(firestoreState.performanceSettings?.tax || {}) },
-                        sideCustomer: { ...defaultState.performanceSettings.sideCustomer, ...(firestoreState.performanceSettings?.sideCustomer || {}) },
-                    },
-                };
-                console.log("Local state updated from Firestore");
-            } else {
-                console.log("No state document found. Creating new one...");
-                state = getDefaultState();
-                updateStateInFirestore(state); 
-            }
-
-            // (新規) ページが settings の場合のみUIを更新
-            loadSettingsToForm();
-
-        }, (error) => {
-            console.error("Error listening to state document:", error);
-        });
-
-    } catch (e) {
-        console.error("Failed to initialize Firebase or auth:", e);
-        // (新規) Firebaseが失敗した場合でも、ローカルのデフォルトstateでUIを描画
-        loadSettingsToForm();
-    }
+    // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
+    // if (saveSettingsBtn) { ... }
     
     // ===== イベントリスナーの設定 =====
 
     // モーダルを閉じるボタン
     modalCloseBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            // (変更) settings.js ではモーダルを開かないが、HTML上にあるため閉じるロジックのみ残す
             closeModal();
         });
     });
 
-    // (新規) 設定保存ボタン
     if (saveSettingsBtn) {
         saveSettingsBtn.addEventListener('click', (e) => {
-            e.preventDefault(); // (変更) formの送信を止める
+            e.preventDefault(); 
             saveSettingsFromForm();
         });
     }
     
-    // (新規) テーブル追加ボタン
     if (addTableBtn) {
         addTableBtn.addEventListener('click', () => {
             addTableSetting();
         });
     }
 
-    // (新規) テーブル入力欄でEnterキー
     if (newTableIdInput) {
         newTableIdInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -643,15 +581,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
     }
-    
-    // (新規) テーブル削除ボタン (イベント委任)
+
+    // (新規) テーブル削除ボタンのイベント委任
     if (currentTablesList) {
         currentTablesList.addEventListener('click', (e) => {
             const deleteBtn = e.target.closest('.delete-table-btn');
             if (deleteBtn) {
-                deleteTableSetting(deleteBtn.dataset.tableId);
+                // (変更) 確認ダイアログを追加
+                if (confirm(`テーブル「${deleteBtn.dataset.tableId}」を削除しますか？`)) {
+                    deleteTableSetting(deleteBtn.dataset.tableId);
+                }
             }
         });
     }
-
 });
+

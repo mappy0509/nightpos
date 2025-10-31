@@ -219,6 +219,11 @@ body {
     background-color: #f1f5f9; /* hover時も色を変えない */
 }
 
+/* (新規) JSによるデータ読み込み前の空要素を隠す */
+[data-empty="true"] {
+    display: none !important;
+}
+
 
 /* (新規) 印刷用スタイル */
 @media print {
@@ -231,6 +236,8 @@ body {
     body {
         background-color: #ffffff;
         min-height: 0;
+        padding: 0;
+        margin: 0;
     }
     .modal-backdrop {
         display: block;
@@ -249,35 +256,59 @@ body {
         animation: none;
         width: 100% !important;
         max-width: 100% !important;
+        border: none;
     }
 
     /* 伝票プレビューモーダルの印刷領域を指定 */
-    #slip-content-to-print {
-        display: block;
-        padding: 0;
-        color: #000; /* 印刷は黒で */
+    #slip-content-to-print,
+    #receipt-content {
+        display: block !important;
+        padding: 0 !important;
+        color: #000 !important; /* 印刷は黒で */
+        background-color: #ffffff !important;
     }
     
-    /* 印刷用にフォントサイズや余白を調整 */
-    #slip-content-to-print h2 {
-        font-size: 14px;
-        font-weight: 700;
-    }
+    /* 伝票・領収書共通のスタイル調整 */
     #slip-content-to-print p,
     #slip-content-to-print span,
-    #slip-content-to-print div {
-        font-size: 10px;
+    #slip-content-to-print div,
+    #receipt-content p,
+    #receipt-content span,
+    #receipt-content div,
+    #receipt-content label,
+    #receipt-content input {
+        font-size: 10px !important;
+        color: #000 !important;
+        -webkit-print-color-adjust: exact; /* (変更) 色を強制的に印刷 */
+        print-color-adjust: exact;
     }
-    #slip-content-to-print .font-semibold {
-        font-weight: 600;
+    #slip-content-to-print .font-semibold,
+    #receipt-content .font-semibold {
+        font-weight: 600 !important;
     }
-    #slip-content-to-print .text-base {
-        font-size: 12px;
+    #slip-content-to-print .text-base,
+    #receipt-content .text-lg { /* (変更) 領収書は .text-lg */
+        font-size: 12px !important;
     }
+
+    /* 領収書特有のスタイル調整 */
+    #receipt-content h2 {
+        font-size: 16px !important;
+        font-weight: 700 !important;
+    }
+    #receipt-content #receipt-total {
+        font-size: 20px !important; /* (変更) 金額は大きく */
+        font-weight: 700 !important;
+    }
+    #receipt-content input { /* (変更) 領収書の宛名欄など */
+        border-bottom: 1px dotted #000 !important;
+        padding: 0 !important;
+    }
+
     
     /* ページ設定 (レシートプリンタ幅 80mm を想定) */
     @page {
         size: 80mm auto; /* 幅80mm、高さは自動 */
-        margin: 5mm;
+        margin: 3mm; /* (変更) 余白を狭く */
     }
 }

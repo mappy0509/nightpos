@@ -159,41 +159,51 @@
                                             <!-- サービス料 -->
                                             <div>
                                                 <label class="block text-sm font-semibold text-slate-600 mb-1">サービス料</label>
-                                                <select id="setting-service-charge" class="w-full p-2 border border-slate-300 rounded-lg bg-white">
-                                                    <option value="store">店舗売上 (成績に反映しない)</option>
-                                                    <option value="personal_100">個人売上 (100% 反映)</option>
-                                                </select>
+                                                <!-- (変更) IDとロジックをJS側に合わせる -->
+                                                <div class="flex mt-1">
+                                                    <input type="number" id="setting-sc-sales-value" placeholder="0" class="w-2/3 p-2 border border-slate-300 rounded-l-lg focus:outline-none">
+                                                    <select id="setting-sc-sales-type" class="w-1/3 p-2 border-t border-b border-r border-slate-300 rounded-r-lg bg-slate-100 focus:outline-none">
+                                                        <option value="percentage">%</option>
+                                                        <option value="fixed">円</option>
+                                                    </select>
+                                                </div>
+                                                <p class="text-xs text-slate-500 mt-1">キャストの個人売上に反映する割合 (通常 0%)</p>
                                             </div>
                                             <!-- 消費税 -->
                                             <div>
                                                 <label class="block text-sm font-semibold text-slate-600 mb-1">消費税</label>
-                                                <select id="setting-tax" class="w-full p-2 border border-slate-300 rounded-lg bg-white">
-                                                    <option value="store">店舗売上 (成績に反映しない)</option>
-                                                    <option value="personal_100">個人売上 (100% 反映)</option>
-                                                </select>
+                                                <div class="flex mt-1">
+                                                    <input type="number" id="setting-tax-sales-value" placeholder="0" class="w-2/3 p-2 border border-slate-300 rounded-l-lg focus:outline-none">
+                                                    <select id="setting-tax-sales-type" class="w-1/3 p-2 border-t border-b border-r border-slate-300 rounded-r-lg bg-slate-100 focus:outline-none">
+                                                        <option value="percentage">%</option>
+                                                        <option value="fixed">円</option>
+                                                    </select>
+                                                </div>
+                                                <p class="text-xs text-slate-500 mt-1">キャストの個人売上に反映する割合 (通常 0%)</p>
                                             </div>
                                         </div>
                                     </div>
                                     
                                     <!-- 枝（紹介） -->
                                     <div class="pt-4 border-t">
-                                        <h4 class="font-semibold text-slate-700 mb-3">枝（紹介）の設定</h4>
+                                        <h4 class="font-semibold text-slate-700 mb-3">枝（サイド）のお客様設定</h4>
+                                        <p class="text-sm text-slate-500 mb-3">伝票に「枝」タグが設定されている場合の計算方法です。</p>
                                         <div class="space-y-4">
                                             <div>
-                                                <label class="block text-sm font-semibold text-slate-600 mb-1">「枝」タグのお客様の売上</label>
-                                                <select id="setting-branch-sales" class="w-full p-2 border border-slate-300 rounded-lg bg-white">
-                                                    <option value="personal_100">担当キャストの売上 (100% 反映)</option>
-                                                    <option value="personal_50">担当キャストの売上 (50% 反映)</option>
-                                                    <option value="personal_0">担当キャストの売上 (0% 反映)</option>
-                                                    <option value="store">店舗売上 (成績に反映しない)</option>
-                                                </select>
+                                                <label class="block text-sm font-semibold text-slate-600 mb-1">「枝」のお客様の個人売上</label>
+                                                <!-- (変更) IDとロジックをJS側に合わせる -->
+                                                <div class="flex mt-1">
+                                                    <input type="number" id="setting-side-sales-value" placeholder="100" class="w-2/3 p-2 border border-slate-300 rounded-l-lg focus:outline-none">
+                                                    <span class="w-1/3 p-2 border-t border-b border-r border-slate-300 rounded-r-lg bg-slate-100">%</span>
+                                                </div>
+                                                <p class="text-xs text-slate-500 mt-1">担当キャストの売上に反映する割合 (例: 100%, 50%)</p>
                                             </div>
                                             <div>
-                                                <label class="block text-sm font-semibold text-slate-600 mb-1">「枝」タグのお客様の指名本数</label>
-                                                <select id="setting-branch-noms" class="w-full p-2 border border-slate-300 rounded-lg bg-white">
-                                                    <option value="personal">担当キャストの本数に加算</option>
-                                                    <option value="none">加算しない</option>
-                                                </select>
+                                                <!-- (変更) IDとロジックをJS側に合わせる -->
+                                                <label class="flex items-center space-x-2 mt-2 cursor-pointer">
+                                                    <input type="checkbox" id="setting-side-count-nomination" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                                    <span class="text-sm font-medium text-slate-700">「枝」のお客様を指名本数としてカウントする</span>
+                                                </label>
                                             </div>
                                         </div>
                                     </div>
@@ -219,6 +229,44 @@
                                     </div>
                                 </div>
 
+                                <!-- (新規) 伝票タグ設定 -->
+                                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">伝票タグ設定</h3>
+                                    
+                                    <!-- タグ追加フォーム -->
+                                    <div class="flex space-x-2 mb-4">
+                                        <input type="text" id="new-tag-name-input" placeholder="タグ名 (例: VIP, 団体)" class="w-full p-2 border border-slate-300 rounded-lg">
+                                        <button type="button" id="add-tag-btn" class="px-5 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 whitespace-nowrap">
+                                            <i class="fa-solid fa-plus mr-2"></i>追加
+                                        </button>
+                                    </div>
+                                    <p id="tag-settings-error" class="text-xs text-red-600 mb-4"></p>
+                                    
+                                    <!-- 現在のタグリスト -->
+                                    <div class="space-y-2 max-h-60 overflow-y-auto pr-2" id="current-tags-list">
+                                        <!-- JSで動的に生成 -->
+                                    </div>
+                                </div>
+
+                                <!-- (新規) キャスト設定 -->
+                                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">キャスト設定</h3>
+                                    
+                                    <!-- キャスト追加フォーム -->
+                                    <div class="flex space-x-2 mb-4">
+                                        <input type="text" id="new-cast-name-input" placeholder="キャスト名 (例: あい)" class="w-full p-2 border border-slate-300 rounded-lg">
+                                        <button type="button" id="add-cast-btn" class="px-5 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 whitespace-nowrap">
+                                            <i class="fa-solid fa-plus mr-2"></i>追加
+                                        </button>
+                                    </div>
+                                    <p id="cast-settings-error" class="text-xs text-red-600 mb-4"></p>
+                                    
+                                    <!-- 現在のキャストリスト -->
+                                    <div class="space-y-2 max-h-60 overflow-y-auto pr-2" id="current-casts-list">
+                                        <!-- JSで動的に生成 -->
+                                    </div>
+                                </div>
+
                             </div>
                             
                             <!-- 右側: 保存ボタン -->
@@ -226,7 +274,7 @@
                                 <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200 sticky top-8">
                                     <h3 class="text-lg font-semibold mb-4">保存</h3>
                                     <p class="text-sm text-slate-500 mb-4">
-                                        店舗情報、税率、テーブル設定を変更した場合は、保存ボタンを押してください。
+                                        店舗情報、税率、テーブル設定などを変更した場合は、保存ボタンを押してください。
                                     </p>
                                     <button id="save-settings-btn" class="w-full px-6 py-3 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 text-lg">
                                         <i class="fa-solid fa-save mr-2"></i>設定を保存する
@@ -240,7 +288,7 @@
 
                 </div>
                 
-                <!-- 他のページは非表示 -->
+                <!-- 他のページは非表示 (settings.htmlでは不要だが、万が一のJSエラーを防ぐため残す) -->
                 <div id="dashboard" data-page></div>
                 <div id="tables" data-page></div>
                 <div id="all-slips" data-page></div>
@@ -253,13 +301,65 @@
     </div>
 
     <!-- ===== モーダルエリア (変更) ===== -->
+    <!-- (settings.js で直接は使わないが、他からコピーされたロジックがエラーにならないようIDを追加) -->
+
+    <!-- (新規) 新規伝票 確認モーダル -->
     <div id="new-slip-confirm-modal" class="modal-backdrop">
-        <div class="modal-content w-full max-w-md">...</div>
+        <div class="modal-content w-full max-w-md">
+            <!-- モーダルヘッダー -->
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold" id="new-slip-confirm-title">伝票の新規作成</h3>
+                <button class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <!-- モーダルボディ -->
+            <div class="p-6 text-center">
+                <p class="text-lg" id="new-slip-confirm-message">テーブル V2 で新しい伝票を作成しますか？</p>
+            </div>
+
+            <!-- モーダルフッター -->
+            <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
+                <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                    キャンセル
+                </button>
+                <button id="confirm-create-slip-btn" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
+                    作成する
+                </button>
+            </div>
+        </div>
     </div>
+
+
+    <!-- (新規) 伝票選択モーダル -->
     <div id="slip-selection-modal" class="modal-backdrop">
-        <div class="modal-content w-full max-w-lg">...</div>
+        <div class="modal-content w-full max-w-lg">
+            <!-- モーダルヘッダー -->
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold" id="slip-selection-modal-title">テーブル V1 の伝票一覧</h3>
+                <button class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <!-- モーダルボディ -->
+            <div class="p-6">
+                <h4 class="font-semibold mb-3">既存の伝票を選択</h4>
+                <div class="space-y-3 mb-6" id="slip-selection-list">
+                    <!-- JSで動的に生成 -->
+                </div>
+                
+                <h4 class="font-semibold mb-3 pt-4 border-t">または</h4>
+                <button id="create-new-slip-btn" class="w-full p-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition duration-200">
+                    <i class="fa-solid fa-plus mr-2"></i>
+                    このテーブルで新しい伝票を作成する
+                </button>
+            </div>
+        </div>
     </div>
-    
+
+
     <!-- 伝票モーダル (注文入力) -->
     <div id="order-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-5xl flex flex-col max-h-[95vh]">
@@ -352,25 +452,362 @@
         </div>
     </div>
 
+    <!-- (新規) ボツ伝 理由入力モーダル -->
     <div id="cancel-slip-modal" class="modal-backdrop">
-        <div class="modal-content w-full max-w-lg">...</div>
+        <div class="modal-content w-full max-w-lg">
+            <!-- モーダルヘッダー -->
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold" id="cancel-slip-modal-title">伝票をボツにする</h3>
+                <button class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <!-- モーダルボディ -->
+            <div class="p-6">
+                <p class="mb-2 font-medium">伝票 No.<span id="cancel-slip-number"></span> をボツ伝にします。
+                <br>理由を必ず入力してください。</p>
+                <textarea id="cancel-slip-reason-input" class="w-full p-2 border border-slate-300 rounded-lg mt-1 h-24" placeholder="例: テスト入力のため、お客様の都合によりキャンセル..."></textarea>
+                <p id="cancel-slip-error" class="text-xs text-red-600 mt-1"></p>
+            </div>
+
+            <!-- モーダルフッター -->
+            <div class="flex justify-between items-center p-5 border-t bg-slate-50 rounded-b-lg">
+                <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                    キャンセル
+                </button>
+                <button id="confirm-cancel-slip-btn" class="px-6 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700">
+                    ボツ伝を確定
+                </button>
+            </div>
+        </div>
     </div>
+
+
+    <!-- 伝票プレビューモーダル -->
     <div id="slip-preview-modal" class="modal-backdrop">
-        <div class="modal-content w-full max-w-lg">...</div>
+        <div class="modal-content w-full max-w-lg"> <!-- レシート幅を意識して max-w-lg (または md) に -->
+            <!-- モーダルヘッダー -->
+            <div class="flex justify-between items-center p-5 border-b non-printable">
+                <h3 class="text-xl font-semibold" id="slip-preview-title">伝票プレビュー (V1)</h3>
+                <button class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <!-- モーダルボディ (印刷領域) -->
+            <div class="p-6 bg-white" id="slip-content-to-print">
+                <div class="text-center mb-4">
+                    <!-- (変更) ID追加 -->
+                    <h2 class="text-lg font-bold" id="slip-store-name">Night POS 新宿本店</h2>
+                    <p class="text-sm" id="slip-store-tel">TEL: 03-0000-0000</p>
+                    <p class="text-sm">発行日時: <span id="slip-datetime"></span></p>
+                </div>
+                
+                <div class="text-sm border-y border-dashed border-slate-400 py-2 mb-2">
+                    <!-- (新規) 伝票番号 -->
+                    <p>伝票番号: <span id="slip-slip-number" class="font-semibold text-base"></span></p>
+                    <p>テーブル: <span id="slip-table-id" class="font-semibold text-base"></span></p>
+                    <p>お客様名: <span id="slip-customer-name" class="font-semibold text-base"></span> 様</p>
+                    <p>指名: <span id="slip-nomination" class="font-semibold text-base"></span></p>
+                </div>
+                
+                <h4 class="font-semibold mb-2 text-sm">--- ご注文明細 ---</h4>
+                <div class="space-y-1 text-sm mb-2" id="slip-items-list">
+                    <!-- JSで動的に生成 -->
+                </div>
+
+                <div class="mt-4 pt-2 border-t border-dashed border-slate-400 space-y-1 font-medium text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-slate-600">小計</span>
+                        <span id="slip-subtotal">¥0</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <!-- (変更) ID追加 -->
+                        <span class="text-slate-600">サービス料 (<span id="slip-service-rate">0</span>%)</span>
+                        <span id="slip-service-charge">¥0</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <!-- (変更) ID追加 -->
+                        <span class="text-slate-600">消費税 (<span id="slip-tax-rate">0</span>%)</span>
+                        <span id="slip-tax">¥0</span>
+                    </div>
+                    <!-- (新規) 支払い済み金額 -->
+                    <div class="flex justify-between text-red-600">
+                        <span class="text-slate-600">（支払い済み金額）</span>
+                        <span id="slip-paid-amount">¥0</span>
+                    </div>
+                    <!-- (変更) 合計金額 -> 今回ご請求額 -->
+                    <div class="flex justify-between text-base font-bold mt-2 pt-2 border-t border-slate-400">
+                        <span>今回ご請求額</span>
+                        <span id="slip-total">¥0</span>
+                    </div>
+                </div>
+                
+                <div class="text-center text-xs text-slate-500 mt-6">
+                    <p>※ この伝票は仮伝票です。</p>
+                    <p>お会計はスタッフをお呼びください。</p>
+                </div>
+            </div>
+
+            <!-- モーダルフッター (印刷対象外) -->
+            <div class="flex justify-between items-center p-5 border-t bg-slate-50 rounded-b-lg non-printable">
+                <button id="print-slip-btn" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
+                    <i class="fa-solid fa-print mr-2"></i>伝票印刷
+                </button>
+                <button id="go-to-checkout-btn" class="px-6 py-2 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700">
+                    会計確定へ進む<i class="fa-solid fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
     </div>
+    
+    <!-- 会計モーダル -->
     <div id="checkout-modal" class="modal-backdrop">
-        <div class="modal-content w-full max-w-3xl">...</div>
+        <div class="modal-content w-full max-w-3xl">
+            <!-- モーダルヘッダー -->
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold" id="checkout-modal-title">テーブル V1 - お会計</h3>
+                <button class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <!-- モーダルボディ -->
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- 左側: 伝票詳細 -->
+                    <div>
+                        <h4 class="font-semibold mb-3 border-b pb-2">伝票明細</h4>
+                        <div class="space-y-2 max-h-60 overflow-y-auto pr-2 text-sm" id="checkout-items-list">
+                            <!-- 会計アイテムはJSで動的に生成 -->
+                        </div>
+                        <div class="mt-4 pt-4 border-t space-y-2 font-medium">
+                            <div class="flex justify-between">
+                                <span class="text-slate-600">小計</span>
+                                <span id="checkout-subtotal">¥0</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <!-- (変更) ID追加 -->
+                                <span class="text-slate-600">サービス料 (<span id="checkout-service-rate">0</span>%)</span>
+                                <span id="checkout-service-charge">¥0</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <!-- (変更) ID追加 -->
+                                <span class="text-slate-600">消費税 (<span id="checkout-tax-rate">0</span>%)</span>
+                                <span id="checkout-tax">¥0</span>
+                            </div>
+                            <!-- (新規) 支払い済み金額 -->
+                            <div class="flex justify-between text-red-600">
+                                <span class="text-slate-600">（支払い済み金額）</span>
+                                <span id="checkout-paid-amount">¥0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 右側: 会計処理 (変更) -->
+                    <div>
+                        <h4 class="font-semibold mb-3 border-b pb-2">お支払い</h4>
+                        <div class="space-y-4">
+                            <!-- 割引 (変更なし) -->
+                            <div>
+                                <label class="text-xs font-semibold text-slate-500">割引</label>
+                                <div class="flex mt-1">
+                                    <input type="number" id="discount-amount" placeholder="金額" class="w-2/3 p-2 border border-slate-300 rounded-l-lg focus:outline-none">
+                                    <select class="w-1/3 p-2 border-t border-b border-r border-slate-300 rounded-r-lg bg-slate-50 focus:outline-none">
+                                        <option>円</option>
+                                        <option>%</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- ご請求額 (変更なし) -->
+                            <div class="text-right mt-6">
+                                <span class="text-lg text-slate-600">ご請求額</span>
+                                <p class="text-4xl font-bold text-blue-600" id="checkout-total">¥0</p>
+                            </div>
+                            
+                            <!-- (変更) 支払い方法入力 -->
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="text-sm font-semibold text-slate-500 flex items-center">
+                                        <i class="fa-solid fa-money-bill-wave w-6 text-center mr-1 text-green-600"></i>現金
+                                    </label>
+                                    <input type="number" id="payment-cash" placeholder="0" class="w-full p-2 border border-slate-300 rounded-lg mt-1 text-lg font-semibold text-right focus:outline-none focus:ring-2 focus:ring-green-500">
+                                </div>
+                                <div>
+                                    <label class="text-sm font-semibold text-slate-500 flex items-center">
+                                        <i class="fa-regular fa-credit-card w-6 text-center mr-1 text-blue-600"></i>カード
+                                    </label>
+                                    <input type="number" id="payment-card" placeholder="0" class="w-full p-2 border border-slate-300 rounded-lg mt-1 text-lg font-semibold text-right focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="text-sm font-semibold text-slate-500 flex items-center">
+                                        <i class="fa-solid fa-file-invoice w-6 text-center mr-1 text-yellow-600"></i>売掛
+                                    </label>
+                                    <input type="number" id="payment-credit" placeholder="0" class="w-full p-2 border border-slate-300 rounded-lg mt-1 text-lg font-semibold text-right focus:outline-none focus:ring-2 focus:ring-yellow-500">
+                                </div>
+                            </div>
+
+                            <!-- (新規) お支払いサマリー -->
+                            <div class="mt-4 pt-4 border-t space-y-2 font-medium">
+                                <div class="flex justify-between">
+                                    <span class="text-slate-600">お支払い合計</span>
+                                    <span id="checkout-payment-total" class="font-bold text-lg">¥0</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-slate-600">不足金額</span>
+                                    <span id="checkout-shortage" class="font-bold text-lg text-red-600">¥0</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-slate-600">お釣り</span>
+                                    <span id="checkout-change" class="font-bold text-lg text-blue-600">¥0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- モーダルフッター -->
+            <div class="flex justify-between items-center p-5 border-t bg-slate-50 rounded-b-lg">
+                <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                    <!-- (変更) 戻るボタンの行き先は JS 側で制御 (ここでは閉じるだけ) -->
+                    キャンセル
+                </button>
+                <!-- (変更) disabled 属性を追加 -->
+                <button id="process-payment-btn" class="px-8 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 text-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    会計確定
+                </button>
+            </div>
+        </div>
     </div>
+
+    <!-- 領収書モーダル -->
     <div id="receipt-modal" class="modal-backdrop">
-        <div class="modal-content w-full max-w-md">...</div>
+        <div class="modal-content w-full max-w-md">
+            <!-- モーダルヘッダー -->
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold">領収書</h3>
+                <button class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <!-- モーダルボディ -->
+            <div class="p-8 bg-white" id="receipt-content">
+                <div class="text-center mb-6">
+                    <h2 class="text-2xl font-bold mb-2">領 収 書</h2>
+                    <p class="text-sm text-slate-500">発行日: <span id="receipt-date">2025/10/29</span></p>
+                </div>
+                
+                <div class="mb-4">
+                    <!-- (変更) ID追加 -->
+                    <input type="text" value="鈴木様" class="w-full text-lg border-b-2 border-dotted border-slate-400 focus:outline-none pb-1" id="receipt-customer-name">
+                    <span class="text-lg font-medium ml-2">御中</span>
+                </div>
+                
+                <div class="text-center my-6 border-b-2 border-t-2 border-double border-slate-900 py-4">
+                    <!-- (変更) この金額は「今回ご請求額」が入る -->
+                    <p class="text-4xl font-bold tracking-wider" id="receipt-total">¥36,960 -</p>
+                </div>
+                
+                <div class="mb-6">
+                    <label class="text-xs text-slate-500">但し</label>
+                    <!-- (変更) ID追加 -->
+                    <input type="text" value="お飲食代として" class="w-full text-sm border-b border-dotted border-slate-400 focus:outline-none pt-1" id="receipt-description">
+                </div>
+
+                <div class="text-left text-sm">
+                    <!-- (変更) ID追加 -->
+                    <p class="font-semibold" id="receipt-store-name">Night POS 新宿本店</p>
+                    <p id="receipt-store-zip" class="hidden">〒160-0021</p>
+                    <p id="receipt-store-address">東京都新宿区歌舞伎町1-1-1</p>
+                    <p id="receipt-store-tel">TEL: 03-0000-0000</p>
+                    <p class="mt-2" id="receipt-staff">担当: 山田</p>
+                </div>
+                
+                <div class="text-right text-xs text-slate-400 mt-2" id="receipt-invoice-number">
+                    インボイス登録番号: T1234567890
+                </div>
+            </div>
+
+            <!-- モーダルフッター -->
+            <div class="flex justify-between p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
+                <!-- (新規) 伝票復活ボタン -->
+                <button id="reopen-slip-btn" class="px-4 py-2 rounded-lg bg-yellow-500 text-white font-semibold hover:bg-yellow-600">
+                    <i class="fa-solid fa-undo mr-2"></i>伝票を復活させる
+                </button>
+                
+                <div class="flex-grow flex justify-end space-x-3">
+                    <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                        閉じる
+                    </button>
+                    <!-- (変更) ID追加 -->
+                    <button id="print-receipt-btn" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
+                        <i class="fa-solid fa-print mr-2"></i>印刷する
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
+    
+    <!-- (新規) メニュー編集モーダル -->
     <div id="menu-editor-modal" class="modal-backdrop">
-        <div class="modal-content w-full max-w-lg">...</div>
+        <div class="modal-content w-full max-w-lg">
+            <form id="menu-editor-form">
+                <!-- モーダルヘッダー -->
+                <div class="flex justify-between items-center p-5 border-b">
+                    <h3 class="text-xl font-semibold" id="menu-editor-modal-title">新規メニュー追加</h3>
+                    <button type="button" class="modal-close-btn text-slate-400 hover:text-slate-600">
+                        <i class="fa-solid fa-xmark fa-xl"></i>
+                    </button>
+                </div>
+                
+                <!-- モーダルボディ -->
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label for="menu-category" class="text-sm font-semibold text-slate-600">カテゴリ</label>
+                        <select id="menu-category" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="set">セット料金</option>
+                            <option value="drink">ドリンク</option>
+                            <option value="bottle">ボトル</option>
+                            <option value="food">フード</option>
+                            <option value="cast">キャスト料金</option>
+                            <option value="other">その他</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="menu-name" class="text-sm font-semibold text-slate-600">項目名</label>
+                        <input type="text" id="menu-name" class="w-full p-2 border border-slate-300 rounded-lg mt-1" required>
+                    </div>
+                    <!-- セット料金の場合のみ表示 -->
+                    <div id="menu-duration-group">
+                        <label for="menu-duration" class="text-sm font-semibold text-slate-600">時間 (分)</label>
+                        <input type="number" id="menu-duration" placeholder="例: 60" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
+                    </div>
+                    <div>
+                        <label for="menu-price" class="text-sm font-semibold text-slate-600">料金 (税抜)</label>
+                        <input type="number" id="menu-price" placeholder="例: 10000" class="w-full p-2 border border-slate-300 rounded-lg mt-1" required>
+                    </div>
+                    <p id="menu-editor-error" class="text-xs text-red-600"></p>
+                </div>
+
+                <!-- モーダルフッター -->
+                <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
+                    <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                        キャンセル
+                    </button>
+                    <button id="save-menu-item-btn" type="submit" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
+                        保存する
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
+
     <!-- ===== /モーダルエリア ===== -->
 
     <!-- カスタムJavaScript -->
     <script type="module" src="settings.js"></script>
 </body>
 </html>
-

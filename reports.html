@@ -131,8 +131,8 @@
                                 <span class="text-sm font-medium text-slate-500">期間中総売上</span>
                                 <i class="fa-solid fa-yen-sign text-green-500"></i>
                             </div>
-                            <!-- (変更) data-value属性を追加 -->
-                            <p data-value="total-sales" class="text-3xl font-bold mt-2">¥0</p>
+                            <!-- (変更) data-value -> id -->
+                            <p id="summary-total-sales" class="text-3xl font-bold mt-2">¥0</p>
                             <p class="text-sm text-slate-500 mt-1">会計済み伝票合計</p>
                         </div>
                         <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
@@ -140,7 +140,8 @@
                                 <span class="text-sm font-medium text-slate-500">会計組数</span>
                                 <i class="fa-solid fa-receipt text-blue-500"></i>
                             </div>
-                            <p data-value="total-slips" class="text-3xl font-bold mt-2">0 <span class="text-lg font-medium">組</span></p>
+                            <!-- (変更) data-value -> id -->
+                            <p id="summary-total-slips" class="text-3xl font-bold mt-2">0 <span class="text-lg font-medium">組</span></p>
                             <p class="text-sm text-slate-500 mt-1">会計済み伝票数</p>
                         </div>
                         <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
@@ -148,7 +149,8 @@
                                 <span class="text-sm font-medium text-slate-500">平均客単価</span>
                                 <i class="fa-solid fa-user-group text-indigo-500"></i>
                             </div>
-                            <p data-value="avg-sales" class="text-3xl font-bold mt-2">¥0</p>
+                            <!-- (変更) data-value -> id -->
+                            <p id="summary-avg-sales" class="text-3xl font-bold mt-2">¥0</p>
                             <p class="text-sm text-slate-500 mt-1">総売上 / 組数</p>
                         </div>
                         <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
@@ -156,7 +158,8 @@
                                 <span class="text-sm font-medium text-slate-500">ボツ伝件数</span>
                                 <i class="fa-solid fa-trash-can text-red-500"></i>
                             </div>
-                            <p data-value="cancelled-slips" class="text-3xl font-bold mt-2">0 <span class="text-lg font-medium">件</span></p>
+                            <!-- (変更) data-value -> id -->
+                            <p id="summary-cancelled-slips" class="text-3xl font-bold mt-2">0 <span class="text-lg font-medium">件</span></p>
                             <p class="text-sm text-slate-500 mt-1">期間中のボツ伝</p>
                         </div>
                     </div>
@@ -386,8 +389,9 @@
             <!-- モーダルボディ (印刷領域) -->
             <div class="p-6 bg-white" id="slip-content-to-print">
                 <div class="text-center mb-4">
-                    <h2 class="text-lg font-bold">Night POS 新宿本店</h2>
-                    <p class="text-sm">TEL: 03-0000-0000</p>
+                    <!-- (変更) ID追加 -->
+                    <h2 class="text-lg font-bold" id="slip-store-name">Night POS 新宿本店</h2>
+                    <p class="text-sm" id="slip-store-tel">TEL: 03-0000-0000</p>
                     <p class="text-sm">発行日時: <span id="slip-datetime"></span></p>
                 </div>
                 
@@ -410,11 +414,13 @@
                         <span id="slip-subtotal">¥0</span>
                     </div>
                     <div class="flex justify-between">
-                        <span class="text-slate-600">サービス料 (20%)</span>
+                        <!-- (変更) ID追加 -->
+                        <span class="text-slate-600">サービス料 (<span id="slip-service-rate">0</span>%)</span>
                         <span id="slip-service-charge">¥0</span>
                     </div>
                     <div class="flex justify-between">
-                        <span class="text-slate-600">消費税 (10%)</span>
+                        <!-- (変更) ID追加 -->
+                        <span class="text-slate-600">消費税 (<span id="slip-tax-rate">0</span>%)</span>
                         <span id="slip-tax">¥0</span>
                     </div>
                     <!-- (新規) 支払い済み金額 -->
@@ -473,11 +479,13 @@
                                 <span id="checkout-subtotal">¥0</span>
                             </div>
                             <div class="flex justify-between">
-                                <span class="text-slate-600">サービス料 (20%)</span>
+                                <!-- (変更) ID追加 -->
+                                <span class="text-slate-600">サービス料 (<span id="checkout-service-rate">0</span>%)</span>
                                 <span id="checkout-service-charge">¥0</span>
                             </div>
                             <div class="flex justify-between">
-                                <span class="text-slate-600">消費税 (10%)</span>
+                                <!-- (変更) ID追加 -->
+                                <span class="text-slate-600">消費税 (<span id="checkout-tax-rate">0</span>%)</span>
                                 <span id="checkout-tax">¥0</span>
                             </div>
                             <!-- (新規) 支払い済み金額 -->
@@ -584,7 +592,8 @@
                 </div>
                 
                 <div class="mb-4">
-                    <input type="text" value="鈴木様" class="w-full text-lg border-b-2 border-dotted border-slate-400 focus:outline-none pb-1">
+                    <!-- (変更) ID追加 -->
+                    <input type="text" value="鈴木様" class="w-full text-lg border-b-2 border-dotted border-slate-400 focus:outline-none pb-1" id="receipt-customer-name">
                     <span class="text-lg font-medium ml-2">御中</span>
                 </div>
                 
@@ -595,18 +604,20 @@
                 
                 <div class="mb-6">
                     <label class="text-xs text-slate-500">但し</label>
-                    <input type="text" value="お飲食代として" class="w-full text-sm border-b border-dotted border-slate-400 focus:outline-none pt-1">
+                    <!-- (変更) ID追加 -->
+                    <input type="text" value="お飲食代として" class="w-full text-sm border-b border-dotted border-slate-400 focus:outline-none pt-1" id="receipt-description">
                 </div>
 
                 <div class="text-left text-sm">
-                    <p class="font-semibold">Night POS 新宿本店</p>
-                    <p>〒160-0021</p>
-                    <p>東京都新宿区歌舞伎町1-1-1</p>
-                    <p>TEL: 03-0000-0000</p>
-                    <p class="mt-2">担当: 山田</p>
+                    <!-- (変更) ID追加 -->
+                    <p class="font-semibold" id="receipt-store-name">Night POS 新宿本店</p>
+                    <p id="receipt-store-zip" class="hidden">〒160-0021</p>
+                    <p id="receipt-store-address">東京都新宿区歌舞伎町1-1-1</p>
+                    <p id="receipt-store-tel">TEL: 03-0000-0000</p>
+                    <p class="mt-2" id="receipt-staff">担当: 山田</p>
                 </div>
                 
-                <div class="text-right text-xs text-slate-400 mt-2">
+                <div class="text-right text-xs text-slate-400 mt-2" id="receipt-invoice-number">
                     インボイス登録番号: T1234567890
                 </div>
             </div>
@@ -622,7 +633,8 @@
                     <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
                         閉じる
                     </button>
-                    <button class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
+                    <!-- (変更) ID追加 -->
+                    <button id="print-receipt-btn" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
                         <i class="fa-solid fa-print mr-2"></i>印刷する
                     </button>
                 </div>
