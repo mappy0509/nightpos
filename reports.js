@@ -1,8 +1,17 @@
-// ===== グローバル定数・変数 =====
-// (変更) stateから読み込むようにするため、ダミー定数を削除
-// const DUMMY_SERVICE_CHARGE_RATE = 0.20; 
-// const DUMMY_TAX_RATE = 0.10;
+// ===== Firebase =====
+// (新規) Firebase SDK と 初期化モジュールをインポート
+import { getFirebaseServices } from './firebase-init.js';
+import {
+    doc,
+    onSnapshot
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+// (新規) Firebaseサービス (db, auth, userId, appId) を保持するグローバル変数
+let db, auth, userId, appId;
+let stateDocRef; // (新規) Firestore の state ドキュメント参照
+let unsubscribeState = null; // (新規) onSnapshot の購読解除関数
+
+// ===== グローバル定数・変数 =====
 /**
  * UUIDを生成する
  * @returns {string} UUID
@@ -13,17 +22,16 @@ const getUUID = () => {
 
 // (変更) ===== state管理 =====
 
-const LOCAL_STORAGE_KEY = 'nightPosState';
+// (削除) const LOCAL_STORAGE_KEY = 'nightPosState';
 
 /**
- * (新規) デフォルトのstateを定義する関数
+ * (変更) デフォルトのstateを定義する関数 (Firestore新規作成用)
  * @returns {object} デフォルトのstateオブジェクト
  */
 const getDefaultState = () => ({
     currentPage: 'reports', // (変更) このページのデフォルト
     currentStore: 'store1',
-    slipCounter: 3,
-    // (新規) 伝票タグのマスターデータ
+    slipCounter: 0,
     slipTagsMaster: [
         { id: 'tag1', name: '指名' },
         { id: 'tag2', name: '初指名' },
@@ -34,224 +42,70 @@ const getDefaultState = () => ({
         { id: 'tag7', name: '20歳未満' },
         { id: 'tag8', name: '同業' },
     ],
-    // (変更) キャストマスタ (IDと名前)
-    casts: [ 
+    casts: [
         { id: 'c1', name: 'あい' },
         { id: 'c2', name: 'みう' },
         { id: 'c3', name: 'さくら' },
-        { id: 'c4', name: 'れな' },
-        { id: 'c5', name: 'ひな' },
-        { id: 'c6', name: '体験A' },
     ],
-    // (変更) 顧客マスタ (指名キャストIDを持たせる)
     customers: [
-        { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' }, // あいの指名
-        { id: 'cust2', name: '田中様', nominatedCastId: null }, // フリー
-        { id: 'cust3', name: '佐藤様', nominatedCastId: 'c2' }, // みうの指名
-        { id: 'cust4', name: '山田様', nominatedCastId: 'c1' }, // あいの指名
-        { id: 'cust5', name: '渡辺様', nominatedCastId: 'c3' }, // さくらの指名
-        { id: 'cust6', name: '伊藤様', nominatedCastId: null }, // フリー
+        { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
+        { id: 'cust2', name: '田中様', nominatedCastId: null },
     ],
     tables: [
-        { id: 'V1', status: 'occupied' },
+        { id: 'V1', status: 'available' },
         { id: 'V2', status: 'available' },
-        { id: 'V3', status: 'occupied' },
-        { id: 'V4', status: 'available' },
         { id: 'T1', status: 'available' },
-        { id: 'T2', status: 'occupied' },
-        { id: 'T3', status: 'available' },
-        { id: 'T4', status: 'available' },
-        { id: 'C1', status: 'available' },
-        { id: 'C2', status: 'available' },
     ],
-    slips: [
-        { 
-            slipId: 'slip-1', 
-            slipNumber: 1,
-            tableId: 'V1', 
-            status: 'active',
-            name: '鈴木様', 
-            startTime: '20:30', 
-            nominationCastId: 'c1', // (変更) 名前 -> ID
-            items: [
-                { id: 'm1', name: '基本セット (指名)', price: 10000, qty: 1 },
-                { id: 'm7', name: 'キャストドリンク', price: 1500, qty: 2 },
-                { id: 'm10', name: '鏡月 (ボトル)', price: 8000, qty: 1 },
-            ],
-            tags: ['指名'], // (新規)
-            paidAmount: 0, 
-            cancelReason: null,
-            paymentDetails: { cash: 0, card: 0, credit: 0 } 
-        },
-        { 
-            slipId: 'slip-3', 
-            slipNumber: 2,
-            tableId: 'V3', 
-            status: 'checkout', 
-            name: '田中様', 
-            startTime: '21:00', 
-            nominationCastId: null, // (変更) "フリー" -> null
-            items: [
-                { id: 'm2', name: '基本セット (フリー)', price: 8000, qty: 1 },
-                { id: 'm8', name: 'ビール', price: 1000, qty: 6 },
-            ],
-            tags: [], // (新規)
-            paidAmount: 0,
-            cancelReason: null, 
-            paymentDetails: { cash: 0, card: 0, credit: 0 } 
-        },
-        { 
-            slipId: 'slip-4', 
-            slipNumber: 3,
-            tableId: 'T2', 
-            status: 'active', 
-            name: '佐藤様', 
-            startTime: '22:15', 
-            nominationCastId: 'c2', // (変更) 名前 -> ID
-            items: [
-                { id: 'm1', name: '基本セット (指名)', price: 10000, qty: 1 },
-                { id: 'm12', name: 'シャンパン (ゴールド)', price: 50000, qty: 1 },
-                { id: 'm7', name: 'キャストドリンク', price: 1500, qty: 8 },
-            ],
-            tags: ['指名'], // (新規)
-            paidAmount: 0,
-            cancelReason: null, 
-            paymentDetails: { cash: 0, card: 0, credit: 0 } 
-        },
-    ],
+    slips: [],
     menu: {
         set: [
             { id: 'm1', name: '基本セット (指名)', price: 10000, duration: 60 },
             { id: 'm2', name: '基本セット (フリー)', price: 8000, duration: 60 },
-            { id: 'm3', name: '延長 (自動)', price: 5000, duration: 30 },
         ],
         drink: [
             { id: 'm7', name: 'キャストドリンク', price: 1500 },
             { id: 'm8', name: 'ビール', price: 1000 },
         ],
-        bottle: [
-            { id: 'm11', name: '鏡月 (ボトル)', price: 8000 },
-            { id: 'm12', name: 'シャンパン (ゴールド)', price: 50000 },
-        ],
-        food: [
-            { id: 'm4', name: '乾き物盛り合わせ', price: 2000 },
-        ],
+        bottle: [],
+        food: [],
         cast: [
             { id: 'm14', name: '本指名料', price: 3000 },
         ],
-        other: [
-            { id: 'm6', name: 'カラオケ', price: 1000 },
-        ]
+        other: []
     },
-    // (新規) 店舗設定用の項目
     storeInfo: {
         name: "Night POS 新宿本店",
         address: "東京都新宿区歌舞伎町1-1-1",
         tel: "03-0000-0000"
     },
-    // (新規) 税率用の項目 (0.xx の形式で保存)
     rates: {
-        tax: 0.10, // 消費税 10%
-        service: 0.20 // サービス料 20%
+        tax: 0.10,
+        service: 0.20
     },
-    // (新規) 営業日付の変更時刻
-    dayChangeTime: "05:00", // デフォルト AM 5:00
-    // (新規) キャスト成績反映設定
+    dayChangeTime: "05:00",
     performanceSettings: {
-        menuItems: {
-            // 'm14': { salesType: 'percentage', salesValue: 100, countNomination: true }
-        },
+        menuItems: {},
         serviceCharge: { salesType: 'percentage', salesValue: 0 },
         tax: { salesType: 'percentage', salesValue: 0 },
         sideCustomer: { salesValue: 100, countNomination: true }
     },
-    currentSlipId: null, 
+    currentSlipId: null,
     currentEditingMenuId: null,
-    currentBillingAmount: 0, 
+    currentBillingAmount: 0,
     ranking: {
         period: 'monthly',
         type: 'nominations'
     }
 });
 
-/**
- * (新規) localStorageからstateを読み込む
- * @returns {object} stateオブジェクト
- */
-const loadState = () => {
-    const storedState = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (storedState) {
-        const defaultState = getDefaultState();
-        const parsedState = JSON.parse(storedState);
+// (削除) loadState 関数
+// (削除) saveState 関数
 
-        // (新規) performanceSettings のネストされたマージ
-        const defaultPerfSettings = defaultState.performanceSettings;
-        const parsedPerfSettings = parsedState.performanceSettings || {};
-        const mergedPerfSettings = {
-            ...defaultPerfSettings,
-            ...parsedPerfSettings,
-            // 各項目を個別にマージ
-            menuItems: { ...defaultPerfSettings.menuItems, ...(parsedPerfSettings.menuItems || {}) },
-            serviceCharge: { ...defaultPerfSettings.serviceCharge, ...(parsedPerfSettings.serviceCharge || {}) },
-            tax: { ...defaultPerfSettings.tax, ...(parsedPerfSettings.tax || {}) },
-            sideCustomer: { ...defaultPerfSettings.sideCustomer, ...(parsedPerfSettings.sideCustomer || {}) },
-        };
+// (変更) グローバルな state は Firestore からのデータで上書きされる
+let state = getDefaultState();
 
-        // (変更) ネストされたオブジェクトも正しくマージする
-        const mergedState = {
-            ...defaultState,
-            ...parsedState,
-            storeInfo: { ...defaultState.storeInfo, ...parsedState.storeInfo },
-            rates: { ...defaultState.rates, ...parsedState.rates },
-            ranking: { ...defaultState.ranking, ...parsedState.ranking },
-            menu: { ...defaultState.menu, ...parsedState.menu },
-            slipTagsMaster: parsedState.slipTagsMaster || defaultState.slipTagsMaster, // (新規)
-             // (新規) 伝票(slips)データにtagsプロパティがない場合、空配列[]を追加する
-             slips: (parsedState.slips || defaultState.slips).map(slip => ({
-                ...slip,
-                tags: slip.tags || [] // (新規) 古いデータにtagsを追加
-            })),
-            dayChangeTime: parsedState.dayChangeTime || defaultState.dayChangeTime, // (新規)
-            performanceSettings: mergedPerfSettings, // (新規)
-            currentPage: 'reports' // (変更) このページのデフォルト
-        };
-        
-        // (変更) ratesが%表記(10)で保存されていたら小数(0.10)に変換する
-        if (mergedState.rates.tax > 1) {
-            mergedState.rates.tax = mergedState.rates.tax / 100;
-        }
-        if (mergedState.rates.service > 1) {
-            mergedState.rates.service = mergedState.rates.service / 100;
-        }
-
-        return mergedState;
-    } else {
-        const defaultState = getDefaultState();
-        saveState(defaultState);
-        return defaultState;
-    }
-};
-
-/**
- * (新規) stateをlocalStorageに保存する
- * @param {object} newState 保存するstateオブジェクト
- */
-const saveState = (newState) => {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newState));
-};
-
-// (新規) 起動時にstateをロード
-let state = loadState();
-
-/**
- * (新規) state変更時に保存するラッパー関数
- * @param {object} newState 更新後のstateオブジェクト
- */
-const updateState = (newState) => {
-    state = newState;
-    saveState(state);
-};
-
+// (削除) updateStateInFirestore 関数 (reports.js は読み取り専用)
+// (削除) updateState 関数
 
 // ===== DOM要素 =====
 // (変更) reports.jsで必要なDOMのみ
@@ -280,17 +134,22 @@ const formatCurrency = (amount) => {
  * @returns {number} 合計金額
  */
 const calculateSlipTotal = (slip) => {
-    if (slip.status === 'cancelled') {
+    if (!slip || slip.status === 'cancelled') {
         return 0;
     }
     let subtotal = 0;
-    slip.items.forEach(item => {
+    // (変更) slip.items が存在するかチェック
+    (slip.items || []).forEach(item => {
         subtotal += item.price * item.qty;
     });
-    // (変更) stateから税率を読み込む
-    const serviceCharge = subtotal * state.rates.service;
+    
+    // (変更) state.rates が存在するかチェック
+    const taxRate = (state.rates && state.rates.tax) ? state.rates.tax : 0.10;
+    const serviceRate = (state.rates && state.rates.service) ? state.rates.service : 0.20;
+
+    const serviceCharge = subtotal * serviceRate;
     const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * state.rates.tax;
+    const tax = subtotalWithService * taxRate;
     const total = subtotalWithService + tax;
     return Math.round(total);
 };
@@ -303,7 +162,8 @@ const calculateSlipTotal = (slip) => {
  */
 const getCastNameById = (castId) => {
     if (!castId) return 'フリー';
-    const cast = state.casts.find(c => c.id === castId);
+    // (変更) state.casts が存在するかチェック
+    const cast = (state.casts || []).find(c => c.id === castId);
     return cast ? cast.name : '不明';
 };
 
@@ -314,7 +174,8 @@ const getCastNameById = (castId) => {
  * @returns {number} 未会計伝票数
  */
 const getActiveSlipCount = (tableId) => {
-    return state.slips.filter(
+    // (変更) state.slips が存在するかチェック
+    return (state.slips || []).filter(
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     ).length;
 };
@@ -336,8 +197,8 @@ const closeModal = (modalElement) => {
  * (新規) 売上分析サマリーを計算・表示する
  */
 const renderReportsSummary = () => {
-    // (変更) state.slips から集計
-    const paidSlips = state.slips.filter(slip => slip.status === 'paid');
+    // (変更) state.slips が存在するかチェック
+    const paidSlips = (state.slips || []).filter(slip => slip.status === 'paid');
     
     let totalSales = 0;
     paidSlips.forEach(slip => {
@@ -358,12 +219,13 @@ const renderReportsSummary = () => {
 const renderReportsRanking = () => {
     if (!reportsRankingList) return;
     
-    // (変更) state.slips から集計
-    const paidSlips = state.slips.filter(slip => slip.status === 'paid');
+    // (変更) state.slips が存在するかチェック
+    const paidSlips = (state.slips || []).filter(slip => slip.status === 'paid');
     const itemMap = new Map();
 
     paidSlips.forEach(slip => {
-        slip.items.forEach(item => {
+        // (変更) slip.items が存在するかチェック
+        (slip.items || []).forEach(item => {
             const currentQty = itemMap.get(item.name) || 0;
             itemMap.set(item.name, currentQty + item.qty);
         });
@@ -395,7 +257,7 @@ const renderSalesChart = (period = 'daily') => {
     if (!reportsChartCanvas) return;
     const ctx = reportsChartCanvas.getContext('2d');
 
-    // ダミーデータ
+    // (変更) ダミーデータのまま (Firebase化のスコープ外)
     let labels, data;
     switch (period) {
         case 'weekly':
@@ -466,7 +328,7 @@ const renderSalesChart = (period = 'daily') => {
 
 // --- イベントリスナー ---
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     
     // ===== DOM要素の取得 =====
     // (変更) reports.js で必要なDOMのみ取得
@@ -484,8 +346,63 @@ document.addEventListener('DOMContentLoaded', () => {
     reportContentArea = document.getElementById('reports-content-area'); // (変更) キャプチャ対象
 
     
-    // ===== 初期化処理 =====
-    if (reportsSummaryCards) { // (変更) reportsページ以外では実行しない
+    // ===== (新規) Firebase 初期化とデータリッスン =====
+    try {
+        const services = await getFirebaseServices();
+        db = services.db;
+        auth = services.auth;
+        userId = services.userId;
+        appId = services.appId;
+
+        // (新規) ユーザーの state ドキュメントへの参照を作成
+        stateDocRef = doc(db, "artifacts", appId, "users", userId, "data", "mainState");
+
+        // (新規) Firestore の state をリアルタイムでリッスン
+        if (unsubscribeState) unsubscribeState(); 
+        
+        unsubscribeState = onSnapshot(stateDocRef, (doc) => {
+            if (doc.exists()) {
+                const firestoreState = doc.data();
+                const defaultState = getDefaultState();
+                state = { 
+                    ...defaultState, 
+                    ...firestoreState,
+                    storeInfo: { ...defaultState.storeInfo, ...(firestoreState.storeInfo || {}) },
+                    rates: { ...defaultState.rates, ...(firestoreState.rates || {}) },
+                    ranking: { ...defaultState.ranking, ...(firestoreState.ranking || {}) },
+                    menu: { ...defaultState.menu, ...(firestoreState.menu || {}) },
+                    performanceSettings: { 
+                        ...defaultState.performanceSettings, 
+                        ...(firestoreState.performanceSettings || {}),
+                        menuItems: { ...defaultState.performanceSettings.menuItems, ...(firestoreState.performanceSettings?.menuItems || {}) },
+                        serviceCharge: { ...defaultState.performanceSettings.serviceCharge, ...(firestoreState.performanceSettings?.serviceCharge || {}) },
+                        tax: { ...defaultState.performanceSettings.tax, ...(firestoreState.performanceSettings?.tax || {}) },
+                        sideCustomer: { ...defaultState.performanceSettings.sideCustomer, ...(firestoreState.performanceSettings?.sideCustomer || {}) },
+                    },
+                };
+                console.log("Local state updated from Firestore");
+            } else {
+                // (変更) reports.js は読み取り専用なので、ドキュメント作成は行わない
+                console.log("No state document found. Using default state.");
+                state = getDefaultState();
+            }
+
+            // (新規) ページが reports の場合のみUIを更新
+            renderReportsSummary();
+            renderReportsRanking();
+            
+            // (新規) チャートの期間タブの状態を読み取ってグラフを再描画
+            const activePeriodTab = reportsPeriodTabs?.querySelector('button.active');
+            const period = activePeriodTab ? activePeriodTab.dataset.period : 'daily';
+            renderSalesChart(period);
+
+        }, (error) => {
+            console.error("Error listening to state document:", error);
+        });
+
+    } catch (e) {
+        console.error("Failed to initialize Firebase or auth:", e);
+        // (新規) Firebaseが失敗した場合でも、ローカルのデフォルトstateでUIを描画
         renderReportsSummary();
         renderReportsRanking();
         renderSalesChart('daily'); // 初期表示は 'daily'
@@ -524,12 +441,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             html2canvas(reportContentArea, {
-                useCORS: true, // (変更) 外部ライブラリ(Chart.js)を使用しているため
-                scale: 2 // (変更) 高解像度でキャプチャ
+                useCORS: true,
+                scale: 2 
             }).then(canvas => {
                 const link = document.createElement('a');
                 link.download = 'daily_report.jpg';
-                link.href = canvas.toDataURL('image/jpeg', 0.9); // (変更) JPEG形式、品質90%
+                link.href = canvas.toDataURL('image/jpeg', 0.9); 
                 link.click();
             });
         });
