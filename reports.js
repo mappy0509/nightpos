@@ -23,6 +23,17 @@ const getDefaultState = () => ({
     currentPage: 'reports', // (変更) このページのデフォルト
     currentStore: 'store1',
     slipCounter: 3,
+    // (新規) 伝票タグのマスターデータ
+    slipTagsMaster: [
+        { id: 'tag1', name: '指名' },
+        { id: 'tag2', name: '初指名' },
+        { id: 'tag3', name: '初回' },
+        { id: 'tag4', name: '枝' },
+        { id: 'tag5', name: '切替' },
+        { id: 'tag6', name: '案内所' },
+        { id: 'tag7', name: '20歳未満' },
+        { id: 'tag8', name: '同業' },
+    ],
     // (変更) キャストマスタ (IDと名前)
     casts: [ 
         { id: 'c1', name: 'あい' },
@@ -67,6 +78,7 @@ const getDefaultState = () => ({
                 { id: 'm7', name: 'キャストドリンク', price: 1500, qty: 2 },
                 { id: 'm10', name: '鏡月 (ボトル)', price: 8000, qty: 1 },
             ],
+            tags: ['指名'], // (新規)
             paidAmount: 0, 
             cancelReason: null,
             paymentDetails: { cash: 0, card: 0, credit: 0 } 
@@ -83,6 +95,7 @@ const getDefaultState = () => ({
                 { id: 'm2', name: '基本セット (フリー)', price: 8000, qty: 1 },
                 { id: 'm8', name: 'ビール', price: 1000, qty: 6 },
             ],
+            tags: [], // (新規)
             paidAmount: 0,
             cancelReason: null, 
             paymentDetails: { cash: 0, card: 0, credit: 0 } 
@@ -100,6 +113,7 @@ const getDefaultState = () => ({
                 { id: 'm12', name: 'シャンパン (ゴールド)', price: 50000, qty: 1 },
                 { id: 'm7', name: 'キャストドリンク', price: 1500, qty: 8 },
             ],
+            tags: ['指名'], // (新規)
             paidAmount: 0,
             cancelReason: null, 
             paymentDetails: { cash: 0, card: 0, credit: 0 } 
@@ -140,6 +154,17 @@ const getDefaultState = () => ({
         tax: 0.10, // 消費税 10%
         service: 0.20 // サービス料 20%
     },
+    // (新規) 営業日付の変更時刻
+    dayChangeTime: "05:00", // デフォルト AM 5:00
+    // (新規) キャスト成績反映設定
+    performanceSettings: {
+        menuItems: {
+            // 'm14': { salesType: 'percentage', salesValue: 100, countNomination: true }
+        },
+        serviceCharge: { salesType: 'percentage', salesValue: 0 },
+        tax: { salesType: 'percentage', salesValue: 0 },
+        sideCustomer: { salesValue: 100, countNomination: true }
+    },
     currentSlipId: null, 
     currentEditingMenuId: null,
     currentBillingAmount: 0, 
@@ -158,6 +183,20 @@ const loadState = () => {
     if (storedState) {
         const defaultState = getDefaultState();
         const parsedState = JSON.parse(storedState);
+
+        // (新規) performanceSettings のネストされたマージ
+        const defaultPerfSettings = defaultState.performanceSettings;
+        const parsedPerfSettings = parsedState.performanceSettings || {};
+        const mergedPerfSettings = {
+            ...defaultPerfSettings,
+            ...parsedPerfSettings,
+            // 各項目を個別にマージ
+            menuItems: { ...defaultPerfSettings.menuItems, ...(parsedPerfSettings.menuItems || {}) },
+            serviceCharge: { ...defaultPerfSettings.serviceCharge, ...(parsedPerfSettings.serviceCharge || {}) },
+            tax: { ...defaultPerfSettings.tax, ...(parsedPerfSettings.tax || {}) },
+            sideCustomer: { ...defaultPerfSettings.sideCustomer, ...(parsedPerfSettings.sideCustomer || {}) },
+        };
+
         // (変更) ネストされたオブジェクトも正しくマージする
         const mergedState = {
             ...defaultState,
@@ -166,6 +205,14 @@ const loadState = () => {
             rates: { ...defaultState.rates, ...parsedState.rates },
             ranking: { ...defaultState.ranking, ...parsedState.ranking },
             menu: { ...defaultState.menu, ...parsedState.menu },
+            slipTagsMaster: parsedState.slipTagsMaster || defaultState.slipTagsMaster, // (新規)
+             // (新規) 伝票(slips)データにtagsプロパティがない場合、空配列[]を追加する
+             slips: (parsedState.slips || defaultState.slips).map(slip => ({
+                ...slip,
+                tags: slip.tags || [] // (新規) 古いデータにtagsを追加
+            })),
+            dayChangeTime: parsedState.dayChangeTime || defaultState.dayChangeTime, // (新規)
+            performanceSettings: mergedPerfSettings, // (新規)
             currentPage: 'reports' // (変更) このページのデフォルト
         };
         
@@ -489,4 +536,3 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 });
-

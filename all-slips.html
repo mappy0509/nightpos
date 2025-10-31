@@ -229,6 +229,14 @@
                         <p id="new-customer-error" class="text-xs text-red-600 mt-1"></p>
                     </div>
 
+                    <!-- (新規) 伝票タグ -->
+                    <div class="mb-4">
+                        <label class="text-xs font-semibold text-slate-500">伝票タグ</label>
+                        <div id="order-tags-container" class="mt-2 flex flex-wrap gap-2">
+                            <!-- JSで動的に生成 -->
+                        </div>
+                    </div>
+
                     <!-- 注文履歴 -->
                     <h4 class="font-semibold mb-3">ご注文内容</h4>
                     <div class="flex-1 space-y-3 pr-2 overflow-y-auto" id="order-items-list">

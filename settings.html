@@ -139,6 +139,67 @@
                                     </div>
                                 </div>
 
+                                <!-- (新規) キャスト成績反映設定 -->
+                                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">キャスト成績反映設定</h3>
+                                    
+                                    <!-- キャスト料金項目 -->
+                                    <div class="mb-6">
+                                        <h4 class="font-semibold text-slate-700 mb-3">キャスト料金項目の設定</h4>
+                                        <p class="text-sm text-slate-500 mb-3">「メニュー管理」で "キャスト料金" カテゴリに登録された項目が対象です。</p>
+                                        <div id="performance-cast-items-container" class="space-y-4">
+                                            <!-- JSで動的に生成 -->
+                                        </div>
+                                    </div>
+
+                                    <!-- サービス料・税 -->
+                                    <div class="mb-6 pt-4 border-t">
+                                        <h4 class="font-semibold text-slate-700 mb-3">サービス料・消費税の設定</h4>
+                                        <div class="space-y-4">
+                                            <!-- サービス料 -->
+                                            <div>
+                                                <label class="block text-sm font-semibold text-slate-600 mb-1">サービス料</label>
+                                                <select id="setting-service-charge" class="w-full p-2 border border-slate-300 rounded-lg bg-white">
+                                                    <option value="store">店舗売上 (成績に反映しない)</option>
+                                                    <option value="personal_100">個人売上 (100% 反映)</option>
+                                                </select>
+                                            </div>
+                                            <!-- 消費税 -->
+                                            <div>
+                                                <label class="block text-sm font-semibold text-slate-600 mb-1">消費税</label>
+                                                <select id="setting-tax" class="w-full p-2 border border-slate-300 rounded-lg bg-white">
+                                                    <option value="store">店舗売上 (成績に反映しない)</option>
+                                                    <option value="personal_100">個人売上 (100% 反映)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 枝（紹介） -->
+                                    <div class="pt-4 border-t">
+                                        <h4 class="font-semibold text-slate-700 mb-3">枝（紹介）の設定</h4>
+                                        <div class="space-y-4">
+                                            <div>
+                                                <label class="block text-sm font-semibold text-slate-600 mb-1">「枝」タグのお客様の売上</label>
+                                                <select id="setting-branch-sales" class="w-full p-2 border border-slate-300 rounded-lg bg-white">
+                                                    <option value="personal_100">担当キャストの売上 (100% 反映)</option>
+                                                    <option value="personal_50">担当キャストの売上 (50% 反映)</option>
+                                                    <option value="personal_0">担当キャストの売上 (0% 反映)</option>
+                                                    <option value="store">店舗売上 (成績に反映しない)</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label class="block text-sm font-semibold text-slate-600 mb-1">「枝」タグのお客様の指名本数</label>
+                                                <select id="setting-branch-noms" class="w-full p-2 border border-slate-300 rounded-lg bg-white">
+                                                    <option value="personal">担当キャストの本数に加算</option>
+                                                    <option value="none">加算しない</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+
                                 <!-- テーブル設定 -->
                                 <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
                                     <h3 class="text-lg font-semibold mb-5 border-b pb-3">テーブル設定</h3>
@@ -191,16 +252,106 @@
         <!-- ===== /メインコンテンツ ===== -->
     </div>
 
-    <!-- ===== モーダルエリア (変更なし、中身は省略) ===== -->
+    <!-- ===== モーダルエリア (変更) ===== -->
     <div id="new-slip-confirm-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-md">...</div>
     </div>
     <div id="slip-selection-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-lg">...</div>
     </div>
+    
+    <!-- 伝票モーダル (注文入力) -->
     <div id="order-modal" class="modal-backdrop">
-        <div class="modal-content w-full max-w-5xl flex flex-col max-h-[95vh]">...</div>
+        <div class="modal-content w-full max-w-5xl flex flex-col max-h-[95vh]">
+            <!-- モーダルヘッダー -->
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold" id="order-modal-title">テーブル V1</h3>
+                <button class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <!-- モーダルボディ -->
+            <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
+                <!-- 左側: 注文リスト -->
+                <div class="w-full md:w-3/5 p-6 flex flex-col border-r overflow-y-auto">
+                    <!-- 顧客情報 (変更) -->
+                    <div class="mb-4 grid grid-cols-2 gap-4">
+                        <div> <!-- (変更) 指名を左側に配置 -->
+                            <label class="text-xs font-semibold text-slate-500">指名</label>
+                            <!-- (変更) input -> select -->
+                            <select id="order-nomination-select" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <!-- JSで動的に生成 -->
+                                <option value="フリー">フリー</option>
+                            </select>
+                        </div>
+                        <div> <!-- (変更) お客様名を右側に配置 -->
+                            <label class="text-xs font-semibold text-slate-500">お客様名</label>
+                            <!-- (変更) input -> select -->
+                            <select id="order-customer-name-select" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <!-- JSで動的に生成 -->
+                            </select>
+                        </div>
+                    </div>
+                    <!-- (新規) 新規顧客入力フォーム -->
+                    <div id="new-customer-input-group" class="mb-4 p-3 bg-slate-100 rounded-lg border border-slate-300 hidden">
+                        <label class="text-xs font-semibold text-slate-600">新規顧客名</label>
+                        <div class="flex space-x-2 mt-1">
+                            <input type="text" id="new-customer-name-input" placeholder="例: 山田様" class="w-full p-2 border border-slate-300 rounded-lg">
+                            <button id="save-new-customer-btn" class="px-3 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700">保存</button>
+                        </div>
+                        <p id="new-customer-error" class="text-xs text-red-600 mt-1"></p>
+                    </div>
+
+                    <!-- (新規) 伝票タグ -->
+                    <div class="mb-4">
+                        <label class="text-xs font-semibold text-slate-500">伝票タグ</label>
+                        <div id="order-tags-container" class="mt-2 flex flex-wrap gap-2">
+                            <!-- JSで動的に生成 -->
+                        </div>
+                    </div>
+
+                    <!-- 注文履歴 -->
+                    <h4 class="font-semibold mb-3">ご注文内容</h4>
+                    <div class="flex-1 space-y-3 pr-2 overflow-y-auto" id="order-items-list">
+                        <!-- 注文アイテムはJSで動的に生成 -->
+                    </div>
+                </div>
+
+                <!-- 右側: メニュー選択 -->
+                <div class="w-full md:w-2/5 p-6 bg-slate-50 flex flex-col overflow-y-auto">
+                    <h4 class="font-semibold mb-4">オーダー追加</h4>
+                    <div class="grid grid-cols-3 gap-3" id="menu-order-grid">
+                        <!-- メニューアイテムはJSで動的に生成 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- モーダルフッター -->
+            <div class="flex justify-between items-center p-5 border-t bg-white">
+                <div>
+                    <!-- (新規) ボツ伝ボタン -->
+                    <button id="open-cancel-slip-modal-btn" class="px-4 py-2 rounded-lg bg-red-100 text-red-700 font-semibold hover:bg-red-200">
+                        <i class="fa-solid fa-trash-can mr-2"></i>この伝票をボツにする
+                    </button>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <div class="text-right">
+                        <span class="text-sm text-slate-600">小計</span>
+                        <p class="text-2xl font-bold" id="order-subtotal">¥0</p>
+                    </div>
+                    <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200">
+                        閉じる
+                    </button>
+                    <!-- (変更) ボタンのテキストとIDを変更 -->
+                    <button id="open-slip-preview-btn" class="px-6 py-2 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700">
+                        <i class="fa-solid fa-clipboard-list mr-2"></i>伝票プレビューへ
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
+
     <div id="cancel-slip-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-lg">...</div>
     </div>

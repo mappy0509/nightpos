@@ -97,38 +97,42 @@
             <div class="flex-1 overflow-y-auto p-6 lg:p-8">
                 
                 <!-- (変更) 売上分析ダッシュボード -->
-                <div id="reports">
+                <!-- (変更) JPEGエクスポートの対象領域IDを追加 -->
+                <div id="reports-content-area">
                     <!-- 期間選択タブ -->
                     <div class="mb-6 flex items-center justify-between">
-                        <div class="flex space-x-2 border-b">
-                            <button class="report-period-btn active" data-period="daily">
+                        <div class="flex space-x-2 border-b" id="reports-period-tabs">
+                            <!-- (変更) report-period-btn -> ranking-type-btn スタイルを拝借 -->
+                            <button class="ranking-type-btn active" data-period="daily">
                                 <i class="fa-solid fa-calendar-day mr-1"></i> 日次
                             </button>
-                            <button class="report-period-btn" data-period="weekly">
+                            <button class="ranking-type-btn" data-period="weekly">
                                 <i class="fa-solid fa-calendar-week mr-1"></i> 週次
                             </button>
-                            <button class="report-period-btn" data-period="monthly">
+                            <button class="ranking-type-btn" data-period="monthly">
                                 <i class="fa-solid fa-calendar-alt mr-1"></i> 月次
                             </button>
                         </div>
                         <!-- (変更) 日付選択とエクスポートボタン -->
                         <div class="flex items-center space-x-3">
                             <input type="date" class="p-2 border border-slate-300 rounded-lg text-sm" value="2025-10-30" disabled>
-                            <!-- (新規) エクスポートボタン -->
-                            <button id="export-report-btn" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition duration-200">
+                            <!-- (変更) IDを変更 -->
+                            <button id="export-jpg-btn" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition duration-200">
                                 <i class="fa-solid fa-download mr-2"></i>JPEGで保存
                             </button>
                         </div>
                     </div>
 
                     <!-- サマリーカード -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <!-- (変更) IDを変更 -->
+                    <div id="reports-summary" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
                             <div class="flex justify-between items-center">
                                 <span class="text-sm font-medium text-slate-500">期間中総売上</span>
                                 <i class="fa-solid fa-yen-sign text-green-500"></i>
                             </div>
-                            <p id="report-total-sales" class="text-3xl font-bold mt-2">¥0</p>
+                            <!-- (変更) data-value属性を追加 -->
+                            <p data-value="total-sales" class="text-3xl font-bold mt-2">¥0</p>
                             <p class="text-sm text-slate-500 mt-1">会計済み伝票合計</p>
                         </div>
                         <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
@@ -136,7 +140,7 @@
                                 <span class="text-sm font-medium text-slate-500">会計組数</span>
                                 <i class="fa-solid fa-receipt text-blue-500"></i>
                             </div>
-                            <p id="report-total-slips" class="text-3xl font-bold mt-2">0 <span class="text-lg font-medium">組</span></p>
+                            <p data-value="total-slips" class="text-3xl font-bold mt-2">0 <span class="text-lg font-medium">組</span></p>
                             <p class="text-sm text-slate-500 mt-1">会計済み伝票数</p>
                         </div>
                         <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
@@ -144,7 +148,7 @@
                                 <span class="text-sm font-medium text-slate-500">平均客単価</span>
                                 <i class="fa-solid fa-user-group text-indigo-500"></i>
                             </div>
-                            <p id="report-avg-sales" class="text-3xl font-bold mt-2">¥0</p>
+                            <p data-value="avg-sales" class="text-3xl font-bold mt-2">¥0</p>
                             <p class="text-sm text-slate-500 mt-1">総売上 / 組数</p>
                         </div>
                         <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
@@ -152,7 +156,7 @@
                                 <span class="text-sm font-medium text-slate-500">ボツ伝件数</span>
                                 <i class="fa-solid fa-trash-can text-red-500"></i>
                             </div>
-                            <p id="report-cancelled-slips" class="text-3xl font-bold mt-2">0 <span class="text-lg font-medium">件</span></p>
+                            <p data-value="cancelled-slips" class="text-3xl font-bold mt-2">0 <span class="text-lg font-medium">件</span></p>
                             <p class="text-sm text-slate-500 mt-1">期間中のボツ伝</p>
                         </div>
                     </div>
@@ -163,14 +167,16 @@
                         <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg border border-slate-200">
                             <h3 class="text-lg font-semibold mb-4">売上推移</h3>
                             <div class="relative h-96">
-                                <canvas id="sales-chart"></canvas>
+                                <!-- (変更) IDを変更 -->
+                                <canvas id="reports-chart"></canvas>
                             </div>
                         </div>
 
                         <!-- ランキング (売れ筋商品) -->
                         <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
                             <h3 class="text-lg font-semibold mb-4">売れ筋商品 (数量別)</h3>
-                            <ul id="top-items-list" class="space-y-4 max-h-96 overflow-y-auto pr-2">
+                            <!-- (変更) IDを変更 -->
+                            <ul id="reports-ranking-list" class="space-y-4 max-h-96 overflow-y-auto pr-2">
                                 <!-- JSで動的に生成 -->
                             </ul>
                         </div>
@@ -283,6 +289,14 @@
                             <button id="save-new-customer-btn" class="px-3 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700">保存</button>
                         </div>
                         <p id="new-customer-error" class="text-xs text-red-600 mt-1"></p>
+                    </div>
+
+                    <!-- (新規) 伝票タグ -->
+                    <div class="mb-4">
+                        <label class="text-xs font-semibold text-slate-500">伝票タグ</label>
+                        <div id="order-tags-container" class="mt-2 flex flex-wrap gap-2">
+                            <!-- JSで動的に生成 -->
+                        </div>
                     </div>
 
                     <!-- 注文履歴 -->
@@ -676,5 +690,3 @@
     <script type="module" src="reports.js"></script>
 </body>
 </html>
-
-

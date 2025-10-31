@@ -23,6 +23,17 @@ const getDefaultState = () => ({
     currentPage: 'settings', // (変更) このページのデフォルト
     currentStore: 'store1',
     slipCounter: 3,
+    // (新規) 伝票タグのマスターデータ
+    slipTagsMaster: [
+        { id: 'tag1', name: '指名' },
+        { id: 'tag2', name: '初指名' },
+        { id: 'tag3', name: '初回' },
+        { id: 'tag4', name: '枝' },
+        { id: 'tag5', name: '切替' },
+        { id: 'tag6', name: '案内所' },
+        { id: 'tag7', name: '20歳未満' },
+        { id: 'tag8', name: '同業' },
+    ],
     // (変更) キャストマスタ (IDと名前)
     casts: [ 
         { id: 'c1', name: 'あい' },
@@ -68,6 +79,7 @@ const getDefaultState = () => ({
                 { id: 'm7', name: 'キャストドリンク', price: 1500, qty: 2 },
                 { id: 'm10', name: '鏡月 (ボトル)', price: 8000, qty: 1 },
             ],
+            tags: ['指名'], // (新規)
             paidAmount: 0, 
             cancelReason: null,
             paymentDetails: { cash: 0, card: 0, credit: 0 } 
@@ -84,6 +96,7 @@ const getDefaultState = () => ({
                 { id: 'm2', name: '基本セット (フリー)', price: 8000, qty: 1 },
                 { id: 'm8', name: 'ビール', price: 1000, qty: 6 },
             ],
+            tags: [], // (新規)
             paidAmount: 0,
             cancelReason: null, 
             paymentDetails: { cash: 0, card: 0, credit: 0 } 
@@ -101,6 +114,7 @@ const getDefaultState = () => ({
                 { id: 'm12', name: 'シャンパン (ゴールド)', price: 50000, qty: 1 },
                 { id: 'm7', name: 'キャストドリンク', price: 1500, qty: 8 },
             ],
+            tags: ['指名'], // (新規)
             paidAmount: 0,
             cancelReason: null, 
             paymentDetails: { cash: 0, card: 0, credit: 0 } 
@@ -143,6 +157,15 @@ const getDefaultState = () => ({
     },
     // (新規) 営業日付の変更時刻
     dayChangeTime: "05:00", // デフォルト AM 5:00
+    // (新規) キャスト成績反映設定
+    performanceSettings: {
+        menuItems: {
+            // 'm14': { salesType: 'percentage', salesValue: 100, countNomination: true }
+        },
+        serviceCharge: { salesType: 'percentage', salesValue: 0 },
+        tax: { salesType: 'percentage', salesValue: 0 },
+        sideCustomer: { salesValue: 100, countNomination: true }
+    },
     currentSlipId: null, 
     currentEditingMenuId: null,
     currentBillingAmount: 0, 
@@ -161,6 +184,20 @@ const loadState = () => {
     if (storedState) {
         const defaultState = getDefaultState();
         const parsedState = JSON.parse(storedState);
+        
+        // (新規) performanceSettings のネストされたマージ
+        const defaultPerfSettings = defaultState.performanceSettings;
+        const parsedPerfSettings = parsedState.performanceSettings || {};
+        const mergedPerfSettings = {
+            ...defaultPerfSettings,
+            ...parsedPerfSettings,
+            // 各項目を個別にマージ
+            menuItems: { ...defaultPerfSettings.menuItems, ...(parsedPerfSettings.menuItems || {}) },
+            serviceCharge: { ...defaultPerfSettings.serviceCharge, ...(parsedPerfSettings.serviceCharge || {}) },
+            tax: { ...defaultPerfSettings.tax, ...(parsedPerfSettings.tax || {}) },
+            sideCustomer: { ...defaultPerfSettings.sideCustomer, ...(parsedPerfSettings.sideCustomer || {}) },
+        };
+
         // (変更) ネストされたオブジェクトも正しくマージする
         const mergedState = {
             ...defaultState,
@@ -169,12 +206,17 @@ const loadState = () => {
             rates: { ...defaultState.rates, ...parsedState.rates },
             ranking: { ...defaultState.ranking, ...parsedState.ranking },
             menu: { ...defaultState.menu, ...parsedState.menu },
+            slipTagsMaster: parsedState.slipTagsMaster || defaultState.slipTagsMaster, // (新規)
             // (新規) tables, slips, casts, customers もマージ対象にする
             tables: parsedState.tables || defaultState.tables, 
-            slips: parsedState.slips || defaultState.slips,
+            slips: (parsedState.slips || defaultState.slips).map(slip => ({ // (変更) map処理を追加
+                ...slip,
+                tags: slip.tags || [] // (新規) 古いデータにtagsを追加
+            })),
             casts: parsedState.casts || defaultState.casts,
             customers: parsedState.customers || defaultState.customers,
             dayChangeTime: parsedState.dayChangeTime || defaultState.dayChangeTime, // (新規)
+            performanceSettings: mergedPerfSettings, // (新規) マージした成績設定
             currentPage: 'settings' // (変更) このページのデフォルト
         };
         
@@ -239,7 +281,12 @@ let modalCloseBtns,
     dayChangeTimeInput, // (新規)
     saveSettingsBtn, settingsFeedback,
     // (新規) テーブル設定用DOM
-    newTableIdInput, addTableBtn, currentTablesList, tableSettingsError;
+    newTableIdInput, addTableBtn, currentTablesList, tableSettingsError,
+    // (新規) 成績設定用DOM
+    castMenuSettingsList,
+    settingScSalesValue, settingScSalesType,
+    settingTaxSalesValue, settingTaxSalesType,
+    settingSideSalesValue, settingSideCountNomination;
 
 // --- 関数 ---
 
@@ -326,7 +373,67 @@ const loadSettingsToForm = () => {
     
     // (新規) テーブル設定リストを描画
     renderTableSettingsList();
+    
+    // (新規) 成績反映設定を描画
+    renderPerformanceSettings();
 };
+
+/**
+ * (新規) キャスト成績反映設定セクションを描画する
+ */
+const renderPerformanceSettings = () => {
+    // 1. キャスト料金項目の動的生成
+    if (castMenuSettingsList) {
+        castMenuSettingsList.innerHTML = '';
+        const castMenuItems = state.menu.cast || [];
+        
+        if (castMenuItems.length === 0) {
+            castMenuSettingsList.innerHTML = '<p class="text-sm text-slate-500">メニュー管理で「キャスト料金」カテゴリに項目を追加してください。</p>';
+        } else {
+            castMenuItems.forEach(item => {
+                const setting = state.performanceSettings.menuItems[item.id] || {
+                    salesType: 'percentage',
+                    salesValue: 100,
+                    countNomination: true
+                };
+
+                const itemHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-center p-3 bg-slate-50 rounded-lg border">
+                    <span class="font-medium">${item.name} (${formatCurrency(item.price)})</span>
+                    <div>
+                        <label class="text-xs font-semibold text-slate-600">個人売上への反映</label>
+                        <div class="flex mt-1">
+                            <input type="number" value="${setting.salesValue}" class="w-2/3 p-2 border border-slate-300 rounded-l-lg focus:outline-none setting-menu-sales-value" data-menu-id="${item.id}">
+                            <select class="w-1/3 p-2 border-t border-b border-r border-slate-300 rounded-r-lg bg-slate-100 focus:outline-none setting-menu-sales-type" data-menu-id="${item.id}">
+                                <option value="percentage" ${setting.salesType === 'percentage' ? 'selected' : ''}>%</option>
+                                <option value="fixed" ${setting.salesType === 'fixed' ? 'selected' : ''}>円</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="flex items-center space-x-2 mt-5 cursor-pointer">
+                            <input type="checkbox" ${setting.countNomination ? 'checked' : ''} class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 setting-menu-count-nomination" data-menu-id="${item.id}">
+                            <span class="text-sm font-medium text-slate-700">指名本数としてカウント</span>
+                        </label>
+                    </div>
+                </div>
+                `;
+                castMenuSettingsList.innerHTML += itemHtml;
+            });
+        }
+    }
+
+    // 2. 全体項目の読み込み
+    if (settingScSalesValue) settingScSalesValue.value = state.performanceSettings.serviceCharge.salesValue;
+    if (settingScSalesType) settingScSalesType.value = state.performanceSettings.serviceCharge.salesType;
+    if (settingTaxSalesValue) settingTaxSalesValue.value = state.performanceSettings.tax.salesValue;
+    if (settingTaxSalesType) settingTaxSalesType.value = state.performanceSettings.tax.salesType;
+    
+    // 3. 枝（サイド）設定の読み込み
+    if (settingSideSalesValue) settingSideSalesValue.value = state.performanceSettings.sideCustomer.salesValue;
+    if (settingSideCountNomination) settingSideCountNomination.checked = state.performanceSettings.sideCustomer.countNomination;
+};
+
 
 /**
  * (新規) フォームから設定を保存する
@@ -366,6 +473,42 @@ const saveSettingsFromForm = () => {
         }
         return;
     }
+    
+    // (新規) 成績反映設定
+    const newPerformanceSettings = {
+        menuItems: {},
+        serviceCharge: {
+            salesValue: parseInt(settingScSalesValue.value) || 0,
+            salesType: settingScSalesType.value
+        },
+        tax: {
+            salesValue: parseInt(settingTaxSalesValue.value) || 0,
+            salesType: settingTaxSalesType.value
+        },
+        sideCustomer: {
+            salesValue: parseInt(settingSideSalesValue.value) || 0,
+            countNomination: settingSideCountNomination.checked
+        }
+    };
+    
+    // 動的に生成されたキャスト料金項目を収集
+    if (castMenuSettingsList) {
+        const itemInputs = castMenuSettingsList.querySelectorAll('.setting-menu-sales-value');
+        const itemTypes = castMenuSettingsList.querySelectorAll('.setting-menu-sales-type');
+        const itemCounts = castMenuSettingsList.querySelectorAll('.setting-menu-count-nomination');
+        
+        itemInputs.forEach((input, index) => {
+            const menuId = input.dataset.menuId;
+            if (menuId) {
+                newPerformanceSettings.menuItems[menuId] = {
+                    salesValue: parseInt(input.value) || 0,
+                    salesType: itemTypes[index].value,
+                    countNomination: itemCounts[index].checked
+                };
+            }
+        });
+    }
+
 
     // (変更) stateを更新
     // (テーブル設定は既に追加/削除時に state.tables が直接更新されている)
@@ -373,7 +516,8 @@ const saveSettingsFromForm = () => {
         ...state, 
         storeInfo: newStoreInfo, 
         rates: newRates,
-        dayChangeTime: newDayChangeTime // (新規)
+        dayChangeTime: newDayChangeTime, // (新規)
+        performanceSettings: newPerformanceSettings // (新規)
         // state.tables は add/deleteTableSetting で既に更新済み
     });
 
@@ -503,12 +647,20 @@ document.addEventListener('DOMContentLoaded', () => {
     addTableBtn = document.getElementById('add-table-btn');
     currentTablesList = document.getElementById('current-tables-list');
     tableSettingsError = document.getElementById('table-settings-error');
+    // (新規) 成績設定用DOM
+    castMenuSettingsList = document.getElementById('cast-menu-settings-list');
+    settingScSalesValue = document.getElementById('setting-sc-sales-value');
+    settingScSalesType = document.getElementById('setting-sc-sales-type');
+    settingTaxSalesValue = document.getElementById('setting-tax-sales-value');
+    settingTaxSalesType = document.getElementById('setting-tax-sales-type');
+    settingSideSalesValue = document.getElementById('setting-side-sales-value');
+    settingSideCountNomination = document.getElementById('setting-side-count-nomination');
 
     
     // ===== 初期化処理 =====
     if (saveSettingsBtn) { // (変更) settingsページ以外では実行しない
         loadSettingsToForm();
-        // (変更) loadSettingsToForm 内で renderTableSettingsList も呼ばれる
+        // (変更) loadSettingsToForm 内で renderTableSettingsList と renderPerformanceSettings も呼ばれる
     }
     
     // ===== イベントリスナーの設定 =====
