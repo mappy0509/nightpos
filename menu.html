@@ -83,100 +83,30 @@
                 <div id="menu">
                     <div class="mb-4 flex justify-between items-center">
                         <h3 class="text-xl font-semibold">メニュー・料金設定</h3>
-                        <button id="open-new-menu-modal-btn" class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition duration-200">
-                            <i class="fa-solid fa-plus mr-2"></i>新規メニュー追加
-                        </button>
+                        <div class="flex space-x-3">
+                            <button id="open-category-modal-btn" class="bg-white text-slate-700 px-4 py-2 rounded-lg font-semibold border border-slate-300 hover:bg-slate-100 transition duration-200">
+                                <i class="fa-solid fa-tags mr-2"></i>カテゴリ管理
+                            </button>
+                            <button id="open-new-menu-modal-btn" class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition duration-200">
+                                <i class="fa-solid fa-plus mr-2"></i>新規メニュー追加
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
                         <div class="border-b border-slate-200">
-                            <nav class="flex -mb-px px-6" id="menu-tabs">
-                                <a href="#" class="menu-tab active" data-category="set">セット料金</a>
-                                <a href="#" class="menu-tab" data-category="drink">ドリンク</a>
-                                <a href="#" class="menu-tab" data-category="bottle">ボトル</a>
-                                <a href="#" class="menu-tab" data-category="food">フード</a>
-                                <a href="#" class="menu-tab" data-category="cast">キャスト料金</a>
-                                <a href="#" class="menu-tab" data-category="other">その他</a>
-                            </nav>
+                            <nav class="flex -mb-px px-6" id="menu-tabs-container">
+                                </nav>
                         </div>
                         
-                        <div class="p-6">
-                            <div id="tab-set" class="menu-tab-content active">
+                        <div class="p-6" id="menu-content-container">
+                            <div id="menu-tab-content" class="menu-tab-content active">
                                 <table class="w-full text-left text-sm">
                                     <thead>
-                                        <tr class="border-b bg-slate-50 text-slate-600">
-                                            <th class="p-3">項目名</th>
-                                            <th class="p-3">時間</th>
-                                            <th class="p-3">料金 (税抜)</th>
-                                            <th class="p-3 text-right">操作</th>
-                                        </tr>
+                                        <tr class="border-b bg-slate-50 text-slate-600" id="menu-table-header">
+                                            </tr>
                                     </thead>
-                                    <tbody id="set-menu-tbody">
-                                        </tbody>
-                                </table>
-                            </div>
-                            <div id="tab-drink" class="menu-tab-content">
-                                <table class="w-full text-left text-sm">
-                                    <thead>
-                                        <tr class="border-b bg-slate-50 text-slate-600">
-                                            <th class="p-3">項目名</th>
-                                            <th class="p-3">料金 (税抜)</th>
-                                            <th class="p-3 text-right">操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="drink-menu-tbody">
-                                        </tbody>
-                                </table>
-                            </div>
-                            <div id="tab-bottle" class="menu-tab-content">
-                                <table class="w-full text-left text-sm">
-                                    <thead>
-                                        <tr class="border-b bg-slate-50 text-slate-600">
-                                            <th class="p-3">項目名</th>
-                                            <th class="p-3">料金 (税抜)</th>
-                                            <th class="p-3 text-right">操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="bottle-menu-tbody">
-                                        </tbody>
-                                </table>
-                            </div>
-                            <div id="tab-food" class="menu-tab-content">
-                                <table class="w-full text-left text-sm">
-                                    <thead>
-                                        <tr class="border-b bg-slate-50 text-slate-600">
-                                            <th class="p-3">項目名</th>
-                                            <th class="p-3">料金 (税抜)</th>
-                                            <th class="p-3 text-right">操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="food-menu-tbody">
-                                        </tbody>
-                                </table>
-                            </div>
-                            <div id="tab-cast" class="menu-tab-content">
-                                <table class="w-full text-left text-sm">
-                                    <thead>
-                                        <tr class="border-b bg-slate-50 text-slate-600">
-                                            <th class="p-3">項目名</th>
-                                            <th class="p-3">料金 (税抜)</th>
-                                            <th class="p-3 text-right">操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="cast-menu-tbody">
-                                        </tbody>
-                                </table>
-                            </div>
-                            <div id="tab-other" class="menu-tab-content">
-                                <table class="w-full text-left text-sm">
-                                    <thead>
-                                        <tr class="border-b bg-slate-50 text-slate-600">
-                                            <th class="p-3">項目名</th>
-                                            <th class="p-3">料金 (税抜)</th>
-                                            <th class="p-3 text-right">操作</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="other-menu-tbody">
+                                    <tbody id="menu-table-body">
                                         </tbody>
                                 </table>
                             </div>
@@ -188,6 +118,39 @@
         </main>
         </div>
 
+    <div id="category-editor-modal" class="modal-backdrop">
+        <div class="modal-content w-full max-w-2xl">
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold" id="category-editor-modal-title">カテゴリ管理</h3>
+                <button type="button" class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <div class="p-6">
+                <h4 class="font-semibold mb-3">カテゴリの追加</h4>
+                <div class="flex space-x-2 mb-4">
+                    <input type="text" id="new-category-name-input" placeholder="新しいカテゴリ名 (例: シャンパン)" class="w-full p-2 border border-slate-300 rounded-lg">
+                    <button type="button" id="add-category-btn" class="px-5 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 whitespace-nowrap">
+                        <i class="fa-solid fa-plus mr-2"></i>追加
+                    </button>
+                </div>
+                <p id="category-add-error" class="text-xs text-red-600 mb-4"></p>
+
+                <h4 class="font-semibold mb-3 pt-4 border-t">既存のカテゴリ</h4>
+                <div class="space-y-3 max-h-80 overflow-y-auto pr-2" id="current-categories-list">
+                    </div>
+            </div>
+
+            <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
+                <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+
     <div id="new-slip-confirm-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-md">
             <div class="flex justify-between items-center p-5 border-b">
@@ -197,9 +160,18 @@
                 </button>
             </div>
             
-            <div class="p-6 text-center">
-                <p class="text-lg" id="new-slip-confirm-message">テーブル V2 で新しい伝票を作成しますか？</p>
-            </div>
+            <div class="p-6 space-y-4">
+                <p class="text-lg text-center" id="new-slip-confirm-message">テーブル V2 で新しい伝票を作成しますか？</p>
+                
+                <div>
+                    <label for="new-slip-start-time-input" class="block text-sm font-semibold text-slate-600 text-left mb-1">
+                        <i class="fa-solid fa-clock mr-1"></i>
+                        開始時刻 (変更可)
+                    </label>
+                    <input type="datetime-local" id="new-slip-start-time-input" class="w-full p-2 border border-slate-300 rounded-lg">
+                    <p id="new-slip-time-error" class="text-xs text-red-600 mt-1"></p>
+                </div>
+                </div>
 
             <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
                 <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
@@ -579,19 +551,13 @@
                     <div>
                         <label for="menu-category" class="text-sm font-semibold text-slate-600">カテゴリ</label>
                         <select id="menu-category" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="set">セット料金</option>
-                            <option value="drink">ドリンク</option>
-                            <option value="bottle">ボトル</option>
-                            <option value="food">フード</option>
-                            <option value="cast">キャスト料金</option>
-                            <option value="other">その他</option>
-                        </select>
+                            </select>
                     </div>
                     <div>
                         <label for="menu-name" class="text-sm font-semibold text-slate-600">項目名</label>
                         <input type="text" id="menu-name" class="w-full p-2 border border-slate-300 rounded-lg mt-1" required>
                     </div>
-                    <div id="menu-duration-group">
+                    <div id="menu-duration-group" class="hidden">
                         <label for="menu-duration" class="text-sm font-semibold text-slate-600">時間 (分)</label>
                         <input type="number" id="menu-duration" placeholder="例: 60" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
                     </div>

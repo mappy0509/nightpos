@@ -29,7 +29,12 @@ let modalCloseBtns,
     reportsPeriodTabs, reportsChartCanvas, reportsRankingList, exportJpgBtn,
     reportContentArea,
     // (★新規★) 日付選択
-    reportDatePicker; 
+    reportDatePicker,
+    
+    // (★新規★) 他のHTMLからコピーされたモーダル用のDOM
+    newSlipConfirmModal, newSlipConfirmTitle, newSlipConfirmMessage, confirmCreateSlipBtn,
+    newSlipStartTimeInput, newSlipTimeError,
+    slipSelectionModal, slipSelectionModalTitle, slipSelectionList, createNewSlipBtn;
 
 // (変更) グラフインスタンスをグローバルで保持
 let salesChart = null;
@@ -47,6 +52,38 @@ let currentReportDate = new Date();
  */
 const formatCurrency = (amount) => {
     return `¥${amount.toLocaleString()}`;
+};
+
+/**
+ * (★新規★) Dateオブジェクトを 'YYYY-MM-DDTHH:MM' 形式の文字列に変換する
+ * (datetime-local入力欄用)
+ * @param {Date} date 
+ * @returns {string}
+ */
+const formatDateTimeLocal = (date) => {
+    const YYYY = date.getFullYear();
+    const MM = String(date.getMonth() + 1).padStart(2, '0');
+    const DD = String(date.getDate()).padStart(2, '0');
+    const HH = String(date.getHours()).padStart(2, '0');
+    const MIN = String(date.getMinutes()).padStart(2, '0');
+    return `${YYYY}-${MM}-${DD}T${HH}:${MIN}`;
+};
+
+/**
+ * (★新規★) 経過時間を HH:MM 形式でフォーマットする
+ * @param {number} ms - ミリ秒
+ * @returns {string} HH:MM 形式の文字列
+ */
+const formatElapsedTime = (ms) => {
+    if (ms < 0) ms = 0;
+    const totalMinutes = Math.floor(ms / (1000 * 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    
+    const hh = String(hours).padStart(2, '0');
+    const mm = String(minutes).padStart(2, '0');
+    
+    return `${hh}:${mm}`;
 };
 
 /**
@@ -94,6 +131,16 @@ const getActiveSlipCount = (tableId) => {
     return state.slips.filter(
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     ).length;
+};
+
+/**
+ * モーダルを開く
+ * @param {HTMLElement} modalElement 
+ */
+const openModal = (modalElement) => {
+    if (modalElement) {
+        modalElement.classList.add('active');
+    }
 };
 
 /**
@@ -228,7 +275,8 @@ const renderReportsSummary = () => {
     
     let totalSales = 0;
     paidSlips.forEach(slip => {
-        totalSales += calculateSlipTotal(slip); 
+        // (★変更★) 伝票の paidAmount (割引後) を集計する
+        totalSales += slip.paidAmount || 0; 
     });
     
     const totalSlips = paidSlips.length;
@@ -312,7 +360,7 @@ const renderSalesChart = () => {
                     const paidTime = new Date(slip.paidTimestamp).getTime();
                     return paidTime >= hourStart.getTime() && paidTime < hourEnd.getTime();
                 })
-                .reduce((total, slip) => total + calculateSlipTotal(slip), 0);
+                .reduce((total, slip) => total + (slip.paidAmount || 0), 0); // (★変更★) paidAmount を集計
             
             data.push(hourSales);
         }
@@ -333,7 +381,7 @@ const renderSalesChart = () => {
                     const paidTime = new Date(slip.paidTimestamp).getTime();
                     return paidTime >= dayStart.getTime() && paidTime <= dayEnd.getTime();
                 })
-                .reduce((total, slip) => total + calculateSlipTotal(slip), 0);
+                .reduce((total, slip) => total + (slip.paidAmount || 0), 0); // (★変更★) paidAmount を集計
                 
             data.push(daySales);
         }
@@ -346,7 +394,7 @@ const renderSalesChart = () => {
         paidSlips.forEach(slip => {
             const paidDate = new Date(slip.paidTimestamp);
             const weekIndex = Math.floor((paidDate.getDate() - 1) / 7); // 0-3 (1-7日 -> 0), 4 (29-31日)
-            data[weekIndex] += calculateSlipTotal(slip);
+            data[weekIndex] += (slip.paidAmount || 0); // (★変更★) paidAmount を集計
         });
     }
 
@@ -420,65 +468,213 @@ const updateAllReports = () => {
     renderSalesChart();
 };
 
+// ===================================
+// (★新規★) 伝票作成ロジック (reports.js では基本使われないが、HTMLのモーダル定義と一貫性を保つため)
+// ===================================
 
-// (新規) デフォルトの state を定義する関数（Firestoreにデータがない場合）
-const getDefaultState = () => ({
-    currentPage: 'reports',
-    currentStore: 'store1',
-    slipCounter: 0,
-    slipTagsMaster: [
-        { id: 'tag1', name: '指名' }, { id: 'tag2', name: '初指名' },
-        { id: 'tag3', name: '初回' }, { id: 'tag4', name: '枝' },
-        { id: 'tag5', name: '切替' }, { id: 'tag6', name: '案内所' },
-        { id: 'tag7', name: '20歳未満' }, { id: 'tag8', name: '同業' },
-    ],
-    casts: [ 
-        { id: 'c1', name: 'あい' }, { id: 'c2', name: 'みう' },
-        { id: 'c3', name: 'さくら' }, { id: 'c4', name: 'れな' },
-        { id: 'c5', name: 'ひな' }, { id: 'c6', name: '体験A' },
-    ],
-    customers: [
-        { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
-        { id: 'cust2', name: '田中様', nominatedCastId: null },
-        { id: 'cust3', name: '佐藤様', nominatedCastId: 'c2' },
-    ],
-    tables: [
-        { id: 'V1', status: 'available' }, { id: 'V2', status: 'available' },
-        { id: 'T1', status: 'available' }, { id: 'T2', status: 'available' },
-        { id: 'C1', status: 'available' }, { id: 'C2', status: 'available' },
-    ],
-    slips: [],
-    menu: {
-        set: [
-            { id: 'm1', name: '基本セット (指名)', price: 10000, duration: 60 },
-            { id: 'm2', name: '基本セット (フリー)', price: 8000, duration: 60 },
+/**
+ * (★新規★) 新しい伝票を作成し、伝票モーダルを開く
+ * @param {string} tableId 
+ * @param {string} startTimeISO (★変更★) 開始時刻のISO文字列
+ */
+const createNewSlip = (tableId, startTimeISO) => {
+    if (!state) return; 
+    const table = state.tables.find(t => t.id === tableId);
+    if (!table) {
+        console.error("Table not found for creation:", tableId);
+        return;
+    }
+
+    const newSlipCounter = (state.slipCounter || 0) + 1;
+    const newSlipNumber = newSlipCounter;
+
+    const newSlip = {
+        slipId: getUUID(),
+        slipNumber: newSlipNumber,
+        tableId: tableId,
+        status: 'active',
+        name: "新規のお客様",
+        startTime: startTimeISO, // (★変更★)
+        nominationCastId: null, 
+        items: [],
+        tags: [],
+        paidAmount: 0,
+        cancelReason: null,
+        paymentDetails: { cash: 0, card: 0, credit: 0 },
+        paidTimestamp: null, 
+        discount: { type: 'yen', value: 0 }, 
+    };
+    
+    state.slips.push(newSlip);
+    state.slipCounter = newSlipCounter;
+    state.currentSlipId = newSlip.slipId;
+    
+    updateStateInFirestore(state);
+    
+    // (★変更★) 伝票モーダルは reports.js には存在しないため、描画・表示ロジックは削除
+    // renderOrderModal();
+    // openModal(orderModal);
+};
+
+/**
+ * (★新規★) 伝票選択モーダルを描画する
+ * @param {string} tableId 
+ */
+const renderSlipSelectionModal = (tableId) => {
+    if (!state) return; 
+    if (!slipSelectionModalTitle || !slipSelectionList) return; // DOM存在チェック
+
+    slipSelectionModalTitle.textContent = `テーブル ${tableId} の伝票一覧`;
+    slipSelectionList.innerHTML = '';
+
+    const activeSlips = state.slips.filter(
+        slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
+    );
+    
+    activeSlips.sort((a, b) => b.slipNumber - a.slipNumber);
+
+    if (activeSlips.length === 0) {
+        slipSelectionList.innerHTML = '<p class="text-slate-500 text-sm">現在アクティブな伝票はありません。</p>';
+    } else {
+        activeSlips.forEach(slip => {
+            let statusColor, statusText;
+            switch (slip.status) {
+                case 'active':
+                    statusColor = 'blue';
+                    statusText = '利用中';
+                    break;
+                case 'checkout':
+                    statusColor = 'orange';
+                    statusText = '会計待ち';
+                    break;
+            }
+            const nominationText = getCastNameById(slip.nominationCastId);
+
+            const now = new Date();
+            const startTime = new Date(slip.startTime);
+            const diffMs = now.getTime() - startTime.getTime();
+            const elapsedTimeStr = formatElapsedTime(diffMs);
+            const startTimeStr = isNaN(startTime.getTime()) ? '??:??' : startTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+            slipSelectionList.innerHTML += `
+                <button class="w-full text-left p-4 bg-slate-50 rounded-lg hover:bg-slate-100 border" data-slip-id="${slip.slipId}">
+                    <div class="flex justify-between items-center">
+                        <span class="font-semibold text-lg truncate">(No.${slip.slipNumber}) ${slip.name} (${nominationText})</span>
+                        <span class="text-sm font-medium text-${statusColor}-600 bg-${statusColor}-100 px-2 py-1 rounded-full">${statusText}</span>
+                    </div>
+                    <p class="text-sm text-slate-500 mt-1">
+                        開始: ${startTimeStr}〜 
+                        (<span class="font-semibold text-orange-600">${elapsedTimeStr}</span> 経過)
+                    </p>
+                </button>
+            `;
+        });
+    }
+    
+    createNewSlipBtn.dataset.tableId = tableId;
+    openModal(slipSelectionModal);
+};
+
+/**
+ * (★新規★) 新規伝票の作成確認モーダルを描画・表示する
+ * @param {string} tableId 
+ */
+const renderNewSlipConfirmModal = (tableId) => {
+    if (!newSlipConfirmModal) return; // DOM存在チェック
+
+    newSlipConfirmTitle.textContent = `伝票の新規作成 (${tableId})`;
+    newSlipConfirmMessage.textContent = `テーブル ${tableId} で新しい伝票を作成しますか？`;
+
+    if (newSlipStartTimeInput) {
+        newSlipStartTimeInput.value = formatDateTimeLocal(new Date());
+    }
+    if (newSlipTimeError) {
+        newSlipTimeError.textContent = '';
+    }
+    
+    confirmCreateSlipBtn.dataset.tableId = tableId; 
+    openModal(newSlipConfirmModal);
+};
+
+
+// (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+const getDefaultState = () => {
+    // (★変更★) 新しいデータ構造
+    const catSetId = getUUID();
+    const catDrinkId = getUUID();
+    const catBottleId = getUUID();
+    const catFoodId = getUUID();
+    const catCastId = getUUID(); // (★重要★) キャスト料金
+    const catOtherId = getUUID();
+
+    return {
+        currentPage: 'reports',
+        currentStore: 'store1',
+        slipCounter: 0,
+        slipTagsMaster: [
+            { id: 'tag1', name: '指名' }, { id: 'tag2', name: '初指名' },
+            { id: 'tag3', name: '初回' }, { id: 'tag4', name: '枝' },
+            { id: 'tag5', name: '切替' }, { id: 'tag6', name: '案内所' },
+            { id: 'tag7', name: '20歳未満' }, { id: 'tag8', name: '同業' },
         ],
-        drink: [{ id: 'm7', name: 'キャストドリンク', price: 1500 }],
-        bottle: [{ id: 'm11', name: '鏡月 (ボトル)', price: 8000 }],
-        food: [],
-        cast: [{ id: 'm14', name: '本指名料', price: 3000 }],
-        other: [],
-    },
-    storeInfo: {
-        name: "Night POS",
-        address: "東京都新宿区歌舞伎町1-1-1",
-        tel: "03-0000-0000"
-    },
-    rates: { tax: 0.10, service: 0.20 },
-    dayChangeTime: "05:00",
-    performanceSettings: {
-        menuItems: {
-            'm14': { salesType: 'percentage', salesValue: 100, countNomination: true }
+        casts: [ 
+            { id: 'c1', name: 'あい' }, { id: 'c2', name: 'みう' },
+            { id: 'c3', name: 'さくら' }, { id: 'c4', name: 'れな' },
+            { id: 'c5', name: 'ひな' }, { id: 'c6', name: '体験A' },
+        ],
+        customers: [
+            { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
+            { id: 'cust2', name: '田中様', nominatedCastId: null },
+            { id: 'cust3', name: '佐藤様', nominatedCastId: 'c2' },
+        ],
+        tables: [
+            { id: 'V1', status: 'available' }, { id: 'V2', status: 'available' },
+            { id: 'T1', status: 'available' }, { id: 'T2', status: 'available' },
+            { id: 'C1', status: 'available' }, { id: 'C2', status: 'available' },
+        ],
+        slips: [],
+        menu: {
+            // (★変更★) カテゴリを定義
+            categories: [
+                { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false },
+                { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false },
+                { id: catBottleId, name: 'ボトル', isSetCategory: false, isCastCategory: false },
+                { id: catFoodId, name: 'フード', isSetCategory: false, isCastCategory: false },
+                { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true }, // (★重要★)
+                { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false },
+            ],
+            // (★変更★) アイテムを定義 (categoryId で紐付け)
+            items: [
+                { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60 },
+                { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60 },
+                { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null },
+                { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null },
+                { id: 'm14', categoryId: catCastId, name: '本指名料', price: 3000, duration: null },
+            ]
         },
-        serviceCharge: { salesType: 'percentage', salesValue: 0 },
-        tax: { salesType: 'percentage', salesValue: 0 },
-        sideCustomer: { salesValue: 100, countNomination: true }
-    },
-    currentSlipId: null, 
-    currentEditingMenuId: null,
-    currentBillingAmount: 0, 
-    ranking: { period: 'monthly', type: 'nominations' }
-});
+        currentActiveMenuCategoryId: catSetId, // (★新規★)
+        storeInfo: {
+            name: "Night POS",
+            address: "東京都新宿区歌舞伎町1-1-1",
+            tel: "03-0000-0000"
+        },
+        rates: { tax: 0.10, service: 0.20 },
+        dayChangeTime: "05:00",
+        performanceSettings: {
+            // (★変更★) 'm14' (本指名料) のIDは getDefaultState 内で固定
+            menuItems: {
+                'm14': { salesType: 'percentage', salesValue: 100, countNomination: true }
+            },
+            serviceCharge: { salesType: 'percentage', salesValue: 0 },
+            tax: { salesType: 'percentage', salesValue: 0 },
+            sideCustomer: { salesValue: 100, countNomination: true }
+        },
+        currentSlipId: null, 
+        currentEditingMenuId: null,
+        currentBillingAmount: 0, 
+        ranking: { period: 'monthly', type: 'nominations' }
+    };
+};
 
 // (新規) Firestore への state 保存関数（reports.js では原則使わない）
 const updateStateInFirestore = async (newState) => {
@@ -510,6 +706,16 @@ document.addEventListener('firebaseReady', (e) => {
             console.log("Firestore data loaded.");
             state = docSnap.data();
             
+            // (★新規★) 古いデータ構造 (menu.set) だった場合、新しい構造に移行する (簡易)
+            if (state.menu && state.menu.set) {
+                console.warn("Old menu structure detected. Migrating...");
+                const defaultMenu = getDefaultState().menu;
+                state.menu = defaultMenu;
+                state.currentActiveMenuCategoryId = defaultMenu.categories[0].id;
+                // (注意) 実際は旧データを移行すべきだが、ここではデフォルトで上書き
+                await updateStateInFirestore(state); // 移行を保存
+            }
+
             // (重要) state がロードされたら、UIを初回描画
             // (★修正★) 全レポートを更新
             updateAllReports();
@@ -566,6 +772,19 @@ document.addEventListener('DOMContentLoaded', () => {
         currentReportDate = new Date();
         reportDatePicker.value = currentReportDate.toISOString().split('T')[0];
     }
+    
+    // (★新規★) 他のHTMLからコピーされたモーダル用のDOM
+    newSlipConfirmModal = document.getElementById('new-slip-confirm-modal');
+    newSlipConfirmTitle = document.getElementById('new-slip-confirm-title');
+    newSlipConfirmMessage = document.getElementById('new-slip-confirm-message');
+    confirmCreateSlipBtn = document.getElementById('confirm-create-slip-btn');
+    newSlipStartTimeInput = document.getElementById('new-slip-start-time-input');
+    newSlipTimeError = document.getElementById('new-slip-time-error');
+    slipSelectionModal = document.getElementById('slip-selection-modal');
+    slipSelectionModalTitle = document.getElementById('slip-selection-modal-title');
+    slipSelectionList = document.getElementById('slip-selection-list');
+    createNewSlipBtn = document.getElementById('create-new-slip-btn');
+
 
     
     // ===== 初期化処理 =====
@@ -581,7 +800,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // モーダルを閉じるボタン
     modalCloseBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            closeModal();
+            // (★変更★) すべてのモーダルを閉じる (reports.htmlに存在するもののみ)
+            closeModal(newSlipConfirmModal);
+            closeModal(slipSelectionModal);
+            // (★変更★) 他のモーダルは reports.html にないので、閉じるロジックを削除
         });
     });
 
@@ -634,6 +856,52 @@ document.addEventListener('DOMContentLoaded', () => {
                     salesChart.options.animation = true; 
                 }
             });
+        });
+    }
+    
+    // (★新規★) 伝票選択モーダルのイベント委任
+    if (slipSelectionList) {
+        slipSelectionList.addEventListener('click', (e) => {
+            const slipBtn = e.target.closest('button[data-slip-id]');
+            if (slipBtn) {
+                // handleSlipClick(slipBtn.dataset.slipId); // (★変更★) reports.js には handleSlipClick がない
+                console.warn('handleSlipClick is not implemented in reports.js');
+                closeModal(slipSelectionModal);
+            }
+        });
+    }
+
+    // (新規) 伝票選択モーダル -> 新規伝票作成
+    if (createNewSlipBtn) {
+        createNewSlipBtn.addEventListener('click', () => {
+            const tableId = createNewSlipBtn.dataset.tableId;
+            if (tableId) {
+                renderNewSlipConfirmModal(tableId); // (★変更★)
+                closeModal(slipSelectionModal);
+            }
+        });
+    }
+    
+    // (★変更★) 新規伝票確認モーダル -> OK
+    if (confirmCreateSlipBtn) {
+        confirmCreateSlipBtn.addEventListener('click', () => {
+            const tableId = confirmCreateSlipBtn.dataset.tableId;
+            
+            // (★変更★) 時間を取得して検証
+            const startTimeValue = newSlipStartTimeInput ? newSlipStartTimeInput.value : '';
+            if (!startTimeValue) {
+                if (newSlipTimeError) newSlipTimeError.textContent = '開始時刻を入力してください。';
+                return;
+            }
+            if (newSlipTimeError) newSlipTimeError.textContent = '';
+            
+            // (★変更★) ISO文字列に変換して渡す
+            const startTimeISO = new Date(startTimeValue).toISOString();
+            
+            if (tableId) {
+                createNewSlip(tableId, startTimeISO); // (★変更★)
+                closeModal(newSlipConfirmModal);
+            }
         });
     }
 

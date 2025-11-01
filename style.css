@@ -87,21 +87,47 @@ body {
 
 
 /* ===== メニュー管理タブ ===== */
+/* (★変更★) .menu-tab を a タグから button タグに変更 (JSの動的生成のため) */
 .menu-tab {
     padding: 0.75rem 1.5rem; /* py-3 px-6 */
     font-weight: 600; /* font-semibold */
     color: var(--text-secondary);
     border-bottom: 3px solid transparent;
     transition: all 0.2s ease;
+    position: relative; /* (★新規★) 編集ボタンの基点 */
+    white-space: nowrap; /* (★新規★) タブが折り返さないように */
 }
 .menu-tab:hover {
     color: var(--text-primary);
-    border-bottom-color: var(--border-primary);
+    background-color: #f8fafc; /* bg-slate-50 */
 }
 .menu-tab.active {
     color: #2563eb; /* text-blue-600 */
     border-bottom-color: #2563eb; /* border-blue-600 */
+    background-color: #ffffff;
 }
+
+/* (★新規★) カテゴリタブの編集・削除ボタン */
+.menu-tab .menu-tab-edit-btn {
+    display: none; /* 通常は非表示 */
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    padding: 0.25rem;
+    border-radius: 9999px;
+    line-height: 1;
+    font-size: 0.75rem; /* 12px */
+    color: var(--text-secondary);
+}
+.menu-tab:hover .menu-tab-edit-btn,
+.menu-tab.active .menu-tab-edit-btn {
+    display: inline-block; /* ホバー時またはアクティブ時に表示 */
+}
+.menu-tab .menu-tab-edit-btn:hover {
+    background-color: #e2e8f0; /* bg-slate-200 */
+    color: var(--text-primary);
+}
+
 
 .menu-tab-content {
     display: none;
@@ -206,6 +232,12 @@ body {
 .ranking-type-btn.active {
     border-bottom-color: #2563eb; /* border-blue-600 */
     color: #2563eb; /* text-blue-600 */
+}
+
+/* (★新規★) 伝票カードの経過時間 */
+.elapsed-time {
+    color: #ea580c; /* text-orange-600 */
+    font-weight: 600; /* font-semibold */
 }
 
 /* (新規) ボツ伝カードのスタイル */

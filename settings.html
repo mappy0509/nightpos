@@ -258,9 +258,18 @@
                 </button>
             </div>
             
-            <div class="p-6 text-center">
-                <p class="text-lg" id="new-slip-confirm-message">テーブル V2 で新しい伝票を作成しますか？</p>
-            </div>
+            <div class="p-6 space-y-4">
+                <p class="text-lg text-center" id="new-slip-confirm-message">テーブル V2 で新しい伝票を作成しますか？</p>
+                
+                <div>
+                    <label for="new-slip-start-time-input" class="block text-sm font-semibold text-slate-600 text-left mb-1">
+                        <i class="fa-solid fa-clock mr-1"></i>
+                        開始時刻 (変更可)
+                    </label>
+                    <input type="datetime-local" id="new-slip-start-time-input" class="w-full p-2 border border-slate-300 rounded-lg">
+                    <p id="new-slip-time-error" class="text-xs text-red-600 mt-1"></p>
+                </div>
+                </div>
 
             <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
                 <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
@@ -640,19 +649,13 @@
                     <div>
                         <label for="menu-category" class="text-sm font-semibold text-slate-600">カテゴリ</label>
                         <select id="menu-category" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="set">セット料金</option>
-                            <option value="drink">ドリンク</option>
-                            <option value="bottle">ボトル</option>
-                            <option value="food">フード</option>
-                            <option value="cast">キャスト料金</option>
-                            <option value="other">その他</option>
-                        </select>
+                            </select>
                     </div>
                     <div>
                         <label for="menu-name" class="text-sm font-semibold text-slate-600">項目名</label>
                         <input type="text" id="menu-name" class="w-full p-2 border border-slate-300 rounded-lg mt-1" required>
                     </div>
-                    <div id="menu-duration-group">
+                    <div id="menu-duration-group" class="hidden">
                         <label for="menu-duration" class="text-sm font-semibold text-slate-600">時間 (分)</label>
                         <input type="number" id="menu-duration" placeholder="例: 60" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
                     </div>
