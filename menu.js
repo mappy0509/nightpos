@@ -23,9 +23,10 @@ let state = null;
 let stateDocRef = null; // (変更) stateDocRef をグローバルで保持
 
 // ===== DOM要素 =====
-// (変更) DOM要素をグローバルスコープに移動
-let navLinks, pages, pageTitle, tableGrid, dashboardSlips, menuTabsContainer, menuTabs,
-    menuTabContents, menuPage, allSlipsList, orderModal, checkoutModal, receiptModal,
+// (★修正★) menu.js (menu.html) に必要なDOMのみに限定
+let navLinks, pages, pageTitle, menuTabsContainer, menuTabs,
+    menuTabContents, menuPage,
+    orderModal, checkoutModal, receiptModal,
     slipPreviewModal, modalCloseBtns, openSlipPreviewBtn, processPaymentBtn,
     printSlipBtn, goToCheckoutBtn, reopenSlipBtn, menuEditorModal,
     menuEditorModalTitle, menuEditorForm, menuCategorySelect, menuNameInput,
@@ -42,8 +43,7 @@ let navLinks, pages, pageTitle, tableGrid, dashboardSlips, menuTabsContainer, me
     checkoutSubtotalEl, checkoutServiceChargeEl, checkoutTaxEl, checkoutPaidAmountEl,
     checkoutTotalEl, paymentCashInput, paymentCardInput, paymentCreditInput,
     checkoutPaymentTotalEl, checkoutShortageEl, checkoutChangeEl, slipSubtotalEl,
-    slipServiceChargeEl, slipTaxEl, slipPaidAmountEl, slipTotalEl, castRankingList,
-    rankingPeriodSelect, rankingTypeBtns,
+    slipServiceChargeEl, slipTaxEl, slipPaidAmountEl, slipTotalEl,
     // (新規) HTML側で追加したID
     slipStoreName, slipStoreTel, slipServiceRate, slipTaxRate,
     checkoutStoreName, checkoutStoreTel, checkoutServiceRate, checkoutTaxRate,
@@ -117,39 +117,46 @@ const getActiveSlipCount = (tableId) => {
 /**
  * (変更) 「伝票一覧」ページを描画する (menu.jsでは不要)
  */
+// (★削除★)
 // const renderAllSlipsPage = () => { ... };
 
 
 /**
  * (変更) 伝票モーダル（注文入力）を描画する (menu.jsでは不要)
  */
+// (★削除★)
 // const renderOrderModal = () => { ... };
 
 /**
  * (新規) 顧客ドロップダウンを描画する (menu.jsでは不要)
  */
+// (★削除★)
 // const renderCustomerDropdown = (selectedCastId) => { ... };
 
 
 /**
  * (変更) 伝票モーダルの顧客情報フォームの変更をstate.slipsに反映する (menu.jsでは不要)
  */
+// (★削除★)
 // const updateSlipInfo = () => { ... };
 
 
 /**
  * 注文リストにアイテムを追加する (menu.jsでは不要)
  */
+// (★削除★)
 // const addOrderItem = (id, name, price) => { ... };
 
 /**
  * (新規) 注文リストからアイテムを削除する (menu.jsでは不要)
  */
+// (★削除★)
 // const removeOrderItem = (id) => { ... };
 
 /**
  * (新規) 注文アイテムの数量を変更する (menu.jsでは不要)
  */
+// (★削除★)
 // const updateOrderItemQty = (id, qty) => { ... };
 
 /**
@@ -191,8 +198,11 @@ const renderMenuList = (category, tbodyElement, items) => {
         tbodyElement.innerHTML = `<tr><td class="p-3 text-slate-500 text-sm" colspan="${colSpan}">このカテゴリにはメニューが登録されていません。</td></tr>`;
         return;
     }
+    
+    // (★新規★) ソートして表示
+    const sortedItems = [...items].sort((a, b) => a.name.localeCompare(b.name));
 
-    items.forEach(item => {
+    sortedItems.forEach(item => {
         const tr = `
             <tr class="border-b">
                 <td class="p-3 font-medium">${item.name}</td>
@@ -396,28 +406,33 @@ const updateModalCommonInfo = () => {
 /**
  * (変更) 伝票プレビューモーダルを描画する (menu.jsでは不要)
  */
+// (★削除★)
 // const renderSlipPreviewModal = () => { ... };
 
 
 /**
  * 会計モーダルを描画する (menu.jsでは不要)
  */
+// (★削除★)
 // const renderCheckoutModal = () => { ... };
 
 /**
  * (新規) 会計モーダルの支払い状況を計算・更新する (menu.jsでは不要)
  */
+// (★削除★)
 // const updatePaymentStatus = () => { ... };
 
 
 /**
  * 領収書モーダルを描画する (menu.jsでは不要)
  */
+// (★削除★)
 // const renderReceiptModal = () => { ... };
 
 /**
  * (新規) ボツ伝理由入力モーダルを描画する (menu.jsでは不要)
  */
+// (★削除★)
 // const renderCancelSlipModal = () => { ... };
 
 
@@ -444,43 +459,50 @@ const closeModal = (modalElement) => {
 /**
  * (新規) 新しい伝票を作成し、伝票モーダルを開く (menu.jsでは不要)
  */
+// (★削除★)
 // const createNewSlip = (tableId) => { ... };
 
 /**
  * (新規) 伝票選択モーダルを描画する (menu.jsでは不要)
  */
+// (★削除★)
 // const renderSlipSelectionModal = (tableId) => { ... };
 
 /**
  * (新規) 新規伝票の作成確認モーダルを描画・表示する (menu.jsでは不要)
  */
+// (★削除★)
 // const renderNewSlipConfirmModal = (tableId) => { ... };
 
 
 /**
  * (変更) テーブルカードクリック時の処理 (menu.jsでは不要)
  */
+// (★削除★)
 // const handleTableClick = (tableId) => { ... };
 
 /**
  * (新規) 未会計伝票カードクリック時の処理 (menu.jsでは不要)
  */
+// (★削除★)
 // const handleSlipClick = (slipId) => { ... };
 
 /**
  * (新規) 会計済み伝票カードクリック時の処理 (menu.jsでは不要)
  */
+// (★削除★)
 // const handlePaidSlipClick = (slipId) => { ... };
 
 
 /**
  * (新規) キャストランキングを描画する (menu.jsでは不要)
  */
+// (★削除★)
 // const renderCastRanking = () => { ... };
 
 // (新規) デフォルトの state を定義する関数（Firestoreにデータがない場合）
 const getDefaultState = () => ({
-    currentPage: 'menu',
+    currentPage: 'menu', // (★修正★)
     currentStore: 'store1',
     slipCounter: 0,
     slipTagsMaster: [
@@ -600,12 +622,9 @@ document.addEventListener('firebaseReady', (e) => {
 document.addEventListener('DOMContentLoaded', () => {
     
     // ===== DOM要素の取得 =====
+    // (★修正★) menu.html に存在するDOMのみ取得
     navLinks = document.querySelectorAll('.nav-link');
-    pages = document.querySelectorAll('[data-page]');
     pageTitle = document.getElementById('page-title');
-    tableGrid = document.getElementById('table-grid'); 
-    dashboardSlips = document.getElementById('dashboard-slips'); 
-    allSlipsList = document.getElementById('all-slips-list'); 
     orderModal = document.getElementById('order-modal');
     checkoutModal = document.getElementById('checkout-modal');
     receiptModal = document.getElementById('receipt-modal');
@@ -680,9 +699,6 @@ document.addEventListener('DOMContentLoaded', () => {
     slipTaxEl = document.getElementById('slip-tax');
     slipPaidAmountEl = document.getElementById('slip-paid-amount');
     slipTotalEl = document.getElementById('slip-total');
-    castRankingList = document.getElementById('cast-ranking-list'); 
-    rankingPeriodSelect = document.getElementById('ranking-period-select'); 
-    rankingTypeBtns = document.querySelectorAll('.ranking-type-btn'); 
 
     // (新規) モーダル共通情報のDOM
     slipStoreName = document.getElementById('slip-store-name');
@@ -780,5 +796,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    
+    // (★削除★) menu.html には伝票関連のボタンは存在しないため、関連リスナーを削除
+    // (削除) if (orderNominationSelect) { ... }
+    // (削除) if (orderCustomerNameSelect) { ... }
+    // (削除) if (saveNewCustomerBtn) { ... }
+    // (削除) if (openSlipPreviewBtn) { ... }
+    // (削除) if (openCancelSlipModalBtn) { ... }
+    // (削除) if (confirmCancelSlipBtn) { ... }
+    // (削除) if (printSlipBtn) { ... }
+    // (削除) if (goToCheckoutBtn) { ... }
+    // (削除) if (paymentCashInput) { ... }
+    // (削除) if (processPaymentBtn) { ... }
+    // (削除) if (reopenSlipBtn) { ... }
+    // (削除) if (orderItemsList) { ... }
+    // (削除) const tagsContainer = ...
+    // (削除) if (menuOrderGrid) { ... }
+    // (削除) if (slipSelectionList) { ... }
+    // (削除) if (createNewSlipBtn) { ... }
+    // (削除) if (confirmCreateSlipBtn) { ... }
 });
-

@@ -3,29 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- (変更) ページタイトル -->
     <title>Night POS - テーブル管理</title>
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-    <!-- Font Awesome (アイコン) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-    <!-- カスタムCSS (共通) -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="text-slate-800">
 
     <div class="flex h-screen bg-slate-50">
-        <!-- ===== サイドナビゲーション ===== -->
         <aside class="w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable">
             <div class="h-16 flex items-center justify-center border-b px-4">
                 <h1 class="text-2xl font-bold text-blue-600">Night POS</h1>
             </div>
             <nav class="flex-grow pt-6 space-y-2">
-                <!-- (変更) href と active クラスを修正 -->
                 <a href="index.html" class="nav-link" data-target="dashboard">
                     <i class="fa-solid fa-chart-pie fa-fw w-6 text-center"></i>
                     <span>ダッシュボード</span>
@@ -65,17 +58,11 @@
                 </button>
             </div>
         </aside>
-        <!-- ===== /サイドナビゲーション ===== -->
-
-        <!-- ===== メインコンテンツ ===== -->
         <main class="flex-1 flex flex-col overflow-hidden non-printable">
-            <!-- ヘッダー -->
             <header class="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm">
                 <div>
-                    <!-- (変更) ページタイトルを固定 -->
                     <h2 id="page-title" class="text-xl font-semibold text-slate-700">テーブル管理</h2>
                 </div>
-                <!-- マルチアカウント機能: 店舗切替 -->
                 <div class="flex items-center space-x-4">
                     <div class="relative">
                         <i class="fa-solid fa-store absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
@@ -91,13 +78,8 @@
                 </div>
             </header>
 
-            <!-- コンテンツエリア -->
             <div class="flex-1 overflow-y-auto p-6 lg:p-8">
                 
-                <!-- (削除) ページ: ダッシュボード -->
-                
-                <!-- ページ: テーブル管理 (伝票機能) -->
-                <!-- (変更) data-page と active を削除 (このページ専用のため) -->
                 <div id="tables">
                     <div class="mb-4 flex justify-between items-center">
                         <div class="flex space-x-4">
@@ -106,27 +88,15 @@
                         </div>
                     </div>
                     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5" id="table-grid">
-                        <!-- テーブルカードはJSで動的に生成されます -->
-                    </div>
+                        </div>
                 </div>
 
-                <!-- (削除) ページ: 伝票一覧 -->
-                <!-- (削除) ページ: メニュー管理 -->
-                <!-- (削除) ページ: 売上分析 -->
-                <!-- (削除) ページ: 店舗設定 -->
-                
-            </div>
+                </div>
         </main>
-        <!-- ===== /メインコンテンツ ===== -->
-    </div>
+        </div>
 
-    <!-- ===== モーダルエリア ===== -->
-    <!-- (重要) ロジックを壊さないため、元のindex.htmlにあった全てのモーダルをコピーする -->
-
-    <!-- (新規) 新規伝票 確認モーダル -->
     <div id="new-slip-confirm-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-md">
-            <!-- モーダルヘッダー -->
             <div class="flex justify-between items-center p-5 border-b">
                 <h3 class="text-xl font-semibold" id="new-slip-confirm-title">伝票の新規作成</h3>
                 <button class="modal-close-btn text-slate-400 hover:text-slate-600">
@@ -134,12 +104,10 @@
                 </button>
             </div>
             
-            <!-- モーダルボディ -->
             <div class="p-6 text-center">
                 <p class="text-lg" id="new-slip-confirm-message">テーブル V2 で新しい伝票を作成しますか？</p>
             </div>
 
-            <!-- モーダルフッター -->
             <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
                 <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
                     キャンセル
@@ -152,10 +120,8 @@
     </div>
 
 
-    <!-- (新規) 伝票選択モーダル -->
     <div id="slip-selection-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-lg">
-            <!-- モーダルヘッダー -->
             <div class="flex justify-between items-center p-5 border-b">
                 <h3 class="text-xl font-semibold" id="slip-selection-modal-title">テーブル V1 の伝票一覧</h3>
                 <button class="modal-close-btn text-slate-400 hover:text-slate-600">
@@ -163,12 +129,10 @@
                 </button>
             </div>
             
-            <!-- モーダルボディ -->
             <div class="p-6">
                 <h4 class="font-semibold mb-3">既存の伝票を選択</h4>
                 <div class="space-y-3 mb-6" id="slip-selection-list">
-                    <!-- JSで動的に生成 -->
-                </div>
+                    </div>
                 
                 <h4 class="font-semibold mb-3 pt-4 border-t">または</h4>
                 <button id="create-new-slip-btn" class="w-full p-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition duration-200">
@@ -180,10 +144,8 @@
     </div>
 
 
-    <!-- 伝票モーダル (注文入力) -->
     <div id="order-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-5xl flex flex-col max-h-[95vh]">
-            <!-- モーダルヘッダー -->
             <div class="flex justify-between items-center p-5 border-b">
                 <h3 class="text-xl font-semibold" id="order-modal-title">テーブル V1</h3>
                 <button class="modal-close-btn text-slate-400 hover:text-slate-600">
@@ -191,29 +153,19 @@
                 </button>
             </div>
             
-            <!-- モーダルボディ -->
             <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
-                <!-- 左側: 注文リスト -->
                 <div class="w-full md:w-3/5 p-6 flex flex-col border-r overflow-y-auto">
-                    <!-- 顧客情報 (変更) -->
                     <div class="mb-4 grid grid-cols-2 gap-4">
-                        <div> <!-- (変更) 指名を左側に配置 -->
-                            <label class="text-xs font-semibold text-slate-500">指名</label>
-                            <!-- (変更) input -> select -->
+                        <div> <label class="text-xs font-semibold text-slate-500">指名</label>
                             <select id="order-nomination-select" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <!-- JSで動的に生成 -->
                                 <option value="フリー">フリー</option>
                             </select>
                         </div>
-                        <div> <!-- (変更) お客様名を右側に配置 -->
-                            <label class="text-xs font-semibold text-slate-500">お客様名</label>
-                            <!-- (変更) input -> select -->
+                        <div> <label class="text-xs font-semibold text-slate-500">お客様名</label>
                             <select id="order-customer-name-select" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <!-- JSで動的に生成 -->
-                            </select>
+                                </select>
                         </div>
                     </div>
-                    <!-- (新規) 新規顧客入力フォーム -->
                     <div id="new-customer-input-group" class="mb-4 p-3 bg-slate-100 rounded-lg border border-slate-300 hidden">
                         <label class="text-xs font-semibold text-slate-600">新規顧客名</label>
                         <div class="flex space-x-2 mt-1">
@@ -223,34 +175,26 @@
                         <p id="new-customer-error" class="text-xs text-red-600 mt-1"></p>
                     </div>
 
-                    <!-- (新規) 伝票タグ -->
                     <div class="mb-4">
                         <label class="text-xs font-semibold text-slate-500">伝票タグ</label>
                         <div id="order-tags-container" class="mt-2 flex flex-wrap gap-2">
-                            <!-- JSで動的に生成 -->
-                        </div>
+                            </div>
                     </div>
 
-                    <!-- 注文履歴 -->
                     <h4 class="font-semibold mb-3">ご注文内容</h4>
                     <div class="flex-1 space-y-3 pr-2 overflow-y-auto" id="order-items-list">
-                        <!-- 注文アイテムはJSで動的に生成 -->
-                    </div>
+                        </div>
                 </div>
 
-                <!-- 右側: メニュー選択 -->
                 <div class="w-full md:w-2/5 p-6 bg-slate-50 flex flex-col overflow-y-auto">
                     <h4 class="font-semibold mb-4">オーダー追加</h4>
                     <div class="grid grid-cols-3 gap-3" id="menu-order-grid">
-                        <!-- メニューアイテムはJSで動的に生成 -->
-                    </div>
+                        </div>
                 </div>
             </div>
 
-            <!-- モーダルフッター -->
             <div class="flex justify-between items-center p-5 border-t bg-white">
                 <div>
-                    <!-- (新規) ボツ伝ボタン -->
                     <button id="open-cancel-slip-modal-btn" class="px-4 py-2 rounded-lg bg-red-100 text-red-700 font-semibold hover:bg-red-200">
                         <i class="fa-solid fa-trash-can mr-2"></i>この伝票をボツにする
                     </button>
@@ -263,7 +207,6 @@
                     <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200">
                         閉じる
                     </button>
-                    <!-- (変更) ボタンのテキストとIDを変更 -->
                     <button id="open-slip-preview-btn" class="px-6 py-2 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700">
                         <i class="fa-solid fa-clipboard-list mr-2"></i>伝票プレビューへ
                     </button>
@@ -272,10 +215,8 @@
         </div>
     </div>
 
-    <!-- (新規) ボツ伝 理由入力モーダル -->
     <div id="cancel-slip-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-lg">
-            <!-- モーダルヘッダー -->
             <div class="flex justify-between items-center p-5 border-b">
                 <h3 class="text-xl font-semibold" id="cancel-slip-modal-title">伝票をボツにする</h3>
                 <button class="modal-close-btn text-slate-400 hover:text-slate-600">
@@ -283,7 +224,6 @@
                 </button>
             </div>
             
-            <!-- モーダルボディ -->
             <div class="p-6">
                 <p class="mb-2 font-medium">伝票 No.<span id="cancel-slip-number"></span> をボツ伝にします。
                 <br>理由を必ず入力してください。</p>
@@ -291,7 +231,6 @@
                 <p id="cancel-slip-error" class="text-xs text-red-600 mt-1"></p>
             </div>
 
-            <!-- モーダルフッター -->
             <div class="flex justify-between items-center p-5 border-t bg-slate-50 rounded-b-lg">
                 <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
                     キャンセル
@@ -304,28 +243,22 @@
     </div>
 
 
-    <!-- 伝票プレビューモーダル -->
     <div id="slip-preview-modal" class="modal-backdrop">
-        <div class="modal-content w-full max-w-lg"> <!-- レシート幅を意識して max-w-lg (または md) に -->
-            <!-- モーダルヘッダー -->
-            <div class="flex justify-between items-center p-5 border-b non-printable">
+        <div class="modal-content w-full max-w-lg"> <div class="flex justify-between items-center p-5 border-b non-printable">
                 <h3 class="text-xl font-semibold" id="slip-preview-title">伝票プレビュー (V1)</h3>
                 <button class="modal-close-btn text-slate-400 hover:text-slate-600">
                     <i class="fa-solid fa-xmark fa-xl"></i>
                 </button>
             </div>
             
-            <!-- モーダルボディ (印刷領域) -->
             <div class="p-6 bg-white" id="slip-content-to-print">
                 <div class="text-center mb-4">
-                    <!-- (変更) ID追加 -->
                     <h2 class="text-lg font-bold" id="slip-store-name">Night POS 新宿本店</h2>
                     <p class="text-sm" id="slip-store-tel">TEL: 03-0000-0000</p>
                     <p class="text-sm">発行日時: <span id="slip-datetime"></span></p>
                 </div>
                 
                 <div class="text-sm border-y border-dashed border-slate-400 py-2 mb-2">
-                    <!-- (新規) 伝票番号 -->
                     <p>伝票番号: <span id="slip-slip-number" class="font-semibold text-base"></span></p>
                     <p>テーブル: <span id="slip-table-id" class="font-semibold text-base"></span></p>
                     <p>お客様名: <span id="slip-customer-name" class="font-semibold text-base"></span> 様</p>
@@ -334,8 +267,7 @@
                 
                 <h4 class="font-semibold mb-2 text-sm">--- ご注文明細 ---</h4>
                 <div class="space-y-1 text-sm mb-2" id="slip-items-list">
-                    <!-- JSで動的に生成 -->
-                </div>
+                    </div>
 
                 <div class="mt-4 pt-2 border-t border-dashed border-slate-400 space-y-1 font-medium text-sm">
                     <div class="flex justify-between">
@@ -343,21 +275,17 @@
                         <span id="slip-subtotal">¥0</span>
                     </div>
                     <div class="flex justify-between">
-                        <!-- (変更) ID追加 -->
                         <span class="text-slate-600">サービス料 (<span id="slip-service-rate">0</span>%)</span>
                         <span id="slip-service-charge">¥0</span>
                     </div>
                     <div class="flex justify-between">
-                        <!-- (変更) ID追加 -->
                         <span class="text-slate-600">消費税 (<span id="slip-tax-rate">0</span>%)</span>
                         <span id="slip-tax">¥0</span>
                     </div>
-                    <!-- (新規) 支払い済み金額 -->
                     <div class="flex justify-between text-red-600">
                         <span class="text-slate-600">（支払い済み金額）</span>
                         <span id="slip-paid-amount">¥0</span>
                     </div>
-                    <!-- (変更) 合計金額 -> 今回ご請求額 -->
                     <div class="flex justify-between text-base font-bold mt-2 pt-2 border-t border-slate-400">
                         <span>今回ご請求額</span>
                         <span id="slip-total">¥0</span>
@@ -370,7 +298,6 @@
                 </div>
             </div>
 
-            <!-- モーダルフッター (印刷対象外) -->
             <div class="flex justify-between items-center p-5 border-t bg-slate-50 rounded-b-lg non-printable">
                 <button id="print-slip-btn" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
                     <i class="fa-solid fa-print mr-2"></i>伝票印刷
@@ -382,10 +309,8 @@
         </div>
     </div>
     
-    <!-- 会計モーダル -->
     <div id="checkout-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-3xl">
-            <!-- モーダルヘッダー -->
             <div class="flex justify-between items-center p-5 border-b">
                 <h3 class="text-xl font-semibold" id="checkout-modal-title">テーブル V1 - お会計</h3>
                 <button class="modal-close-btn text-slate-400 hover:text-slate-600">
@@ -393,31 +318,25 @@
                 </button>
             </div>
             
-            <!-- モーダルボディ -->
             <div class="p-6">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- 左側: 伝票詳細 -->
                     <div>
                         <h4 class="font-semibold mb-3 border-b pb-2">伝票明細</h4>
                         <div class="space-y-2 max-h-60 overflow-y-auto pr-2 text-sm" id="checkout-items-list">
-                            <!-- 会計アイテムはJSで動的に生成 -->
-                        </div>
+                            </div>
                         <div class="mt-4 pt-4 border-t space-y-2 font-medium">
                             <div class="flex justify-between">
                                 <span class="text-slate-600">小計</span>
                                 <span id="checkout-subtotal">¥0</span>
                             </div>
                             <div class="flex justify-between">
-                                <!-- (変更) ID追加 -->
                                 <span class="text-slate-600">サービス料 (<span id="checkout-service-rate">0</span>%)</span>
                                 <span id="checkout-service-charge">¥0</span>
                             </div>
                             <div class="flex justify-between">
-                                <!-- (変更) ID追加 -->
                                 <span class="text-slate-600">消費税 (<span id="checkout-tax-rate">0</span>%)</span>
                                 <span id="checkout-tax">¥0</span>
                             </div>
-                            <!-- (新規) 支払い済み金額 -->
                             <div class="flex justify-between text-red-600">
                                 <span class="text-slate-600">（支払い済み金額）</span>
                                 <span id="checkout-paid-amount">¥0</span>
@@ -425,28 +344,24 @@
                         </div>
                     </div>
 
-                    <!-- 右側: 会計処理 (変更) -->
                     <div>
                         <h4 class="font-semibold mb-3 border-b pb-2">お支払い</h4>
                         <div class="space-y-4">
-                            <!-- 割引 (変更なし) -->
                             <div>
                                 <label class="text-xs font-semibold text-slate-500">割引</label>
                                 <div class="flex mt-1">
                                     <input type="number" id="discount-amount" placeholder="金額" class="w-2/3 p-2 border border-slate-300 rounded-l-lg focus:outline-none">
-                                    <select class="w-1/3 p-2 border-t border-b border-r border-slate-300 rounded-r-lg bg-slate-50 focus:outline-none">
-                                        <option>円</option>
-                                        <option>%</option>
+                                    <select id="discount-type" class="w-1/3 p-2 border-t border-b border-r border-slate-300 rounded-r-lg bg-slate-50 focus:outline-none">
+                                        <option value="yen">円</option>
+                                        <option value="percent">%</option>
                                     </select>
                                 </div>
                             </div>
-                            <!-- ご請求額 (変更なし) -->
                             <div class="text-right mt-6">
                                 <span class="text-lg text-slate-600">ご請求額</span>
                                 <p class="text-4xl font-bold text-blue-600" id="checkout-total">¥0</p>
                             </div>
                             
-                            <!-- (変更) 支払い方法入力 -->
                             <div class="space-y-3">
                                 <div>
                                     <label class="text-sm font-semibold text-slate-500 flex items-center">
@@ -468,7 +383,6 @@
                                 </div>
                             </div>
 
-                            <!-- (新規) お支払いサマリー -->
                             <div class="mt-4 pt-4 border-t space-y-2 font-medium">
                                 <div class="flex justify-between">
                                     <span class="text-slate-600">お支払い合計</span>
@@ -488,13 +402,10 @@
                 </div>
             </div>
 
-            <!-- モーダルフッター -->
             <div class="flex justify-between items-center p-5 border-t bg-slate-50 rounded-b-lg">
                 <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
-                    <!-- (変更) 戻るボタンの行き先は JS 側で制御 (ここでは閉じるだけ) -->
                     キャンセル
                 </button>
-                <!-- (変更) disabled 属性を追加 -->
                 <button id="process-payment-btn" class="px-8 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 text-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                     会計確定
                 </button>
@@ -502,10 +413,8 @@
         </div>
     </div>
 
-    <!-- 領収書モーダル -->
     <div id="receipt-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-md">
-            <!-- モーダルヘッダー -->
             <div class="flex justify-between items-center p-5 border-b">
                 <h3 class="text-xl font-semibold">領収書</h3>
                 <button class="modal-close-btn text-slate-400 hover:text-slate-600">
@@ -513,7 +422,6 @@
                 </button>
             </div>
             
-            <!-- モーダルボディ -->
             <div class="p-8 bg-white" id="receipt-content">
                 <div class="text-center mb-6">
                     <h2 class="text-2xl font-bold mb-2">領 収 書</h2>
@@ -521,24 +429,20 @@
                 </div>
                 
                 <div class="mb-4">
-                    <!-- (変更) ID追加 -->
                     <input type="text" value="鈴木様" class="w-full text-lg border-b-2 border-dotted border-slate-400 focus:outline-none pb-1" id="receipt-customer-name">
                     <span class="text-lg font-medium ml-2">御中</span>
                 </div>
                 
                 <div class="text-center my-6 border-b-2 border-t-2 border-double border-slate-900 py-4">
-                    <!-- (変更) この金額は「今回ご請求額」が入る -->
                     <p class="text-4xl font-bold tracking-wider" id="receipt-total">¥36,960 -</p>
                 </div>
                 
                 <div class="mb-6">
                     <label class="text-xs text-slate-500">但し</label>
-                    <!-- (変更) ID追加 -->
                     <input type="text" value="お飲食代として" class="w-full text-sm border-b border-dotted border-slate-400 focus:outline-none pt-1" id="receipt-description">
                 </div>
 
                 <div class="text-left text-sm">
-                    <!-- (変更) ID追加 -->
                     <p class="font-semibold" id="receipt-store-name">Night POS 新宿本店</p>
                     <p id="receipt-store-zip" class="hidden">〒160-0021</p>
                     <p id="receipt-store-address">東京都新宿区歌舞伎町1-1-1</p>
@@ -551,9 +455,7 @@
                 </div>
             </div>
 
-            <!-- モーダルフッター -->
             <div class="flex justify-between p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
-                <!-- (新規) 伝票復活ボタン -->
                 <button id="reopen-slip-btn" class="px-4 py-2 rounded-lg bg-yellow-500 text-white font-semibold hover:bg-yellow-600">
                     <i class="fa-solid fa-undo mr-2"></i>伝票を復活させる
                 </button>
@@ -562,7 +464,6 @@
                     <button class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
                         閉じる
                     </button>
-                    <!-- (変更) ID追加 -->
                     <button id="print-receipt-btn" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
                         <i class="fa-solid fa-print mr-2"></i>印刷する
                     </button>
@@ -571,11 +472,9 @@
         </div>
     </div>
     
-    <!-- (新規) メニュー編集モーダル -->
     <div id="menu-editor-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-lg">
             <form id="menu-editor-form">
-                <!-- モーダルヘッダー -->
                 <div class="flex justify-between items-center p-5 border-b">
                     <h3 class="text-xl font-semibold" id="menu-editor-modal-title">新規メニュー追加</h3>
                     <button type="button" class="modal-close-btn text-slate-400 hover:text-slate-600">
@@ -583,7 +482,6 @@
                     </button>
                 </div>
                 
-                <!-- モーダルボディ -->
                 <div class="p-6 space-y-4">
                     <div>
                         <label for="menu-category" class="text-sm font-semibold text-slate-600">カテゴリ</label>
@@ -600,7 +498,6 @@
                         <label for="menu-name" class="text-sm font-semibold text-slate-600">項目名</label>
                         <input type="text" id="menu-name" class="w-full p-2 border border-slate-300 rounded-lg mt-1" required>
                     </div>
-                    <!-- セット料金の場合のみ表示 -->
                     <div id="menu-duration-group">
                         <label for="menu-duration" class="text-sm font-semibold text-slate-600">時間 (分)</label>
                         <input type="number" id="menu-duration" placeholder="例: 60" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
@@ -612,7 +509,6 @@
                     <p id="menu-editor-error" class="text-xs text-red-600"></p>
                 </div>
 
-                <!-- モーダルフッター -->
                 <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
                     <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
                         キャンセル
@@ -625,9 +521,6 @@
         </div>
     </div>
 
-    <!-- ===== /モーダルエリア ===== -->
-
-    <!-- (変更) テーブル管理専用のJSファイルを読み込む -->
     <script type="module" src="tables.js"></script>
 </body>
 </html>

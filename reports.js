@@ -23,14 +23,20 @@ let state = null;
 let stateDocRef = null; // (変更) stateDocRef をグローバルで保持
 
 // ===== DOM要素 =====
-// (変更) DOM要素をグローバルスコープに移動
+// (★修正★) reports.js (reports.html) に必要なDOMのみに限定
 let modalCloseBtns,
-    reportsSummaryCards, reportTotalSales, reportTotalSlips, reportAvgSales, reportCancelledSlips, // (変更) reportCancelledSlips を追加
+    reportsSummaryCards, reportTotalSales, reportTotalSlips, reportAvgSales, reportCancelledSlips,
     reportsPeriodTabs, reportsChartCanvas, reportsRankingList, exportJpgBtn,
-    reportContentArea;
+    reportContentArea,
+    // (★新規★) 日付選択
+    reportDatePicker; 
 
 // (変更) グラフインスタンスをグローバルで保持
 let salesChart = null;
+// (★新規★) 現在のレポート集計期間
+let currentReportPeriod = 'daily';
+let currentReportDate = new Date();
+
 
 // --- 関数 ---
 
@@ -103,39 +109,145 @@ const closeModal = (modalElement) => {
     });
 };
 
+// ===================================
+// (★新規★) 売上集計ヘルパー関数
+// ===================================
+
 /**
- * (新規) 売上分析サマリーを計算・表示する
+ * (★新規★) 営業日付の開始時刻を取得する
+ * @param {Date} date 対象の日付
+ * @returns {Date} 営業開始日時
+ */
+const getBusinessDayStart = (date) => {
+    if (!state || !state.dayChangeTime) {
+        // state未読み込みか、設定がない場合は AM 00:00
+        const startDate = new Date(date);
+        startDate.setHours(0, 0, 0, 0);
+        return startDate;
+    }
+    
+    const [hours, minutes] = state.dayChangeTime.split(':').map(Number);
+    const startDate = new Date(date);
+    startDate.setHours(hours, minutes, 0, 0);
+    
+    // 基準日 (date) が営業開始時刻より前の場合 (例: AM 3:00 で 変更時刻が AM 5:00)
+    // 営業日は「前日」扱い
+    if (date.getTime() < startDate.getTime()) {
+        startDate.setDate(startDate.getDate() - 1);
+    }
+    
+    return startDate;
+};
+
+/**
+ * (★新規★) 営業日付の終了時刻を取得する
+ * @param {Date} businessDayStart 営業開始日時
+ * @returns {Date} 営業終了日時 (翌日の営業開始 - 1ミリ秒)
+ */
+const getBusinessDayEnd = (businessDayStart) => {
+    const endDate = new Date(businessDayStart);
+    endDate.setDate(endDate.getDate() + 1);
+    endDate.setMilliseconds(endDate.getMilliseconds() - 1);
+    return endDate;
+};
+
+/**
+ * (★新規★) 指定された期間の伝票(会計済み・ボツ)を取得する
+ * @param {string} period 'daily', 'weekly', 'monthly'
+ * @param {Date} baseDate 基準日
+ * @returns {object} { paidSlips: [], cancelledSlips: [] }
+ */
+const getSlipsForPeriod = (period, baseDate) => {
+    if (!state || !state.slips) {
+        return { paidSlips: [], cancelledSlips: [], range: { start: baseDate, end: baseDate } };
+    }
+
+    let startDate, endDate;
+    const businessDayStart = getBusinessDayStart(baseDate);
+
+    if (period === 'daily') {
+        startDate = businessDayStart;
+        endDate = getBusinessDayEnd(businessDayStart);
+    } 
+    else if (period === 'weekly') {
+        // 基準日の週の月曜日（の営業開始時刻）
+        const dayOfWeek = businessDayStart.getDay(); // 0 (Sun) - 6 (Sat)
+        const diff = businessDayStart.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // 月曜を週初めに
+        startDate = new Date(businessDayStart.setDate(diff));
+        startDate = getBusinessDayStart(startDate); // 念のため営業日補正
+
+        // 7日後の営業終了時刻
+        endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + 7);
+        endDate = getBusinessDayEnd(new Date(endDate.setDate(endDate.getDate() - 1))); // 7日後の営業開始-1ms
+    } 
+    else if (period === 'monthly') {
+        // 基準日の月の1日（の営業開始時刻）
+        startDate = new Date(businessDayStart.getFullYear(), businessDayStart.getMonth(), 1);
+        startDate = getBusinessDayStart(startDate); // 念のため営業日補正
+
+        // 基準日の月の末日（の営業終了時刻）
+        endDate = new Date(businessDayStart.getFullYear(), businessDayStart.getMonth() + 1, 0); // 月末日
+        endDate = getBusinessDayEnd(getBusinessDayStart(endDate)); // 念のため営業日補正
+    }
+
+    const startTimestamp = startDate.getTime();
+    const endTimestamp = endDate.getTime();
+
+    const paidSlips = state.slips.filter(slip => {
+        if (slip.status !== 'paid' || !slip.paidTimestamp) return false;
+        const paidTime = new Date(slip.paidTimestamp).getTime();
+        return paidTime >= startTimestamp && paidTime <= endTimestamp;
+    });
+
+    const cancelledSlips = state.slips.filter(slip => {
+        // (注意) ボツ伝の日時は paidTimestamp がないため、仮で startTime を使う (要件次第)
+        // 本来はボツにした日時 (cancelledTimestamp) が必要
+        if (slip.status !== 'cancelled') return false; 
+        
+        // paidTimestamp がないため、集計期間の判定が困難。
+        // ここでは「state.slips全体 (本日分)」のボツ伝をそのまま返す簡易仕様
+        return true; 
+    });
+
+    return { paidSlips, cancelledSlips, range: { start: startDate, end: endDate } };
+};
+
+
+// ===================================
+// (★修正★) 売上集計ロジック (ダミーデータ -> 実データ)
+// ===================================
+
+/**
+ * (★修正★) 売上分析サマリーを計算・表示する
  */
 const renderReportsSummary = () => {
-    if (!reportsSummaryCards || !state) return; // (変更) state がロードされるまで待つ
+    if (!reportsSummaryCards || !state) return; 
     
-    // (変更) state.slips から集計
-    const paidSlips = state.slips.filter(slip => slip.status === 'paid');
-    const cancelledSlips = state.slips.filter(slip => slip.status === 'cancelled'); // (新規)
+    const { paidSlips, cancelledSlips } = getSlipsForPeriod(currentReportPeriod, currentReportDate);
     
     let totalSales = 0;
     paidSlips.forEach(slip => {
-        totalSales += calculateSlipTotal(slip); // (変更) 共通関数を使用
+        totalSales += calculateSlipTotal(slip); 
     });
     
     const totalSlips = paidSlips.length;
     const avgSales = totalSlips > 0 ? totalSales / totalSlips : 0;
-    const totalCancelled = cancelledSlips.length; // (新規)
+    const totalCancelled = cancelledSlips.length; 
 
     if (reportTotalSales) reportTotalSales.textContent = formatCurrency(totalSales);
     if (reportTotalSlips) reportTotalSlips.textContent = `${totalSlips} 組`;
     if (reportAvgSales) reportAvgSales.textContent = formatCurrency(Math.round(avgSales));
-    if (reportCancelledSlips) reportCancelledSlips.textContent = `${totalCancelled} 件`; // (新規)
+    if (reportCancelledSlips) reportCancelledSlips.textContent = `${totalCancelled} 件`;
 };
 
 /**
- * (新規) 売れ筋商品ランキングを計算・表示する
+ * (★修正★) 売れ筋商品ランキングを計算・表示する
  */
 const renderReportsRanking = () => {
-    if (!reportsRankingList || !state) return; // (変更) state がロードされるまで待つ
+    if (!reportsRankingList || !state) return; 
     
-    // (変更) state.slips から集計
-    const paidSlips = state.slips.filter(slip => slip.status === 'paid');
+    const { paidSlips } = getSlipsForPeriod(currentReportPeriod, currentReportDate);
     const itemMap = new Map();
 
     paidSlips.forEach(slip => {
@@ -164,30 +276,80 @@ const renderReportsRanking = () => {
 };
 
 /**
- * (新規) 売上推移グラフを描画する
- * @param {string} period 'daily', 'weekly', 'monthly'
+ * (★修正★) 売上推移グラフを描画する
  */
-const renderSalesChart = (period = 'daily') => {
-    if (!reportsChartCanvas) return;
+const renderSalesChart = () => {
+    if (!reportsChartCanvas || !state) return;
+    
+    const period = currentReportPeriod;
+    const baseDate = currentReportDate;
+    const { paidSlips, range } = getSlipsForPeriod(period, baseDate);
+    
     const ctx = reportsChartCanvas.getContext('2d');
-
-    // ダミーデータ
-    let labels, data;
-    switch (period) {
-        case 'weekly':
-            labels = ['10/13(月)', '10/14(火)', '10/15(水)', '10/16(木)', '10/17(金)', '10/18(土)', '10/19(日)'];
-            data = [120000, 150000, 130000, 180000, 250000, 300000, 100000];
-            break;
-        case 'monthly':
-            labels = ['1週目', '2週目', '3週目', '4週目'];
-            data = [800000, 1000000, 950000, 1200000];
-            break;
-        case 'daily':
-        default:
-            labels = ['18時', '19時', '20時', '21時', '22時', '23時', '24時', '25時'];
-            data = [0, 50000, 120000, 180000, 250000, 220000, 150000, 80000];
-            break;
+    
+    let labels = [];
+    let data = [];
+    
+    // (★修正★) 実データからグラフデータを生成
+    if (period === 'daily') {
+        // 日次: 1時間ごとの集計 (営業開始時刻から24時間)
+        labels = [];
+        data = [];
+        const startHour = range.start.getHours();
+        
+        for (let i = 0; i < 24; i++) {
+            const currentHour = (startHour + i) % 24;
+            labels.push(`${currentHour}時`);
+            
+            const hourStart = new Date(range.start);
+            hourStart.setHours(hourStart.getHours() + i);
+            
+            const hourEnd = new Date(hourStart);
+            hourEnd.setHours(hourEnd.getHours() + 1);
+            
+            const hourSales = paidSlips
+                .filter(slip => {
+                    const paidTime = new Date(slip.paidTimestamp).getTime();
+                    return paidTime >= hourStart.getTime() && paidTime < hourEnd.getTime();
+                })
+                .reduce((total, slip) => total + calculateSlipTotal(slip), 0);
+            
+            data.push(hourSales);
+        }
+    } 
+    else if (period === 'weekly') {
+        // 週次: 7日間の日別集計
+        labels = [];
+        data = [];
+        for (let i = 0; i < 7; i++) {
+            const dayStart = new Date(range.start);
+            dayStart.setDate(dayStart.getDate() + i);
+            const dayEnd = getBusinessDayEnd(dayStart);
+            
+            labels.push(`${dayStart.getMonth() + 1}/${dayStart.getDate()}(${['日','月','火','水','木','金','土'][dayStart.getDay()]})`);
+            
+            const daySales = paidSlips
+                .filter(slip => {
+                    const paidTime = new Date(slip.paidTimestamp).getTime();
+                    return paidTime >= dayStart.getTime() && paidTime <= dayEnd.getTime();
+                })
+                .reduce((total, slip) => total + calculateSlipTotal(slip), 0);
+                
+            data.push(daySales);
+        }
     }
+    else if (period === 'monthly') {
+        // 月次: 週別集計 (簡易的に4週 + 残り)
+        labels = ['1週目', '2週目', '3週目', '4週目', '5週目'];
+        data = [0, 0, 0, 0, 0];
+        
+        paidSlips.forEach(slip => {
+            const paidDate = new Date(slip.paidTimestamp);
+            const weekIndex = Math.floor((paidDate.getDate() - 1) / 7); // 0-3 (1-7日 -> 0), 4 (29-31日)
+            data[weekIndex] += calculateSlipTotal(slip);
+        });
+    }
+
 
     // 既存のグラフがあれば破棄
     if (salesChart) {
@@ -233,7 +395,7 @@ const renderSalesChart = (period = 'daily') => {
                     display: false // ラベルを非表示
                 }
             },
-            animation: false 
+            animation: true // (★修正★) アニメーションを有効化
         }
     });
 };
@@ -246,6 +408,16 @@ const updateModalCommonInfo = () => {
     if (!state) return;
     // (変更) reports.js でモーダル内のDOM要素は取得しないため、中身を空にする
     // (ただし、HTMLにはモーダルが存在するため、関数自体は残す)
+};
+
+/**
+ * (★新規★) 全レポートを更新する
+ */
+const updateAllReports = () => {
+    if (!state) return;
+    renderReportsSummary();
+    renderReportsRanking();
+    renderSalesChart();
 };
 
 
@@ -339,10 +511,8 @@ document.addEventListener('firebaseReady', (e) => {
             state = docSnap.data();
             
             // (重要) state がロードされたら、UIを初回描画
-            renderReportsSummary();
-            renderReportsRanking();
-            // (変更) グラフはダミーデータなので初回描画は DOMContentLoaded で行う
-            // renderSalesChart('daily'); 
+            // (★修正★) 全レポートを更新
+            updateAllReports();
             updateModalCommonInfo(); 
             
         } else {
@@ -354,9 +524,7 @@ document.addEventListener('firebaseReady', (e) => {
                 await setDoc(stateDocRef, defaultState);
                 console.log("Default state saved to Firestore.");
                 // (重要) state がロードされたら、UIを初回描画
-                renderReportsSummary();
-                renderReportsRanking();
-                // renderSalesChart('daily');
+                updateAllReports();
                 updateModalCommonInfo(); 
                 
             } catch (error) {
@@ -390,14 +558,20 @@ document.addEventListener('DOMContentLoaded', () => {
     reportsRankingList = document.getElementById('reports-ranking-list');
     exportJpgBtn = document.getElementById('export-jpg-btn');
     reportContentArea = document.getElementById('reports-content-area'); 
+    
+    // (★新規★) 日付ピッカー
+    reportDatePicker = document.querySelector('input[type="date"]');
+    if(reportDatePicker) {
+        // (★新規★) input[type=date] は YYYY-MM-DD 形式
+        currentReportDate = new Date();
+        reportDatePicker.value = currentReportDate.toISOString().split('T')[0];
+    }
 
     
     // ===== 初期化処理 =====
     if (reportsSummaryCards) { 
-        // (変更) グラフは state に依存しないため、ここで初回描画
-        renderSalesChart('daily');
-        
-        // (削除) Firestoreの読み込みを待つため、ここでは描画しない
+        // (★修正★) 初回描画は onSnapshot に任せる
+        // renderSalesChart('daily');
         // renderReportsSummary();
         // renderReportsRanking();
     }
@@ -417,17 +591,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 reportsPeriodTabs.querySelectorAll('button').forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
                 
-                const period = tab.dataset.period;
-                renderSalesChart(period);
+                currentReportPeriod = tab.dataset.period;
+                // (★修正★) グラフだけでなく全レポートを更新
+                updateAllReports();
             });
+        });
+    }
+
+    // (★新規★) 日付ピッカーの変更
+    if(reportDatePicker) {
+        reportDatePicker.addEventListener('change', (e) => {
+            // (★注意★) e.target.value は "YYYY-MM-DD" (UTC)
+            // タイムゾーンの問題を避けるため、YYYY, MM, DD を個別に取得して Date を生成
+            const dateParts = e.target.value.split('-').map(Number);
+            currentReportDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+            updateAllReports();
         });
     }
 
     if (exportJpgBtn && reportContentArea) {
         exportJpgBtn.addEventListener('click', () => {
+            
+            // (★修正★) グラフのアニメーションを一時的に無効にして再描画
             if (salesChart) {
-                salesChart.options.animation = false;
-                salesChart.update();
+                salesChart.options.animation = false; 
+                salesChart.update(0); // 0msで即時更新
             }
 
             html2canvas(reportContentArea, {
@@ -435,12 +623,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 scale: 2 
             }).then(canvas => {
                 const link = document.createElement('a');
-                link.download = 'daily_report.jpg';
+                // (★修正★) ファイル名を動的に
+                const dateStr = currentReportDate.toISOString().split('T')[0];
+                link.download = `report-${currentReportPeriod}-${dateStr}.jpg`;
                 link.href = canvas.toDataURL('image/jpeg', 0.9); 
                 link.click();
+                
+                // (★修正★) アニメーションを元に戻す
+                if (salesChart) {
+                    salesChart.options.animation = true; 
+                }
             });
         });
     }
 
 });
-

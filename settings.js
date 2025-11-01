@@ -23,19 +23,31 @@ let state = null;
 let stateDocRef = null; // (変更) stateDocRef をグローバルで保持
 
 // ===== DOM要素 =====
-// (変更) DOM要素をグローバルスコープに移動
+// (変更) settings.js 専用のDOM要素のみを取得
 let modalCloseBtns,
     storeNameInput, storeAddressInput, storeTelInput,
     taxRateInput, serviceRateInput,
     dayChangeTimeInput,
     saveSettingsBtn, settingsFeedback,
+    
+    // (★修正★) HTML側のIDに合わせてDOM取得変数を全面的に見直し
+    
+    // テーブル設定
     newTableIdInput, addTableBtn, currentTablesList, tableSettingsError,
-    // (変更) 成績設定用DOM
-    performanceCastItemsContainer, // (変更) ID を修正
-    settingServiceCharge, // (変更) ID を修正
-    settingTax, // (変更) ID を修正
-    settingBranchSales, // (変更) ID を修正
-    settingBranchNoms; // (変更) ID を修正
+    
+    // 伝票タグ設定 (★新規★)
+    newTagNameInput, addTagBtn, currentTagsList, tagSettingsError,
+    
+    // キャスト設定 (★新規★)
+    newCastNameInput, addCastBtn, currentCastsList, castSettingsError,
+
+    // 成績設定
+    performanceCastItemsContainer,
+    settingScSalesValue, settingScSalesType, // (★修正★) サービス料
+    settingTaxSalesValue, settingTaxSalesType, // (★修正★) 消費税
+    settingSideSalesValue, // (★修正★) 枝
+    settingSideCountNomination; // (★修正★) 枝
+
 
 // --- 関数 ---
 
@@ -114,16 +126,22 @@ const closeModal = (modalElement) => {
 const loadSettingsToForm = () => {
     if (!state) return; // (変更) state がロードされるまで待つ
 
+    // 店舗情報
     if (storeNameInput) storeNameInput.value = state.storeInfo.name;
     if (storeAddressInput) storeAddressInput.value = state.storeInfo.address;
     if (storeTelInput) storeTelInput.value = state.storeInfo.tel;
 
+    // 税率・サービス料
     if (taxRateInput) taxRateInput.value = state.rates.tax * 100;
     if (serviceRateInput) serviceRateInput.value = state.rates.service * 100;
     
+    // 営業日付
     if (dayChangeTimeInput) dayChangeTimeInput.value = state.dayChangeTime; 
     
+    // 各リストの描画
     renderTableSettingsList();
+    renderTagSettingsList(); // (★新規★)
+    renderCastSettingsList(); // (★新規★)
     renderPerformanceSettings();
 };
 
@@ -174,27 +192,20 @@ const renderPerformanceSettings = () => {
         }
     }
 
-    // 2. 全体項目の読み込み (HTMLのID変更に対応)
-    // (変更) 簡略化されたロジック（HTMLのID変更を反映）
-    const scSetting = state.performanceSettings.serviceCharge.salesValue > 0 ? 'personal_100' : 'store';
-    const taxSetting = state.performanceSettings.tax.salesValue > 0 ? 'personal_100' : 'store';
-    
-    if (settingServiceCharge) settingServiceCharge.value = scSetting;
-    if (settingTax) settingTax.value = taxSetting;
-    
-    // 3. 枝（サイド）設定の読み込み (HTMLのID変更に対応)
-    const branchSalesMapping = {
-        100: 'personal_100',
-        50: 'personal_50',
-        0: 'personal_0'
-    };
-    const branchSalesValue = state.performanceSettings.sideCustomer.salesValue;
-    const branchSalesKey = branchSalesMapping[branchSalesValue] || 'store';
-    
-    const branchNomsKey = state.performanceSettings.sideCustomer.countNomination ? 'personal' : 'none';
-    
-    if (settingBranchSales) settingBranchSales.value = branchSalesKey;
-    if (settingBranchNoms) settingBranchNoms.value = branchNomsKey;
+    // 2. サービス料・税
+    // (★修正★) HTML側のID (setting-sc-sales-value など) に合わせる
+    const scSetting = state.performanceSettings.serviceCharge;
+    const taxSetting = state.performanceSettings.tax;
+    if (settingScSalesValue) settingScSalesValue.value = scSetting.salesValue;
+    if (settingScSalesType) settingScSalesType.value = scSetting.salesType;
+    if (settingTaxSalesValue) settingTaxSalesValue.value = taxSetting.salesValue;
+    if (settingTaxSalesType) settingTaxSalesType.value = taxSetting.salesType;
+
+    // 3. 枝（サイド）設定
+    // (★修正★) HTML側のID (setting-side-sales-value など) に合わせる
+    const sideSetting = state.performanceSettings.sideCustomer;
+    if (settingSideSalesValue) settingSideSalesValue.value = sideSetting.salesValue;
+    if (settingSideCountNomination) settingSideCountNomination.checked = sideSetting.countNomination;
 };
 
 
@@ -228,6 +239,7 @@ const saveSettingsFromForm = () => {
         service: newServiceRate,
     };
 
+    // --- 営業日付 ---
     const newDayChangeTime = dayChangeTimeInput.value;
     if (!newDayChangeTime) { 
         if (settingsFeedback) {
@@ -237,27 +249,23 @@ const saveSettingsFromForm = () => {
         return;
     }
     
-    // (変更) 成績反映設定 (HTMLのID変更に対応)
+    // --- 成績反映設定 ---
+    // (★修正★) HTML側のID (setting-sc-sales-value など) に合わせてロジックを修正
     const newPerformanceSettings = {
         menuItems: {},
         serviceCharge: {
-            salesValue: settingServiceCharge.value === 'personal_100' ? 100 : 0,
-            salesType: 'percentage' // (変更) 簡易的に percentage に固定
+            salesValue: parseInt(settingScSalesValue.value) || 0,
+            salesType: settingScSalesType.value
         },
         tax: {
-            salesValue: settingTax.value === 'personal_100' ? 100 : 0,
-            salesType: 'percentage' // (変更) 簡易的に percentage に固定
+            salesValue: parseInt(settingTaxSalesValue.value) || 0,
+            salesType: settingTaxSalesType.value
         },
         sideCustomer: {
-            salesValue: parseInt(settingBranchSales.value.replace('personal_', '')) || 0,
-            countNomination: settingBranchNoms.value === 'personal'
+            salesValue: parseInt(settingSideSalesValue.value) || 0,
+            countNomination: settingSideCountNomination.checked
         }
     };
-    
-    // (変更) 'store' (店舗売上) の場合は salesValue を 0 にする
-    if (settingBranchSales.value === 'store') {
-        newPerformanceSettings.sideCustomer.salesValue = 0;
-    }
     
     if (performanceCastItemsContainer) {
         const itemInputs = performanceCastItemsContainer.querySelectorAll('.setting-menu-sales-value');
@@ -284,7 +292,7 @@ const saveSettingsFromForm = () => {
         rates: newRates,
         dayChangeTime: newDayChangeTime,
         performanceSettings: newPerformanceSettings
-        // state.tables は add/deleteTableSetting で既に更新済み
+        // state.tables, state.slipTagsMaster, state.casts は各リストの追加/削除関数で直接更新済み
     };
     
     updateStateInFirestore(newState);
@@ -298,11 +306,15 @@ const saveSettingsFromForm = () => {
     }
 };
 
+// ===================================
+// (★新規★) テーブル設定セクション
+// ===================================
+
 /**
  * (新規) テーブル設定リストをUIに描画する
  */
 const renderTableSettingsList = () => {
-    if (!currentTablesList || !state) return; // (変更) state がロードされるまで待つ
+    if (!currentTablesList || !state) return; 
     
     currentTablesList.innerHTML = '';
     if (tableSettingsError) tableSettingsError.textContent = '';
@@ -317,7 +329,6 @@ const renderTableSettingsList = () => {
     );
 
     sortedTables.forEach(table => {
-        // (変更) state.slips を参照して最新のステータスをチェック
         const isOccupied = state.slips.some(s => s.tableId === table.id && (s.status === 'active' || s.status === 'checkout'));
         
         const itemHTML = `
@@ -333,15 +344,13 @@ const renderTableSettingsList = () => {
         `;
         currentTablesList.innerHTML += itemHTML;
     });
-
-    // (削除) 削除ボタンのリスナーは DOMContentLoaded に移動
 };
 
 /**
  * (新規) テーブル設定を追加する
  */
 const addTableSetting = () => {
-    if (!newTableIdInput || !tableSettingsError || !state) return; // (変更) state がロードされるまで待つ
+    if (!newTableIdInput || !tableSettingsError || !state) return; 
     
     const newId = newTableIdInput.value.trim().toUpperCase();
     
@@ -361,13 +370,11 @@ const addTableSetting = () => {
         status: 'available' 
     };
     
-    // (変更) state を直接変更
     state.tables.push(newTable);
     updateStateInFirestore(state);
     
     newTableIdInput.value = '';
     tableSettingsError.textContent = '';
-    // (変更) renderTableSettingsList() は onSnapshot が自動で呼び出す
 };
 
 /**
@@ -375,10 +382,9 @@ const addTableSetting = () => {
  * @param {string} tableId 
  */
 const deleteTableSetting = (tableId) => {
-    if (!state) return; // (変更) state がロードされるまで待つ
+    if (!state) return; 
     const table = state.tables.find(t => t.id === tableId);
     
-    // (変更) state.slips を参照して最新のステータスをチェック
     const isOccupied = state.slips.some(s => s.tableId === tableId && (s.status === 'active' || s.status === 'checkout'));
 
     if (!table || isOccupied) {
@@ -386,12 +392,163 @@ const deleteTableSetting = (tableId) => {
         return;
     }
 
-    // (変更) state を直接変更
     state.tables = state.tables.filter(t => t.id !== tableId);
     updateStateInFirestore(state);
-    
-    // (変更) renderTableSettingsList() は onSnapshot が自動で呼び出す
 };
+
+// ===================================
+// (★新規★) 伝票タグ設定セクション
+// ===================================
+
+/**
+ * (★新規★) 伝票タグ設定リストをUIに描画する
+ */
+const renderTagSettingsList = () => {
+    if (!currentTagsList || !state) return;
+    
+    currentTagsList.innerHTML = '';
+    if (tagSettingsError) tagSettingsError.textContent = '';
+    
+    if (!state.slipTagsMaster || state.slipTagsMaster.length === 0) {
+        currentTagsList.innerHTML = '<p class="text-sm text-slate-500">タグが登録されていません。</p>';
+        return;
+    }
+    
+    state.slipTagsMaster.forEach(tag => {
+        const itemHTML = `
+            <div class="flex justify-between items-center bg-slate-50 p-3 rounded-lg border">
+                <span class="font-semibold">${tag.name}</span>
+                <button type="button" class="delete-tag-btn text-red-500 hover:text-red-700" data-tag-id="${tag.id}">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+        `;
+        currentTagsList.innerHTML += itemHTML;
+    });
+};
+
+/**
+ * (★新規★) 伝票タグを追加する
+ */
+const addTagSetting = () => {
+    if (!newTagNameInput || !tagSettingsError || !state) return;
+    
+    const newName = newTagNameInput.value.trim();
+    if (newName === "") {
+        tagSettingsError.textContent = "タグ名を入力してください。";
+        return;
+    }
+    
+    const exists = state.slipTagsMaster.some(tag => tag.name === newName);
+    if (exists) {
+        tagSettingsError.textContent = "そのタグ名は既に使用されています。";
+        return;
+    }
+    
+    const newTag = { id: getUUID(), name: newName };
+    
+    state.slipTagsMaster.push(newTag);
+    updateStateInFirestore(state);
+    
+    newTagNameInput.value = '';
+    tagSettingsError.textContent = '';
+};
+
+/**
+ * (★新規★) 伝票タグを削除する
+ * @param {string} tagId 
+ */
+const deleteTagSetting = (tagId) => {
+    if (!state) return;
+    
+    // (注意) 削除する前に、このタグを使っている伝票がないか確認するロジックが将来的に必要
+    
+    state.slipTagsMaster = state.slipTagsMaster.filter(t => t.id !== tagId);
+    updateStateInFirestore(state);
+};
+
+
+// ===================================
+// (★新規★) キャスト設定セクション
+// ===================================
+
+/**
+ * (★新規★) キャスト設定リストをUIに描画する
+ */
+const renderCastSettingsList = () => {
+    if (!currentCastsList || !state) return;
+    
+    currentCastsList.innerHTML = '';
+    if (castSettingsError) castSettingsError.textContent = '';
+    
+    if (!state.casts || state.casts.length === 0) {
+        currentCastsList.innerHTML = '<p class="text-sm text-slate-500">キャストが登録されていません。</p>';
+        return;
+    }
+    
+    state.casts.forEach(cast => {
+        // (注意) 将来的に「指名あり」「退店済み」などを確認するロジック
+        const isUsed = state.slips.some(s => s.nominationCastId === cast.id);
+        
+        const itemHTML = `
+            <div class="flex justify-between items-center bg-slate-50 p-3 rounded-lg border">
+                <span class="font-semibold">${cast.name}</span>
+                ${isUsed ? 
+                    `<span class="text-xs text-red-600 font-medium">(使用中のため削除不可)</span>` : 
+                    `<button type="button" class="delete-cast-btn text-red-500 hover:text-red-700" data-cast-id="${cast.id}">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>`
+                }
+            </div>
+        `;
+        currentCastsList.innerHTML += itemHTML;
+    });
+};
+
+/**
+ * (★新規★) キャストを追加する
+ */
+const addCastSetting = () => {
+    if (!newCastNameInput || !castSettingsError || !state) return;
+    
+    const newName = newCastNameInput.value.trim();
+    if (newName === "") {
+        castSettingsError.textContent = "キャスト名を入力してください。";
+        return;
+    }
+    
+    const exists = state.casts.some(cast => cast.name === newName);
+    if (exists) {
+        castSettingsError.textContent = "そのキャスト名は既に使用されています。";
+        return;
+    }
+    
+    const newCast = { id: getUUID(), name: newName };
+    
+    state.casts.push(newCast);
+    updateStateInFirestore(state);
+    
+    newCastNameInput.value = '';
+    castSettingsError.textContent = '';
+};
+
+/**
+ * (★新規★) キャストを削除する
+ * @param {string} castId 
+ */
+const deleteCastSetting = (castId) => {
+    if (!state) return;
+    
+    const isUsed = state.slips.some(s => s.nominationCastId === castId);
+    if (isUsed) {
+        castSettingsError.textContent = `そのキャストは伝票で使用中のため削除できません。`;
+        return;
+    }
+
+    state.casts = state.casts.filter(c => c.id !== castId);
+    updateStateInFirestore(state);
+};
+
 
 /**
  * (変更) 伝票・会計・領収書モーダルの共通情報を更新する
@@ -412,32 +569,23 @@ const getDefaultState = () => ({
     slipTagsMaster: [
         { id: 'tag1', name: '指名' }, { id: 'tag2', name: '初指名' },
         { id: 'tag3', name: '初回' }, { id: 'tag4', name: '枝' },
-        { id: 'tag5', name: '切替' }, { id: 'tag6', name: '案内所' },
-        { id: 'tag7', name: '20歳未満' }, { id: 'tag8', name: '同業' },
     ],
     casts: [ 
         { id: 'c1', name: 'あい' }, { id: 'c2', name: 'みう' },
-        { id: 'c3', name: 'さくら' }, { id: 'c4', name: 'れな' },
-        { id: 'c5', name: 'ひな' }, { id: 'c6', name: '体験A' },
     ],
     customers: [
         { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
-        { id: 'cust2', name: '田中様', nominatedCastId: null },
-        { id: 'cust3', name: '佐藤様', nominatedCastId: 'c2' },
     ],
     tables: [
         { id: 'V1', status: 'available' }, { id: 'V2', status: 'available' },
-        { id: 'T1', status: 'available' }, { id: 'T2', status: 'available' },
-        { id: 'C1', status: 'available' }, { id: 'C2', status: 'available' },
     ],
     slips: [],
     menu: {
         set: [
             { id: 'm1', name: '基本セット (指名)', price: 10000, duration: 60 },
-            { id: 'm2', name: '基本セット (フリー)', price: 8000, duration: 60 },
         ],
         drink: [{ id: 'm7', name: 'キャストドリンク', price: 1500 }],
-        bottle: [{ id: 'm11', name: '鏡月 (ボトル)', price: 8000 }],
+        bottle: [],
         food: [],
         cast: [{ id: 'm14', name: '本指名料', price: 3000 }],
         other: [],
@@ -535,21 +683,36 @@ document.addEventListener('DOMContentLoaded', () => {
     dayChangeTimeInput = document.getElementById('day-change-time'); 
     saveSettingsBtn = document.getElementById('save-settings-btn');
     settingsFeedback = document.getElementById('settings-feedback');
+
+    // テーブル
     newTableIdInput = document.getElementById('new-table-id-input');
     addTableBtn = document.getElementById('add-table-btn');
     currentTablesList = document.getElementById('current-tables-list');
     tableSettingsError = document.getElementById('table-settings-error');
     
-    // (変更) 成績設定用DOM (HTMLのID変更を反映)
+    // (★新規★) タグ
+    newTagNameInput = document.getElementById('new-tag-name-input');
+    addTagBtn = document.getElementById('add-tag-btn');
+    currentTagsList = document.getElementById('current-tags-list');
+    tagSettingsError = document.getElementById('tag-settings-error');
+
+    // (★新規★) キャスト
+    newCastNameInput = document.getElementById('new-cast-name-input');
+    addCastBtn = document.getElementById('add-cast-btn');
+    currentCastsList = document.getElementById('current-casts-list');
+    castSettingsError = document.getElementById('cast-settings-error');
+
+    // (★修正★) 成績設定 (HTMLのID変更を反映)
     performanceCastItemsContainer = document.getElementById('performance-cast-items-container');
-    settingServiceCharge = document.getElementById('setting-service-charge');
-    settingTax = document.getElementById('setting-tax');
-    settingBranchSales = document.getElementById('setting-branch-sales');
-    settingBranchNoms = document.getElementById('setting-branch-noms');
+    settingScSalesValue = document.getElementById('setting-sc-sales-value');
+    settingScSalesType = document.getElementById('setting-sc-sales-type');
+    settingTaxSalesValue = document.getElementById('setting-tax-sales-value');
+    settingTaxSalesType = document.getElementById('setting-tax-sales-type');
+    settingSideSalesValue = document.getElementById('setting-side-sales-value');
+    settingSideCountNomination = document.getElementById('setting-side-count-nomination');
 
     
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
-    // if (saveSettingsBtn) { ... }
     
     // ===== イベントリスナーの設定 =====
 
@@ -560,6 +723,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // 設定保存ボタン
     if (saveSettingsBtn) {
         saveSettingsBtn.addEventListener('click', (e) => {
             e.preventDefault(); 
@@ -567,12 +731,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // --- テーブル設定 ---
     if (addTableBtn) {
         addTableBtn.addEventListener('click', () => {
             addTableSetting();
         });
     }
-
     if (newTableIdInput) {
         newTableIdInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -581,18 +745,64 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
-    // (新規) テーブル削除ボタンのイベント委任
     if (currentTablesList) {
         currentTablesList.addEventListener('click', (e) => {
             const deleteBtn = e.target.closest('.delete-table-btn');
             if (deleteBtn) {
-                // (変更) 確認ダイアログを追加
                 if (confirm(`テーブル「${deleteBtn.dataset.tableId}」を削除しますか？`)) {
                     deleteTableSetting(deleteBtn.dataset.tableId);
                 }
             }
         });
     }
-});
 
+    // --- (★新規★) タグ設定 ---
+    if (addTagBtn) {
+        addTagBtn.addEventListener('click', () => {
+            addTagSetting();
+        });
+    }
+    if (newTagNameInput) {
+        newTagNameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addTagSetting();
+            }
+        });
+    }
+    if (currentTagsList) {
+        currentTagsList.addEventListener('click', (e) => {
+            const deleteBtn = e.target.closest('.delete-tag-btn');
+            if (deleteBtn) {
+                if (confirm(`タグを削除しますか？`)) {
+                    deleteTagSetting(deleteBtn.dataset.tagId);
+                }
+            }
+        });
+    }
+
+    // --- (★新規★) キャスト設定 ---
+    if (addCastBtn) {
+        addCastBtn.addEventListener('click', () => {
+            addCastSetting();
+        });
+    }
+    if (newCastNameInput) {
+        newCastNameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addCastSetting();
+            }
+        });
+    }
+    if (currentCastsList) {
+        currentCastsList.addEventListener('click', (e) => {
+            const deleteBtn = e.target.closest('.delete-cast-btn');
+            if (deleteBtn) {
+                if (confirm(`キャストを削除しますか？`)) {
+                    deleteCastSetting(deleteBtn.dataset.castId);
+                }
+            }
+        });
+    }
+});

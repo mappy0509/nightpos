@@ -23,15 +23,14 @@ let state = null;
 let stateDocRef = null; // (変更) stateDocRef をグローバルで保持
 
 // ===== DOM要素 =====
-// (変更) DOM要素をグローバルスコープに移動
-let navLinks, pages, pageTitle, tableGrid, dashboardSlips, menuTabsContainer, menuTabs,
-    menuTabContents, menuPage, allSlipsList, orderModal, checkoutModal, receiptModal,
+// (★修正★) tables.js (tables.html) に必要なDOMのみに限定
+let navLinks, pages, pageTitle, tableGrid, 
+    orderModal, checkoutModal, receiptModal,
     slipPreviewModal, modalCloseBtns, openSlipPreviewBtn, processPaymentBtn,
     printSlipBtn, goToCheckoutBtn, reopenSlipBtn, menuEditorModal,
     menuEditorModalTitle, menuEditorForm, menuCategorySelect, menuNameInput,
     menuDurationGroup, menuDurationInput, menuPriceInput, menuEditorError,
-    openNewMenuModalBtn, saveMenuItemBtn, setMenuTbody, drinkMenuTbody,
-    bottleMenuTbody, foodMenuTbody, castMenuTbody, otherMenuTbody,
+    saveMenuItemBtn,
     cancelSlipModal, openCancelSlipModalBtn, cancelSlipModalTitle, cancelSlipNumber,
     cancelSlipReasonInput, cancelSlipError, confirmCancelSlipBtn, slipSelectionModal,
     slipSelectionModalTitle, slipSelectionList, createNewSlipBtn, newSlipConfirmModal,
@@ -42,12 +41,13 @@ let navLinks, pages, pageTitle, tableGrid, dashboardSlips, menuTabsContainer, me
     checkoutSubtotalEl, checkoutServiceChargeEl, checkoutTaxEl, checkoutPaidAmountEl,
     checkoutTotalEl, paymentCashInput, paymentCardInput, paymentCreditInput,
     checkoutPaymentTotalEl, checkoutShortageEl, checkoutChangeEl, slipSubtotalEl,
-    slipServiceChargeEl, slipTaxEl, slipPaidAmountEl, slipTotalEl, castRankingList,
-    rankingPeriodSelect, rankingTypeBtns,
+    slipServiceChargeEl, slipTaxEl, slipPaidAmountEl, slipTotalEl,
     // (新規) HTML側で追加したID
     slipStoreName, slipStoreTel, slipServiceRate, slipTaxRate,
     checkoutStoreName, checkoutStoreTel, checkoutServiceRate, checkoutTaxRate,
-    receiptStoreName, receiptAddress, receiptTel;
+    receiptStoreName, receiptAddress, receiptTel,
+    // (★新規★) 割引機能
+    discountAmountInput, discountTypeSelect;
 
 
 // --- 関数 ---
@@ -124,6 +124,7 @@ const createTableCardHTML = (table) => {
     const tableStatus = activeSlips > 0 ? 'occupied' : 'available';
     
     // (変更) state.tables[N].status を直接更新する (onSnapshot側で処理されるためローカルでの変更は不要かも)
+    // (★コメントアウト★) onSnapshotで自動更新されるため、このロジックは不要
     // const tableInState = state.tables.find(t => t.id === table.id);
     // if (tableInState) {
     //     tableInState.status = tableStatus;
@@ -188,16 +189,18 @@ const renderTableGrid = () => {
 /**
  * (変更) ダッシュボードに未会計「伝票」一覧を描画する (tables.jsでは不要)
  */
+// (★削除★)
 // const renderDashboardSlips = () => { ... };
 
 /**
  * (新規) 「伝票一覧」ページを描画する (tables.jsでは不要)
  */
+// (★削除★)
 // const renderAllSlipsPage = () => { ... };
 
 
 /**
- * (変更) 伝票モーダル（注文入力）を描画する
+ * (★修正★) 伝票モーダル（注文入力）を描画する
  */
 const renderOrderModal = () => {
     if (!state) return; // (変更) state がロードされるまで待つ
@@ -251,16 +254,23 @@ const renderOrderModal = () => {
     
     orderSubtotalEl.textContent = formatCurrency(subtotal);
 
-    // メニュー選択グリッドを描画 (変更)
-    if (menuOrderGrid.innerHTML === '') { 
-        const allMenuItems = [
-            ...(state.menu.set || []), 
-            ...(state.menu.drink || []), 
-            ...(state.menu.bottle || []),
-            ...(state.menu.food || []),
-            ...(state.menu.cast || []),
-            ...(state.menu.other || [])
-        ];
+    // (★修正★) if(menuOrderGrid.innerHTML === '') の条件を削除
+    // (★追加★) 毎回グリッドをクリア
+    menuOrderGrid.innerHTML = ''; 
+    
+    const allMenuItems = [
+        ...(state.menu.set || []), 
+        ...(state.menu.drink || []), 
+        ...(state.menu.bottle || []),
+        ...(state.menu.food || []),
+        ...(state.menu.cast || []),
+        ...(state.menu.other || [])
+    ];
+    
+    // (★追加★) メニュー項目がない場合の表示
+    if (allMenuItems.length === 0) {
+        menuOrderGrid.innerHTML = '<p class="text-slate-500 text-sm col-span-3">メニューが登録されていません。<br>「メニュー管理」ページから追加してください。</p>';
+    } else {
         allMenuItems.forEach(item => {
             menuOrderGrid.innerHTML += `
                 <button class="menu-order-btn p-3 bg-white rounded-lg shadow border text-left hover:bg-slate-100" data-item-id="${item.id}" data-item-name="${item.name}" data-item-price="${item.price}">
@@ -269,9 +279,6 @@ const renderOrderModal = () => {
                 </button>
             `;
         });
-        
-        // (変更) イベントリスナーは DOMContentLoaded 内で一括設定
-        // document.querySelectorAll('.menu-order-btn').forEach(btn => { ... });
     }
 };
 
@@ -425,6 +432,7 @@ const updateOrderItemQty = (id, qty) => {
 /**
  * (新規) メニュー管理タブとリストを描画する (tables.jsでは不要)
  */
+// (★削除★)
 // const renderMenuTabs = () => { ... };
 
 
@@ -508,7 +516,7 @@ const renderSlipPreviewModal = () => {
 
 
 /**
- * 会計モーダルを描画する
+ * (★修正★) 会計モーダルを描画する (割引計算ロジック追加)
  */
 const renderCheckoutModal = () => {
     if (!state) return; // (変更) state がロードされるまで待つ
@@ -534,18 +542,39 @@ const renderCheckoutModal = () => {
     const tax = subtotalWithService * state.rates.tax;
     const total = Math.round(subtotalWithService + tax);
     const paidAmount = slipData.paidAmount || 0;
-    const billingAmount = total - paidAmount; 
+    const preDiscountTotal = total - paidAmount; 
 
-    const finalBillingAmount = billingAmount; 
+    // (★追加★) 割引計算
+    const discountAmount = parseInt(discountAmountInput.value) || 0;
+    const discountType = discountTypeSelect.value;
+    
+    let finalBillingAmount = preDiscountTotal;
+    if (discountType === 'yen') {
+        finalBillingAmount = preDiscountTotal - discountAmount;
+    } else if (discountType === 'percent') {
+        finalBillingAmount = preDiscountTotal * (1 - (discountAmount / 100));
+    }
+    finalBillingAmount = Math.round(finalBillingAmount); // 最終金額を丸める
 
-    state.currentBillingAmount = finalBillingAmount;
+    // 0円未満にはしない
+    if (finalBillingAmount < 0) {
+        finalBillingAmount = 0;
+    }
+
+    // (変更) stateは updateStateInFirestore 経由で更新
+    state.currentBillingAmount = finalBillingAmount; // (★重要★) 割引後の金額をセット
 
     checkoutSubtotalEl.textContent = formatCurrency(subtotal);
     checkoutServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
     checkoutTaxEl.textContent = formatCurrency(Math.round(tax));
+    // (変更) 支払い済み金額の表示/非表示
     checkoutPaidAmountEl.parentElement.style.display = paidAmount > 0 ? 'flex' : 'none';
     checkoutPaidAmountEl.textContent = `-${formatCurrency(paidAmount)}`;
-    checkoutTotalEl.textContent = formatCurrency(finalBillingAmount);
+    checkoutTotalEl.textContent = formatCurrency(finalBillingAmount); // (★重要★) 割引後の金額を表示
+    
+    // (★修正★) 割引入力はリセットしない
+    // discountAmountInput.value = '';
+    // discountTypeSelect.value = 'yen';
     
     paymentCashInput.value = '';
     paymentCardInput.value = '';
@@ -557,11 +586,49 @@ const renderCheckoutModal = () => {
 };
 
 /**
- * (新規) 会計モーダルの支払い状況を計算・更新する
+ * (★修正★) 会計モーダルの支払い状況を計算・更新する (割引再計算)
  */
 const updatePaymentStatus = () => {
     if (!state) return; // (変更) state がロードされるまで待つ
-    const billingAmount = state.currentBillingAmount;
+
+    // (★追加★) 割引を先に再計算
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
+    if (!slipData) return;
+
+    let subtotal = 0;
+    slipData.items.forEach(item => {
+        subtotal += item.price * item.qty;
+    });
+    
+    const serviceCharge = subtotal * state.rates.service;
+    const subtotalWithService = subtotal + serviceCharge;
+    const tax = subtotalWithService * state.rates.tax;
+    const total = Math.round(subtotalWithService + tax);
+    const paidAmount = slipData.paidAmount || 0;
+    const preDiscountTotal = total - paidAmount; 
+
+    const discountAmount = parseInt(discountAmountInput.value) || 0;
+    const discountType = discountTypeSelect.value;
+    
+    let finalBillingAmount = preDiscountTotal;
+    if (discountType === 'yen') {
+        finalBillingAmount = preDiscountTotal - discountAmount;
+    } else if (discountType === 'percent') {
+        finalBillingAmount = preDiscountTotal * (1 - (discountAmount / 100));
+    }
+    finalBillingAmount = Math.round(finalBillingAmount);
+
+    if (finalBillingAmount < 0) {
+        finalBillingAmount = 0;
+    }
+
+    // (★修正★) state.currentBillingAmount を最新の割引後金額で更新
+    state.currentBillingAmount = finalBillingAmount;
+    checkoutTotalEl.textContent = formatCurrency(finalBillingAmount);
+    document.getElementById('receipt-total').textContent = formatCurrency(finalBillingAmount);
+    
+    // --- ここから下は支払い計算 ---
+    const billingAmount = state.currentBillingAmount; // 割引後の金額
 
     const cashPayment = parseInt(paymentCashInput.value) || 0;
     const cardPayment = parseInt(paymentCardInput.value) || 0;
@@ -610,8 +677,12 @@ const renderReceiptModal = () => {
     
     const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
     if (slipData) {
-        document.querySelector('#receipt-content input[type="text"]').value = slipData.name || '';
+        // (★修正★) セレクタをより安全なID指定に変更
+        const receiptCustomerName = document.getElementById('receipt-customer-name');
+        if (receiptCustomerName) receiptCustomerName.value = slipData.name || '';
     }
+    // (★修正★) 領収書の合計金額も割引後の金額を反映
+    document.getElementById('receipt-total').textContent = formatCurrency(state.currentBillingAmount);
 };
 
 /**
@@ -673,7 +744,9 @@ const createNewSlip = (tableId) => {
         tags: [],
         paidAmount: 0,
         cancelReason: null,
-        paymentDetails: { cash: 0, card: 0, credit: 0 }
+        paymentDetails: { cash: 0, card: 0, credit: 0 },
+        paidTimestamp: null, // (★追加★) 会計日時
+        discount: { type: 'yen', value: 0 }, // (★追加★) 割引情報
     };
     
     state.slips.push(newSlip);
@@ -683,6 +756,10 @@ const createNewSlip = (tableId) => {
     state.currentSlipId = newSlip.slipId;
     
     updateStateInFirestore(state);
+    
+    // (★追加★) 割引フォームをリセット
+    if (discountAmountInput) discountAmountInput.value = '';
+    if (discountTypeSelect) discountTypeSelect.value = 'yen';
 
     renderOrderModal();
     openModal(orderModal);
@@ -782,6 +859,11 @@ const handleSlipClick = (slipId) => {
 
     state.currentSlipId = slipId;
     updateStateInFirestore(state);
+
+    // (★追加★) 割引情報をフォームに読み込む
+    const discount = slipData.discount || { type: 'yen', value: 0 };
+    discountAmountInput.value = discount.value;
+    discountTypeSelect.value = discount.type;
     
     renderOrderModal();
     openModal(orderModal);
@@ -793,10 +875,17 @@ const handleSlipClick = (slipId) => {
  */
 const handlePaidSlipClick = (slipId) => {
     if (!state) return; // (変更) state がロードされるまで待つ
+    const slipData = state.slips.find(s => s.slipId === slipId);
+    if (!slipData) return;
 
     state.currentSlipId = slipId;
     updateStateInFirestore(state);
     
+    // (★追加★) 割引情報をフォームに読み込む
+    const discount = slipData.discount || { type: 'yen', value: 0 };
+    discountAmountInput.value = discount.value;
+    discountTypeSelect.value = discount.type;
+
     renderCheckoutModal(); 
     renderReceiptModal();
     openModal(receiptModal);
@@ -806,11 +895,12 @@ const handlePaidSlipClick = (slipId) => {
 /**
  * (新規) キャストランキングを描画する (tables.jsでは不要)
  */
+// (★削除★)
 // const renderCastRanking = () => { ... };
 
 // (新規) デフォルトの state を定義する関数（Firestoreにデータがない場合）
 const getDefaultState = () => ({
-    currentPage: 'tables',
+    currentPage: 'tables', // (★修正★)
     currentStore: 'store1',
     slipCounter: 0,
     slipTagsMaster: [
@@ -930,16 +1020,10 @@ document.addEventListener('firebaseReady', (e) => {
 document.addEventListener('DOMContentLoaded', () => {
     
     // ===== DOM要素の取得 =====
+    // (★修正★) tables.html に存在するDOMのみ取得
     navLinks = document.querySelectorAll('.nav-link');
-    pages = document.querySelectorAll('[data-page]');
     pageTitle = document.getElementById('page-title');
     tableGrid = document.getElementById('table-grid'); 
-    dashboardSlips = document.getElementById('dashboard-slips'); 
-    menuTabsContainer = document.getElementById('menu-tabs'); 
-    menuTabs = document.querySelectorAll('.menu-tab'); 
-    menuTabContents = document.querySelectorAll('.menu-tab-content'); 
-    menuPage = document.getElementById('menu'); 
-    allSlipsList = document.getElementById('all-slips-list'); 
     orderModal = document.getElementById('order-modal');
     checkoutModal = document.getElementById('checkout-modal');
     receiptModal = document.getElementById('receipt-modal');
@@ -959,14 +1043,7 @@ document.addEventListener('DOMContentLoaded', () => {
     menuDurationInput = document.getElementById('menu-duration');
     menuPriceInput = document.getElementById('menu-price');
     menuEditorError = document.getElementById('menu-editor-error');
-    openNewMenuModalBtn = document.getElementById('open-new-menu-modal-btn'); 
     saveMenuItemBtn = document.getElementById('save-menu-item-btn');
-    setMenuTbody = document.getElementById('set-menu-tbody'); 
-    drinkMenuTbody = document.getElementById('drink-menu-tbody'); 
-    bottleMenuTbody = document.getElementById('bottle-menu-tbody'); 
-    foodMenuTbody = document.getElementById('food-menu-tbody'); 
-    castMenuTbody = document.getElementById('cast-menu-tbody'); 
-    otherMenuTbody = document.getElementById('other-menu-tbody'); 
     cancelSlipModal = document.getElementById('cancel-slip-modal');
     openCancelSlipModalBtn = document.getElementById('open-cancel-slip-modal-btn');
     cancelSlipModalTitle = document.getElementById('cancel-slip-modal-title');
@@ -1010,9 +1087,6 @@ document.addEventListener('DOMContentLoaded', () => {
     slipTaxEl = document.getElementById('slip-tax');
     slipPaidAmountEl = document.getElementById('slip-paid-amount');
     slipTotalEl = document.getElementById('slip-total');
-    castRankingList = document.getElementById('cast-ranking-list'); 
-    rankingPeriodSelect = document.getElementById('ranking-period-select'); 
-    rankingTypeBtns = document.querySelectorAll('.ranking-type-btn'); 
 
     // (新規) モーダル共通情報のDOM
     slipStoreName = document.getElementById('slip-store-name');
@@ -1026,6 +1100,10 @@ document.addEventListener('DOMContentLoaded', () => {
     receiptStoreName = document.getElementById('receipt-store-name');
     receiptAddress = document.getElementById('receipt-address');
     receiptTel = document.getElementById('receipt-tel');
+
+    // (★新規★) 割引
+    discountAmountInput = document.getElementById('discount-amount');
+    discountTypeSelect = document.getElementById('discount-type');
 
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
     // renderTableGrid(); 
@@ -1053,6 +1131,10 @@ document.addEventListener('DOMContentLoaded', () => {
             closeModal(newSlipConfirmModal);
             closeModal(cancelSlipModal);
             closeModal(menuEditorModal);
+
+            // (★追加★) 割引をリセット
+            if(discountAmountInput) discountAmountInput.value = '';
+            if(discountTypeSelect) discountTypeSelect.value = 'yen';
         });
     });
     
@@ -1175,6 +1257,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // (★修正★) 割引入力にもリスナーを追加
+    if (discountAmountInput) {
+        discountAmountInput.addEventListener('input', updatePaymentStatus);
+    }
+    if (discountTypeSelect) {
+        discountTypeSelect.addEventListener('change', updatePaymentStatus);
+    }
+
     if (paymentCashInput) {
         paymentCashInput.addEventListener('input', updatePaymentStatus);
     }
@@ -1191,14 +1281,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const slip = state.slips.find(s => s.slipId === state.currentSlipId);
             if (!slip) return;
 
-            const total = calculateSlipTotal(slip);
-            slip.paidAmount = total; 
+            // (★修正★) 割引後の金額 (currentBillingAmount) を paidAmount に保存
+            slip.paidAmount = state.currentBillingAmount; 
             slip.paymentDetails = {
                 cash: parseInt(paymentCashInput.value) || 0,
                 card: parseInt(paymentCardInput.value) || 0,
                 credit: parseInt(paymentCreditInput.value) || 0
             };
+            // (★追加★) 割引情報を伝票に保存
+            slip.discount = {
+                type: discountTypeSelect.value,
+                value: parseInt(discountAmountInput.value) || 0
+            };
             slip.status = 'paid';
+            slip.paidTimestamp = new Date().toISOString(); // (★追加★) 会計日時を記録
             
             updateStateInFirestore(state);
 
@@ -1216,7 +1312,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 slip.status = 'active'; 
                 slip.paidAmount = 0;
                 slip.paymentDetails = { cash: 0, card: 0, credit: 0 };
-                
+                slip.paidTimestamp = null; // (★追加★) 会計日時をリセット
+                // (★追加★) 割引もリセット
+                slip.discount = { type: 'yen', value: 0 };
+
                 updateStateInFirestore(state);
                 
                 closeModal(receiptModal);
@@ -1309,4 +1408,3 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
 });
-

@@ -23,15 +23,14 @@ let state = null;
 let stateDocRef = null; // (変更) stateDocRef をグローバルで保持
 
 // ===== DOM要素 =====
-// (変更) DOM要素をグローバルスコープに移動
-let navLinks, pages, pageTitle, tableGrid, dashboardSlips, menuTabsContainer, menuTabs,
-    menuTabContents, menuPage, allSlipsList, orderModal, checkoutModal, receiptModal,
+// (★修正★) dashboard.js (index.html) に必要なDOMのみに限定
+let navLinks, pageTitle, dashboardSlips,
+    orderModal, checkoutModal, receiptModal,
     slipPreviewModal, modalCloseBtns, openSlipPreviewBtn, processPaymentBtn,
     printSlipBtn, goToCheckoutBtn, reopenSlipBtn, menuEditorModal,
     menuEditorModalTitle, menuEditorForm, menuCategorySelect, menuNameInput,
     menuDurationGroup, menuDurationInput, menuPriceInput, menuEditorError,
-    openNewMenuModalBtn, saveMenuItemBtn, setMenuTbody, drinkMenuTbody,
-    bottleMenuTbody, foodMenuTbody, castMenuTbody, otherMenuTbody,
+    saveMenuItemBtn, 
     cancelSlipModal, openCancelSlipModalBtn, cancelSlipModalTitle, cancelSlipNumber,
     cancelSlipReasonInput, cancelSlipError, confirmCancelSlipBtn, slipSelectionModal,
     slipSelectionModalTitle, slipSelectionList, createNewSlipBtn, newSlipConfirmModal,
@@ -48,7 +47,9 @@ let navLinks, pages, pageTitle, tableGrid, dashboardSlips, menuTabsContainer, me
     summaryTotalSales, summaryTableUsage, summaryAvgSales, summaryCastCount,
     slipStoreName, slipStoreTel, slipServiceRate, slipTaxRate,
     checkoutStoreName, checkoutStoreTel, checkoutServiceRate, checkoutTaxRate,
-    receiptStoreName, receiptAddress, receiptTel;
+    receiptStoreName, receiptAddress, receiptTel,
+    // (★新規★) 割引機能
+    discountAmountInput, discountTypeSelect;
 
 
 // --- 関数 ---
@@ -118,19 +119,131 @@ const getActiveSlipCount = (tableId) => {
 /**
  * (変更) テーブル管理画面を描画する (dashboard.jsでは不要)
  */
-const renderTableGrid = () => {
-    if (!tableGrid) return; 
-    // (中身は tables.js に移行)
+// (★削除★)
+// const renderTableGrid = () => { ... };
+
+
+// =================================================
+// (★新規★) reports.js から集計ヘルパー関数を移植
+// =================================================
+
+/**
+ * (★新規★) 営業日付の開始時刻を取得する
+ * @param {Date} date 対象の日付
+ * @returns {Date} 営業開始日時
+ */
+const getBusinessDayStart = (date) => {
+    if (!state || !state.dayChangeTime) {
+        // state未読み込みか、設定がない場合は AM 00:00
+        const startDate = new Date(date);
+        startDate.setHours(0, 0, 0, 0);
+        return startDate;
+    }
+    
+    const [hours, minutes] = state.dayChangeTime.split(':').map(Number);
+    const startDate = new Date(date);
+    startDate.setHours(hours, minutes, 0, 0);
+    
+    // 基準日 (date) が営業開始時刻より前の場合 (例: AM 3:00 で 変更時刻が AM 5:00)
+    // 営業日は「前日」扱い
+    if (date.getTime() < startDate.getTime()) {
+        startDate.setDate(startDate.getDate() - 1);
+    }
+    
+    return startDate;
 };
+
+/**
+ * (★新規★) 営業日付の終了時刻を取得する
+ * @param {Date} businessDayStart 営業開始日時
+ * @returns {Date} 営業終了日時 (翌日の営業開始 - 1ミリ秒)
+ */
+const getBusinessDayEnd = (businessDayStart) => {
+    const endDate = new Date(businessDayStart);
+    endDate.setDate(endDate.getDate() + 1);
+    endDate.setMilliseconds(endDate.getMilliseconds() - 1);
+    return endDate;
+};
+
+/**
+ * (★新規★) 指定された期間の伝票(会計済み・ボツ)を取得する
+ * @param {string} period 'daily', 'weekly', 'monthly'
+ * @param {Date} baseDate 基準日
+ * @returns {object} { paidSlips: [], cancelledSlips: [] }
+ */
+const getSlipsForPeriod = (period, baseDate) => {
+    if (!state || !state.slips) {
+        return { paidSlips: [], cancelledSlips: [], range: { start: baseDate, end: baseDate } };
+    }
+
+    let startDate, endDate;
+    const businessDayStart = getBusinessDayStart(baseDate);
+
+    if (period === 'daily') {
+        startDate = businessDayStart;
+        endDate = getBusinessDayEnd(businessDayStart);
+    } 
+    else if (period === 'weekly') {
+        // 基準日の週の月曜日（の営業開始時刻）
+        const dayOfWeek = businessDayStart.getDay(); // 0 (Sun) - 6 (Sat)
+        const diff = businessDayStart.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // 月曜を週初めに
+        startDate = new Date(businessDayStart.setDate(diff));
+        startDate = getBusinessDayStart(startDate); // 念のため営業日補正
+
+        // 7日後の営業終了時刻
+        endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + 7);
+        endDate = getBusinessDayEnd(new Date(endDate.setDate(endDate.getDate() - 1))); // 7日後の営業開始-1ms
+    } 
+    else if (period === 'monthly') {
+        // 基準日の月の1日（の営業開始時刻）
+        startDate = new Date(businessDayStart.getFullYear(), businessDayStart.getMonth(), 1);
+        startDate = getBusinessDayStart(startDate); // 念のため営業日補正
+
+        // 基準日の月の末日（の営業終了時刻）
+        endDate = new Date(businessDayStart.getFullYear(), businessDayStart.getMonth() + 1, 0); // 月末日
+        endDate = getBusinessDayEnd(getBusinessDayStart(endDate)); // 念のため営業日補正
+    }
+
+    const startTimestamp = startDate.getTime();
+    const endTimestamp = endDate.getTime();
+
+    const paidSlips = state.slips.filter(slip => {
+        if (slip.status !== 'paid' || !slip.paidTimestamp) return false;
+        const paidTime = new Date(slip.paidTimestamp).getTime();
+        return paidTime >= startTimestamp && paidTime <= endTimestamp;
+    });
+
+    const cancelledSlips = state.slips.filter(slip => {
+        // (注意) ボツ伝の日時は paidTimestamp がないため、仮で startTime を使う (要件次第)
+        // 本来はボツにした日時 (cancelledTimestamp) が必要
+        if (slip.status !== 'cancelled') return false; 
+        
+        // paidTimestamp がないため、集計期間の判定が困難。
+        // ここでは「state.slips全体 (本日分)」のボツ伝をそのまま返す簡易仕様
+        return true; 
+    });
+
+    return { paidSlips, cancelledSlips, range: { start: startDate, end: endDate } };
+};
+
+
+// =================================================
+// /END (★新規★) reports.js から集計ヘルパー関数を移植
+// =================================================
+
 
 /**
  * (変更) ダッシュボードサマリーを更新する
  */
 const renderDashboardSummary = () => {
     if (!state) return; // (変更) state がロードされるまで待つ
+    
+    // (★修正★) 「本日」の営業日データを取得
+    const { paidSlips } = getSlipsForPeriod('daily', new Date());
 
     // 1. 本日の総売上
-    const paidSlips = state.slips.filter(slip => slip.status === 'paid');
+    // (★修正★) paidSlips は既にフィルタリング済み
     let totalSales = 0;
     paidSlips.forEach(slip => {
         totalSales += calculateSlipTotal(slip);
@@ -142,18 +255,26 @@ const renderDashboardSummary = () => {
     const totalTables = state.tables.length;
     const usageRate = totalTables > 0 ? (activeTables / totalTables) * 100 : 0;
     if (summaryTableUsage) {
-        summaryTableUsage.querySelector('p.text-3xl').textContent = `${Math.round(usageRate)}%`;
-        summaryTableUsage.querySelector('p.text-sm').textContent = `${activeTables} / ${totalTables} 卓`;
+        // (★修正★) index.html の構造に合わせてセレクタを修正
+        const rateEl = summaryTableUsage.querySelector('p.text-3xl');
+        const detailEl = summaryTableUsage.querySelector('p.text-sm');
+        if (rateEl) rateEl.textContent = `${Math.round(usageRate)}%`;
+        if (detailEl) detailEl.textContent = `${activeTables} / ${totalTables} 卓`;
     }
 
     // 3. 平均客単価
     const avgSales = paidSlips.length > 0 ? totalSales / paidSlips.length : 0;
-    if (summaryAvgSales) summaryAvgSales.textContent = formatCurrency(Math.round(avgSales));
+    if (summaryAvgSales) {
+        // (★修正★) index.html の構造に合わせてセレクタを修正
+        const avgEl = summaryAvgSales.querySelector('p.text-3xl');
+        if (avgEl) avgEl.textContent = formatCurrency(Math.round(avgSales));
+    }
     
     // 4. 出勤キャスト (ダミー)
     if (summaryCastCount) {
-        summaryCastCount.querySelector('p.text-3xl').textContent = `${state.casts.length} 名`;
-        // (必要であれば state に出勤管理機能を追加)
+        // (★修正★) index.html の構造に合わせてセレクタを修正
+        const countEl = summaryCastCount.querySelector('p.text-3xl');
+        if (countEl) countEl.innerHTML = `${state.casts.length} <span class="text-lg font-medium">名</span>`; // (innerHTMLに変更)
     }
 };
 
@@ -217,6 +338,7 @@ const renderDashboardSlips = () => {
 /**
  * (新規) 「伝票一覧」ページを描画する (dashboard.jsでは不要)
  */
+// (★削除★)
 // const renderAllSlipsPage = () => { ... };
 
 
@@ -275,16 +397,23 @@ const renderOrderModal = () => {
     
     orderSubtotalEl.textContent = formatCurrency(subtotal);
 
-    // メニュー選択グリッドを描画 (変更)
-    if (menuOrderGrid.innerHTML === '') { 
-        const allMenuItems = [
-            ...(state.menu.set || []), 
-            ...(state.menu.drink || []), 
-            ...(state.menu.bottle || []),
-            ...(state.menu.food || []),
-            ...(state.menu.cast || []),
-            ...(state.menu.other || [])
-        ];
+    // (★修正★) if(menuOrderGrid.innerHTML === '') の条件を削除
+    // (★追加★) 毎回グリッドをクリア
+    menuOrderGrid.innerHTML = ''; 
+    
+    const allMenuItems = [
+        ...(state.menu.set || []), 
+        ...(state.menu.drink || []), 
+        ...(state.menu.bottle || []),
+        ...(state.menu.food || []),
+        ...(state.menu.cast || []),
+        ...(state.menu.other || [])
+    ];
+    
+    // (★追加★) メニュー項目がない場合の表示
+    if (allMenuItems.length === 0) {
+        menuOrderGrid.innerHTML = '<p class="text-slate-500 text-sm col-span-3">メニューが登録されていません。<br>「メニュー管理」ページから追加してください。</p>';
+    } else {
         allMenuItems.forEach(item => {
             menuOrderGrid.innerHTML += `
                 <button class="menu-order-btn p-3 bg-white rounded-lg shadow border text-left hover:bg-slate-100" data-item-id="${item.id}" data-item-name="${item.name}" data-item-price="${item.price}">
@@ -293,9 +422,6 @@ const renderOrderModal = () => {
                 </button>
             `;
         });
-        
-        // (変更) イベントリスナーは DOMContentLoaded 内で一括設定
-        // document.querySelectorAll('.menu-order-btn').forEach(btn => { ... });
     }
 };
 
@@ -463,6 +589,7 @@ const updateOrderItemQty = (id, qty) => {
 /**
  * (新規) メニュー管理タブとリストを描画する (dashboard.jsでは不要)
  */
+// (★削除★)
 // const renderMenuTabs = () => { ... };
 
 
@@ -483,8 +610,9 @@ const updateModalCommonInfo = () => {
     if (slipTaxRate) slipTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
 
     // 会計
-    if (checkoutStoreName) checkoutStoreName.textContent = store.name; // (HTML側でID追加必要)
-    if (checkoutStoreTel) checkoutStoreTel.textContent = `TEL: ${store.tel}`; // (HTML側でID追加必要)
+    // (★修正★) HTML側にIDがないため、nullチェックを追加
+    if (checkoutStoreName) checkoutStoreName.textContent = store.name;
+    if (checkoutStoreTel) checkoutStoreTel.textContent = `TEL: ${store.tel}`;
     if (checkoutServiceRate) checkoutServiceRate.textContent = `サービス料 (${rates.service * 100}%)`;
     if (checkoutTaxRate) checkoutTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
 
@@ -548,7 +676,7 @@ const renderSlipPreviewModal = () => {
 
 
 /**
- * 会計モーダルを描画する
+ * (★修正★) 会計モーダルを描画する (割引計算ロジック追加)
  */
 const renderCheckoutModal = () => {
     if (!state) return; // (変更) state がロードされるまで待つ
@@ -574,12 +702,27 @@ const renderCheckoutModal = () => {
     const tax = subtotalWithService * state.rates.tax;
     const total = Math.round(subtotalWithService + tax);
     const paidAmount = slipData.paidAmount || 0;
-    const billingAmount = total - paidAmount; 
+    const preDiscountTotal = total - paidAmount; 
 
-    const finalBillingAmount = billingAmount; 
+    // (★追加★) 割引計算
+    const discountAmount = parseInt(discountAmountInput.value) || 0;
+    const discountType = discountTypeSelect.value;
+    
+    let finalBillingAmount = preDiscountTotal;
+    if (discountType === 'yen') {
+        finalBillingAmount = preDiscountTotal - discountAmount;
+    } else if (discountType === 'percent') {
+        finalBillingAmount = preDiscountTotal * (1 - (discountAmount / 100));
+    }
+    finalBillingAmount = Math.round(finalBillingAmount); // 最終金額を丸める
+
+    // 0円未満にはしない
+    if (finalBillingAmount < 0) {
+        finalBillingAmount = 0;
+    }
 
     // (変更) stateは updateStateInFirestore 経由で更新
-    state.currentBillingAmount = finalBillingAmount;
+    state.currentBillingAmount = finalBillingAmount; // (★重要★) 割引後の金額をセット
 
     checkoutSubtotalEl.textContent = formatCurrency(subtotal);
     checkoutServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
@@ -587,7 +730,11 @@ const renderCheckoutModal = () => {
     // (変更) 支払い済み金額の表示/非表示
     checkoutPaidAmountEl.parentElement.style.display = paidAmount > 0 ? 'flex' : 'none';
     checkoutPaidAmountEl.textContent = `-${formatCurrency(paidAmount)}`;
-    checkoutTotalEl.textContent = formatCurrency(finalBillingAmount);
+    checkoutTotalEl.textContent = formatCurrency(finalBillingAmount); // (★重要★) 割引後の金額を表示
+    
+    // (★修正★) 割引入力はリセットしない
+    // discountAmountInput.value = '';
+    // discountTypeSelect.value = 'yen';
     
     paymentCashInput.value = '';
     paymentCardInput.value = '';
@@ -599,11 +746,49 @@ const renderCheckoutModal = () => {
 };
 
 /**
- * (新規) 会計モーダルの支払い状況を計算・更新する
+ * (★修正★) 会計モーダルの支払い状況を計算・更新する (割引再計算)
  */
 const updatePaymentStatus = () => {
     if (!state) return; // (変更) state がロードされるまで待つ
-    const billingAmount = state.currentBillingAmount;
+
+    // (★追加★) 割引を先に再計算
+    const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
+    if (!slipData) return;
+
+    let subtotal = 0;
+    slipData.items.forEach(item => {
+        subtotal += item.price * item.qty;
+    });
+    
+    const serviceCharge = subtotal * state.rates.service;
+    const subtotalWithService = subtotal + serviceCharge;
+    const tax = subtotalWithService * state.rates.tax;
+    const total = Math.round(subtotalWithService + tax);
+    const paidAmount = slipData.paidAmount || 0;
+    const preDiscountTotal = total - paidAmount; 
+
+    const discountAmount = parseInt(discountAmountInput.value) || 0;
+    const discountType = discountTypeSelect.value;
+    
+    let finalBillingAmount = preDiscountTotal;
+    if (discountType === 'yen') {
+        finalBillingAmount = preDiscountTotal - discountAmount;
+    } else if (discountType === 'percent') {
+        finalBillingAmount = preDiscountTotal * (1 - (discountAmount / 100));
+    }
+    finalBillingAmount = Math.round(finalBillingAmount);
+
+    if (finalBillingAmount < 0) {
+        finalBillingAmount = 0;
+    }
+
+    // (★修正★) state.currentBillingAmount を最新の割引後金額で更新
+    state.currentBillingAmount = finalBillingAmount;
+    checkoutTotalEl.textContent = formatCurrency(finalBillingAmount);
+    document.getElementById('receipt-total').textContent = formatCurrency(finalBillingAmount);
+    
+    // --- ここから下は支払い計算 ---
+    const billingAmount = state.currentBillingAmount; // 割引後の金額
 
     const cashPayment = parseInt(paymentCashInput.value) || 0;
     const cardPayment = parseInt(paymentCardInput.value) || 0;
@@ -652,8 +837,12 @@ const renderReceiptModal = () => {
     
     const slipData = state.slips.find(s => s.slipId === state.currentSlipId);
     if (slipData) {
-        document.querySelector('#receipt-content input[type="text"]').value = slipData.name || '';
+        // (★修正★) セレクタをより安全なID指定に変更
+        const receiptCustomerName = document.getElementById('receipt-customer-name');
+        if (receiptCustomerName) receiptCustomerName.value = slipData.name || '';
     }
+    // (★修正★) 領収書の合計金額も割引後の金額を反映
+    document.getElementById('receipt-total').textContent = formatCurrency(state.currentBillingAmount);
 };
 
 /**
@@ -715,16 +904,23 @@ const createNewSlip = (tableId) => {
         tags: [],
         paidAmount: 0,
         cancelReason: null,
-        paymentDetails: { cash: 0, card: 0, credit: 0 }
+        paymentDetails: { cash: 0, card: 0, credit: 0 },
+        paidTimestamp: null, // (★追加★) 会計日時
+        discount: { type: 'yen', value: 0 }, // (★追加★) 割引情報
     };
     
     // (変更) state を丸ごと保存
     state.slips.push(newSlip);
-    state.tables.find(t => t.id === tableId).status = 'occupied';
+    // (★修正★) state.tables のステータス変更ロジックを削除 (onSnapshotで自動化するため)
+    // state.tables.find(t => t.id === tableId).status = 'occupied';
     state.slipCounter = newSlipCounter;
     state.currentSlipId = newSlip.slipId;
     
     updateStateInFirestore(state);
+
+    // (★追加★) 割引フォームをリセット
+    if (discountAmountInput) discountAmountInput.value = '';
+    if (discountTypeSelect) discountTypeSelect.value = 'yen';
 
     // (変更) onSnapshot が renderDashboardSlips 等を更新
     
@@ -802,6 +998,7 @@ const renderNewSlipConfirmModal = (tableId) => {
 /**
  * (変更) テーブルカードクリック時の処理 (dashboard.jsでは不要)
  */
+// (★削除★)
 // const handleTableClick = (tableId) => { ... };
 
 /**
@@ -816,6 +1013,11 @@ const handleSlipClick = (slipId) => {
     // (変更) state を丸ごと保存
     state.currentSlipId = slipId;
     updateStateInFirestore(state);
+
+    // (★追加★) 割引情報をフォームに読み込む
+    const discount = slipData.discount || { type: 'yen', value: 0 };
+    discountAmountInput.value = discount.value;
+    discountTypeSelect.value = discount.type;
     
     renderOrderModal();
     openModal(orderModal);
@@ -827,11 +1029,18 @@ const handleSlipClick = (slipId) => {
  */
 const handlePaidSlipClick = (slipId) => {
     if (!state) return; // (変更) state がロードされるまで待つ
+    const slipData = state.slips.find(s => s.slipId === slipId);
+    if (!slipData) return;
 
     // (変更) state を丸ごと保存
     state.currentSlipId = slipId;
     updateStateInFirestore(state);
     
+    // (★追加★) 割引情報をフォームに読み込む
+    const discount = slipData.discount || { type: 'yen', value: 0 };
+    discountAmountInput.value = discount.value;
+    discountTypeSelect.value = discount.type;
+
     renderCheckoutModal(); 
     renderReceiptModal();
     openModal(receiptModal);
@@ -839,68 +1048,57 @@ const handlePaidSlipClick = (slipId) => {
 
 
 /**
- * (新規) キャストランキングを描画する
+ * (★修正★) キャストランキングを描画する
  */
 const renderCastRanking = () => {
-    if (!state) return; // (変更) state がロードされるまで待つ
+    if (!state) return; 
+    
+    if (!state.ranking) {
+        state.ranking = { period: 'monthly', type: 'nominations' };
+    }
     const { period, type } = state.ranking;
     
-    // (変更) ダミーデータを state の外に定義
-    const dummyRankingData = {
-        monthly: {
-            nominations: [
-                { id: 1, name: 'あい', value: 120, unit: '組', img: 'https://placehold.co/40x40/ffe4e6/db2777?text=Ai' },
-                { id: 2, name: 'みう', value: 115, unit: '組', img: 'https://placehold.co/40x40/e0e7ff/4338ca?text=Miu' },
-                { id: 3, name: 'さくら', value: 98, unit: '組', img: 'https://placehold.co/40x40/fce7f3/db2777?text=Sk' },
-                { id: 4, name: 'れな', value: 85, unit: '組', img: 'https://placehold.co/40x40/e0e7ff/4338ca?text=Rn' },
-                { id: 5, name: 'ひな', value: 82, unit: '組', img: 'https://placehold.co/40x40/fce7f3/db2777?text=Hn' },
-            ],
-            sales: [
-                { id: 2, name: 'みう', value: 8500000, unit: '円', img: 'https://placehold.co/40x40/e0e7ff/4338ca?text=Miu' },
-                { id: 1, name: 'あい', value: 7200000, unit: '円', img: 'https://placehold.co/40x40/ffe4e6/db2777?text=Ai' },
-                { id: 5, name: 'ひな', value: 6800000, unit: '円', img: 'https://placehold.co/40x40/fce7f3/db2777?text=Hn' },
-                { id: 3, name: 'さくら', value: 5500000, unit: '円', img: 'https://placehold.co/40x40/fce7f3/db2777?text=Sk' },
-                { id: 4, name: 'れな', value: 5100000, unit: '円', img: 'https://placehold.co/40x40/e0e7ff/4338ca?text=Rn' },
-            ]
-        },
-        weekly: {
-            nominations: [
-                { id: 3, name: 'さくら', value: 35, unit: '組', img: 'https://placehold.co/40x40/fce7f3/db2777?text=Sk' },
-                { id: 1, name: 'あい', value: 32, unit: '組', img: 'https://placehold.co/40x40/ffe4e6/db2777?text=Ai' },
-            ],
-            sales: [
-                { id: 5, name: 'ひな', value: 2500000, unit: '円', img: 'https://placehold.co/40x40/fce7f3/db2777?text=Hn' },
-                { id: 2, name: 'みう', value: 2200000, unit: '円', img: 'https://placehold.co/40x40/e0e7ff/4338ca?text=Miu' },
-            ]
-        },
-        daily: {
-            nominations: [
-                { id: 1, name: 'あい', value: 8, unit: '組', img: 'https://placehold.co/40x40/ffe4e6/db2777?text=Ai' },
-                { id: 5, name: 'ひな', value: 6, unit: '組', img: 'https://placehold.co/40x40/fce7f3/db2777?text=Hn' },
-            ],
-            sales: [
-                { id: 5, name: 'ひな', value: 800000, unit: '円', img: 'https://placehold.co/40x40/fce7f3/db2777?text=Hn' },
-                { id: 1, name: 'あい', value: 650000, unit: '円', img: 'https://placehold.co/40x40/ffe4e6/db2777?text=Ai' },
-            ]
-        }
-    };
-    
-    const data = dummyRankingData[period][type];
+    // (★修正★) 基準日（本日）で期間フィルタリング
+    const { paidSlips } = getSlipsForPeriod(period, new Date());
 
-    if (!castRankingList || !data) {
+    if (!castRankingList) return;
+    
+    // (★修正★) 集計ロジック
+    const rankingMap = new Map();
+
+    paidSlips.forEach(slip => {
+        const castId = slip.nominationCastId;
+        if (!castId) return; // フリーは除外
+
+        const current = rankingMap.get(castId) || { id: castId, name: getCastNameById(castId), sales: 0, nominations: 0 };
+        
+        current.sales += calculateSlipTotal(slip); // (★注意★) 割引「前」の金額で集計
+        current.nominations += 1;
+        
+        rankingMap.set(castId, current);
+    });
+
+    let sortedData = [];
+    if (type === 'sales') {
+        sortedData = [...rankingMap.values()].sort((a, b) => b.sales - a.sales);
+    } else { // nominations
+        sortedData = [...rankingMap.values()].sort((a, b) => b.nominations - a.nominations);
+    }
+
+    if (sortedData.length === 0) {
         castRankingList.innerHTML = '<p class="text-slate-500 text-sm">データがありません。</p>';
         return;
     }
 
     castRankingList.innerHTML = '';
-    data.forEach((cast, index) => {
+    sortedData.slice(0, 5).forEach((cast, index) => { // 上位5名のみ表示
         const rank = index + 1;
         let rankColor = 'text-slate-400';
         if (rank === 1) rankColor = 'text-yellow-500';
         if (rank === 2) rankColor = 'text-gray-400';
         if (rank === 3) rankColor = 'text-amber-700';
 
-        const valueString = cast.unit === '円' ? formatCurrency(cast.value) : `${cast.value} ${cast.unit}`;
+        const valueString = type === 'sales' ? formatCurrency(cast.sales) : `${cast.nominations} 組`;
 
         castRankingList.innerHTML += `
             <li class="flex items-center space-x-2">
@@ -1048,16 +1246,10 @@ document.addEventListener('firebaseReady', (e) => {
 document.addEventListener('DOMContentLoaded', () => {
     
     // ===== DOM要素の取得 =====
+    // (★修正★) index.html に存在するDOMのみ取得
     navLinks = document.querySelectorAll('.nav-link');
-    pages = document.querySelectorAll('[data-page]');
     pageTitle = document.getElementById('page-title');
-    tableGrid = document.getElementById('table-grid'); 
     dashboardSlips = document.getElementById('dashboard-slips');
-    menuTabsContainer = document.getElementById('menu-tabs'); 
-    menuTabs = document.querySelectorAll('.menu-tab'); 
-    menuTabContents = document.querySelectorAll('.menu-tab-content'); 
-    menuPage = document.getElementById('menu'); 
-    allSlipsList = document.getElementById('all-slips-list'); 
     orderModal = document.getElementById('order-modal');
     checkoutModal = document.getElementById('checkout-modal');
     receiptModal = document.getElementById('receipt-modal');
@@ -1077,14 +1269,7 @@ document.addEventListener('DOMContentLoaded', () => {
     menuDurationInput = document.getElementById('menu-duration');
     menuPriceInput = document.getElementById('menu-price');
     menuEditorError = document.getElementById('menu-editor-error');
-    openNewMenuModalBtn = document.getElementById('open-new-menu-modal-btn'); 
     saveMenuItemBtn = document.getElementById('save-menu-item-btn');
-    setMenuTbody = document.getElementById('set-menu-tbody'); 
-    drinkMenuTbody = document.getElementById('drink-menu-tbody'); 
-    bottleMenuTbody = document.getElementById('bottle-menu-tbody'); 
-    foodMenuTbody = document.getElementById('food-menu-tbody'); 
-    castMenuTbody = document.getElementById('cast-menu-tbody'); 
-    otherMenuTbody = document.getElementById('other-menu-tbody'); 
     cancelSlipModal = document.getElementById('cancel-slip-modal');
     openCancelSlipModalBtn = document.getElementById('open-cancel-slip-modal-btn');
     cancelSlipModalTitle = document.getElementById('cancel-slip-modal-title');
@@ -1143,6 +1328,7 @@ document.addEventListener('DOMContentLoaded', () => {
     slipStoreTel = document.getElementById('slip-store-tel');
     slipServiceRate = document.getElementById('slip-service-rate');
     slipTaxRate = document.getElementById('slip-tax-rate');
+    // (★修正★) index.html には checkout/receipt のストア情報ID がないので null チェック
     checkoutStoreName = document.getElementById('checkout-store-name');
     checkoutStoreTel = document.getElementById('checkout-store-tel');
     checkoutServiceRate = document.getElementById('checkout-service-rate');
@@ -1150,6 +1336,10 @@ document.addEventListener('DOMContentLoaded', () => {
     receiptStoreName = document.getElementById('receipt-store-name');
     receiptAddress = document.getElementById('receipt-address');
     receiptTel = document.getElementById('receipt-tel');
+
+    // (★新規★) 割引
+    discountAmountInput = document.getElementById('discount-amount');
+    discountTypeSelect = document.getElementById('discount-type');
 
 
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
@@ -1181,6 +1371,10 @@ document.addEventListener('DOMContentLoaded', () => {
             closeModal(newSlipConfirmModal);
             closeModal(cancelSlipModal);
             closeModal(menuEditorModal);
+            
+            // (★追加★) 割引をリセット
+            if(discountAmountInput) discountAmountInput.value = '';
+            if(discountTypeSelect) discountTypeSelect.value = 'yen';
         });
     });
     
@@ -1280,6 +1474,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 slip.status = 'cancelled';
                 slip.cancelReason = reason;
                 
+                // (★修正★) state.tables のステータス変更ロジックを削除
+                /*
                 const otherActiveSlips = getActiveSlipCount(slip.tableId);
                 
                 if (otherActiveSlips === 0) {
@@ -1288,6 +1484,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         table.status = 'available';
                     }
                 }
+                */
                 
                 updateStateInFirestore(state);
                 
@@ -1311,6 +1508,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // (★修正★) 割引入力にもリスナーを追加
+    if (discountAmountInput) {
+        discountAmountInput.addEventListener('input', updatePaymentStatus);
+    }
+    if (discountTypeSelect) {
+        discountTypeSelect.addEventListener('change', updatePaymentStatus);
+    }
+
     if (paymentCashInput) {
         paymentCashInput.addEventListener('input', updatePaymentStatus);
     }
@@ -1327,15 +1532,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const slip = state.slips.find(s => s.slipId === state.currentSlipId);
             if (!slip) return;
 
-            const total = calculateSlipTotal(slip);
-            slip.paidAmount = total; 
+            // (★修正★) 割引後の金額 (currentBillingAmount) を paidAmount に保存
+            slip.paidAmount = state.currentBillingAmount; 
+            
             slip.paymentDetails = {
                 cash: parseInt(paymentCashInput.value) || 0,
                 card: parseInt(paymentCardInput.value) || 0,
                 credit: parseInt(paymentCreditInput.value) || 0
             };
+            // (★追加★) 割引情報を伝票に保存
+            slip.discount = {
+                type: discountTypeSelect.value,
+                value: parseInt(discountAmountInput.value) || 0
+            };
             slip.status = 'paid';
+            slip.paidTimestamp = new Date().toISOString(); // (★追加★) 会計日時を記録
             
+            // (★修正★) state.tables のステータス変更ロジックを削除
+            /*
             const otherActiveSlips = getActiveSlipCount(slip.tableId);
             if (otherActiveSlips === 0) {
                 const table = state.tables.find(t => t.id === slip.tableId);
@@ -1343,6 +1557,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     table.status = 'available';
                 }
             }
+            */
             
             updateStateInFirestore(state);
 
@@ -1360,11 +1575,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 slip.status = 'active'; 
                 slip.paidAmount = 0;
                 slip.paymentDetails = { cash: 0, card: 0, credit: 0 };
+                slip.paidTimestamp = null; // (★追加★) 会計日時をリセット
+                // (★追加★) 割引もリセット (または保持、ここではリセットを選択)
+                slip.discount = { type: 'yen', value: 0 };
                 
+                // (★修正★) state.tables のステータス変更ロジックを削除
+                /*
                 const table = state.tables.find(t => t.id === slip.tableId);
                 if (table) {
                     table.status = 'occupied';
                 }
+                */
                 
                 updateStateInFirestore(state);
                 
@@ -1377,23 +1598,31 @@ document.addEventListener('DOMContentLoaded', () => {
     if (rankingPeriodSelect) {
         rankingPeriodSelect.addEventListener('change', (e) => {
             if (!state) return;
+            // (★修正★) state.ranking がなければ初期化
+            if (!state.ranking) state.ranking = {};
             state.ranking.period = e.target.value;
             updateStateInFirestore(state);
-            renderCastRanking();
+            // (★修正★) onSnapshot で描画されるため、ここでの呼び出しは不要
+            // renderCastRanking();
         });
     }
 
-    rankingTypeBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            if (!state) return;
-            rankingTypeBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            
-            state.ranking.type = btn.dataset.type;
-            updateStateInFirestore(state);
-            renderCastRanking();
+    if (rankingTypeBtns) {
+        rankingTypeBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (!state) return;
+                rankingTypeBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                // (★修正★) state.ranking がなければ初期化
+                if (!state.ranking) state.ranking = {};
+                state.ranking.type = btn.dataset.type;
+                updateStateInFirestore(state);
+                // (★修正★) onSnapshot で描画されるため、ここでの呼び出しは不要
+                // renderCastRanking();
+            });
         });
-    });
+    }
 
     if (orderItemsList) {
         orderItemsList.addEventListener('click', (e) => {
@@ -1479,4 +1708,3 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 });
-
