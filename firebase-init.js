@@ -72,8 +72,18 @@ const redirectToLogin = () => {
 // (★新規★) 認証状態の監視とストア情報の取得
 const initializeFirebase = () => {
     onAuthStateChanged(auth, async (user) => {
+        
+        // (★修正★) 登録ページ（signup, store-signup）にいる間は、
+        // (★修正★) onAuthStateChanged によるプロファイルチェックをスキップする
+        // (★修正★) （これらのページがプロファイルを作成する責任を持つため）
+        if (user && (window.location.pathname.endsWith('/signup.html') || window.location.pathname.endsWith('/store-signup.html'))) {
+            console.log("User is on signup page, skipping profile check...");
+            // store-signup.js や signup.js が処理を継続する
+            return;
+        }
+
         if (user) {
-            // --- ユーザーがサインイン済み ---
+            // --- ユーザーがサインイン済み (かつ、登録ページにいない) ---
             console.log("Firebase Auth: User is signed in.", user.uid);
             currentAuthUid = user.uid;
 
