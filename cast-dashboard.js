@@ -4,22 +4,16 @@ import {
     auth, 
     onSnapshot, 
     setDoc, 
-    addDoc, 
-    deleteDoc, 
+    // addDoc, (★削除★)
+    // deleteDoc, (★削除★)
     doc,
-    collection 
+    collection,
+    getDoc, // (★新規★)
+    signOut // (★新規★)
 } from './firebase-init.js';
 
-// (★新規★) 新しい参照をインポート
-import {
-    settingsRef,
-    menuRef,
-    slipCounterRef,
-    castsCollectionRef,
-    customersCollectionRef,
-    slipsCollectionRef
-} from './firebase-init.js';
-
+// (★変更★) 参照は firebaseReady イベントで受け取る
+let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef;
 
 // ===== グローバル定数・変数 =====
 
@@ -39,9 +33,9 @@ let customers = [];
 let slips = [];
 let slipCounter = 0; // (このJSでは使わないが、他から流用)
 
-// (★新規★) 開発用のログインキャストID (本来は認証情報から取得)
-let DEV_CAST_ID = null; 
-let DEV_CAST_NAME = "キャスト";
+// (★変更★) ログイン中のキャストIDと名前
+let currentCastId = null; 
+let currentCastName = "キャスト";
 
 // ===== DOM要素 =====
 // (★新規★) cast-dashboard.html (実績確認ページ) に必要なDOM
@@ -49,7 +43,8 @@ let castHeaderName, headerDate,
     summaryCastTodaySales, summaryCastTodayNoms,
     summaryCastMonthSales, summaryCastMonthNoms,
     summaryCastPay, summaryCastWorkdays,
-    castCustomerList;
+    castCustomerList,
+    logoutButtonHeader; // (★新規★)
 
 // (★削除★) 伝票操作モーダル関連のDOMをすべて削除
 
@@ -149,17 +144,17 @@ const getSlipsForPeriod = (period, baseDate) => {
 // =================================================
 
 /**
- * (★新規★) キャストのサマリーを描画する
+ * (★変更★) キャストのサマリーを描画する
  */
 const renderCastDashboardSummary = () => {
-    if (!slips || !DEV_CAST_ID) return; // IDがセットされるまで待つ
+    if (!slips || !currentCastId) return; // IDがセットされるまで待つ
 
     // 1. 本日のデータ
     const { paidSlips: todayPaidSlips } = getSlipsForPeriod('daily', new Date());
     let todaySales = 0;
     let todayNoms = 0;
     todayPaidSlips.forEach(slip => {
-        if (slip.nominationCastId === DEV_CAST_ID) {
+        if (slip.nominationCastId === currentCastId) {
             // (★重要★) 将来的に、ここで settings.performanceSettings に基づく
             // 詳細な売上計算（バック率など）を行う
             todaySales += (slip.paidAmount || 0); // (★現在は仮★ 伝票の売上をそのまま計上)
@@ -172,7 +167,7 @@ const renderCastDashboardSummary = () => {
     let monthSales = 0;
     let monthNoms = 0;
     monthPaidSlips.forEach(slip => {
-        if (slip.nominationCastId === DEV_CAST_ID) {
+        if (slip.nominationCastId === currentCastId) {
             // (★重要★) 将来的に、ここで settings.performanceSettings に基づく
             // 詳細な売上計算（バック率など）を行う
             monthSales += (slip.paidAmount || 0); // (★現在は仮★ 伝票の売上をそのまま計上)
@@ -194,18 +189,18 @@ const renderCastDashboardSummary = () => {
     if (summaryCastWorkdays) summaryCastWorkdays.innerHTML = `${workDays} <span class="text-base">日</span>`;
     
     // 5. ヘッダーに名前を表示
-    if (castHeaderName) castHeaderName.textContent = DEV_CAST_NAME;
+    if (castHeaderName) castHeaderName.textContent = currentCastName;
 };
 
 /**
- * (★新規★) キャストの指名顧客一覧を描画する
+ * (★変更★) キャストの指名顧客一覧を描画する
  */
 const renderCastCustomerList = () => {
-    if (!castCustomerList || !customers || !DEV_CAST_ID) return;
+    if (!castCustomerList || !customers || !currentCastId) return;
     
     // (★変更★) 自分の指名顧客のみフィルタリング
     const myCustomers = customers.filter(
-        cust => cust.nominatedCastId === DEV_CAST_ID
+        cust => cust.nominatedCastId === currentCastId
     );
     
     // (★仮★) 最終来店日をソート (※現状は顧客データに最終来店日がないため、ダミーで名前ソート)
@@ -248,13 +243,33 @@ const updateHeaderDate = () => {
     headerDate.textContent = `${dateStr} (${weekdayStr})`;
 };
 
-// (★削除★) 伝票操作関連の関数をすべて削除
-// renderOrderModal, renderSlipTags, toggleSlipTag, renderCustomerDropdown,
-// updateSlipInfo, addOrderItem, removeOrderItem, updateOrderItemQty,
-// renderSlipPreviewModal, renderCheckoutModal, updatePaymentStatus,
-// renderReceiptModal, renderCancelSlipModal, createNewSlip,
-// renderSlipSelectionModal, renderNewSlipConfirmModal,
-// handleSlipClick, handlePaidSlipClick
+
+/**
+ * (★新規★) ログインキャストの情報を取得してグローバル変数にセット
+ */
+const loadCastInfo = async () => {
+    if (!currentCastId || !castsCollectionRef) {
+        console.warn("Cast ID or collection ref not ready.");
+        return;
+    }
+    
+    try {
+        const castRef = doc(castsCollectionRef, currentCastId);
+        const castSnap = await getDoc(castRef);
+
+        if (castSnap.exists()) {
+            currentCastName = castSnap.data().name || "キャスト";
+        } else {
+            console.warn("Cast document not found in Firestore.");
+        }
+    } catch (error) {
+        console.error("Error fetching cast data: ", error);
+    }
+    
+    // UI（ヘッダー名）に反映
+    if (castHeaderName) castHeaderName.textContent = currentCastName;
+};
+
 
 // (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
 // (※ データ構造の基盤となるため、このファイルにも定義を残します)
@@ -306,12 +321,30 @@ const getDefaultMenu = () => {
 
 
 // (★変更★) --- Firestore リアルタイムリスナー ---
-document.addEventListener('firebaseReady', (e) => {
+document.addEventListener('firebaseReady', async (e) => {
     
+    // (★変更★) 認証情報と参照を取得
     const { 
-        settingsRef, menuRef, slipCounterRef,
-        castsCollectionRef, customersCollectionRef, slipsCollectionRef
+        currentCastId: cId,
+        settingsRef: sRef, 
+        menuRef: mRef, 
+        slipCounterRef: scRef,
+        castsCollectionRef: cRef, 
+        customersCollectionRef: cuRef, 
+        slipsCollectionRef: slRef
     } = e.detail;
+
+    // (★変更★) グローバル変数にセット
+    currentCastId = cId;
+    settingsRef = sRef;
+    menuRef = mRef;
+    slipCounterRef = scRef;
+    castsCollectionRef = cRef;
+    customersCollectionRef = cuRef;
+    slipsCollectionRef = slRef;
+    
+    // (★新規★) まずキャスト情報を読み込む
+    await loadCastInfo();
 
     let settingsLoaded = false;
     let menuLoaded = false;
@@ -322,28 +355,13 @@ document.addEventListener('firebaseReady', (e) => {
 
     // (★新規★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
-        // (★変更★) cast-dashboard.js は専用関数を呼ぶ
         if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded) {
             console.log("All data loaded. Rendering UI for cast-dashboard.js");
-            
-            // (★新規★) 開発用キャストIDを設定
-            if (casts.length > 0) {
-                // (★仮★) 本来は認証ユーザーIDと紐づくキャストIDを使う
-                // 開発用として、リストの先頭のキャストIDを使用する
-                DEV_CAST_ID = casts[0].id; 
-                DEV_CAST_NAME = casts[0].name;
-                console.log(`DEV_CAST_ID set to: ${DEV_CAST_ID} (${DEV_CAST_NAME})`);
-            } else {
-                console.warn("No casts found. Defaulting DEV_CAST_ID to null.");
-                DEV_CAST_ID = null;
-                DEV_CAST_NAME = "キャスト未登録";
-            }
             
             // (★変更★) 呼び出す関数を変更
             renderCastDashboardSummary();
             renderCastCustomerList();
             updateHeaderDate();
-            // (★削除★) 注文モーダルは無いため updateModalCommonInfo は不要
         }
     };
 
@@ -421,9 +439,7 @@ document.addEventListener('firebaseReady', (e) => {
         checkAndRenderAll();
     }, (error) => {
         console.error("Error listening to slips: ", error);
-        if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
-             document.body.innerHTML = `<div class="p-8 text-center text-red-600">データベースへのアクセスに失敗しました。Firestoreのセキュリティルール（slipsコレクション）が正しく設定されているか、または必要なインデックスが作成されているか確認してください。</div>`;
-        }
+        // (★変更★) キャストアプリでは権限エラーは発生しない想定 (発生時は firebase-init でリダイレクト)
     });
 });
 
@@ -442,16 +458,30 @@ document.addEventListener('DOMContentLoaded', () => {
     summaryCastWorkdays = document.getElementById('summary-cast-workdays');
     castCustomerList = document.getElementById('cast-customer-list');
     
+    logoutButtonHeader = document.querySelector('header #cast-header-name + button'); // (★変更★) IDがないためセレクタで取得
+    
     // (★削除★) 注文モーダル関連のDOM取得を削除
-    // orderModal = document.getElementById('order-modal');
-    // ... (以下すべて削除) ...
-    modalCloseBtns = document.querySelectorAll('.modal-close-btn'); // (★削除★) モーダルが無いため不要
+    // ...
     
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
     
     // ===== イベントリスナーの設定 =====
 
+    // (★新規★) ログアウトボタン
+    if (logoutButtonHeader) {
+        logoutButtonHeader.addEventListener('click', async () => {
+            if (confirm("ログアウトしますか？")) {
+                try {
+                    await signOut(auth);
+                    // ログアウト成功時、firebase-init.js が login.html へリダイレクト
+                } catch (error) {
+                    console.error("Sign out error: ", error);
+                }
+            }
+        });
+    }
+
     // (★削除★) 注文モーダル関連のリスナーをすべて削除
-    // (modalCloseBtns, castActiveSlips, orderNominationSelect, etc...)
+    // ...
 
 });

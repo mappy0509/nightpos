@@ -10,7 +10,8 @@ import {
 // (★新規★) 新しい参照をインポート (settings と menu のみ)
 import {
     settingsRef,
-    menuRef
+    menuRef,
+    slipsCollectionRef // (★追加★) slips もインポート
 } from './firebase-init.js';
 
 // ===== グローバル定数・変数 =====
@@ -26,7 +27,8 @@ const getUUID = () => {
 // (★変更★) state を分割して管理 (settings と menu のみ)
 let settings = null;
 let menu = null;
-// (★削除★) casts, customers, slips, slipCounter, currentSlipId は不要
+let slips = []; // (★追加★) 削除判定のために slips が必要
+// (★削除★) casts, customers, slipCounter, currentSlipId は不要
 
 // ===== DOM要素 =====
 // (変更) settings.js 専用のDOM要素のみを取得
@@ -295,7 +297,7 @@ const saveSettingsFromForm = async () => {
  * (新規) テーブル設定リストをUIに描画する
  */
 const renderTableSettingsList = () => {
-    if (!currentTablesList || !settings) return; 
+    if (!currentTablesList || !settings || !slips) return; // (★変更★) slips もチェック
     
     currentTablesList.innerHTML = '';
     if (tableSettingsError) tableSettingsError.textContent = '';
@@ -370,7 +372,7 @@ const addTableSetting = async () => {
  * @param {string} tableId 
  */
 const deleteTableSetting = async (tableId) => { 
-    if (!settings) return; 
+    if (!settings || !slips) return; // (★変更★) slips もチェック
     const table = settings.tables.find(t => t.id === tableId); 
     
     const isOccupied = (slips || []).some(s => s.tableId === tableId && (s.status === 'active' || s.status === 'checkout')); 

@@ -171,21 +171,7 @@ body {
 /* ===== 会計モーダル ===== */
 /* (変更) 支払い方法のボタン選択は削除
 .payment-method-btn {
-    padding: 0.75rem;
-    border: 2px solid var(--border-primary);
-    border-radius: 0.5rem;
-    font-weight: 600;
-    transition: all 0.2s ease;
-}
-.payment-method-btn:hover {
-    border-color: #93c5fd;
-    background-color: #eff6ff;
-}
-.payment-method-btn.active {
-    border-color: #2563eb;
-    background-color: #dbeafe;
-    color: #1d4ed8;
-    box-shadow: 0 0 0 2px #dbeafe;
+    ...
 }
 */
 
@@ -209,12 +195,18 @@ body {
 }
 
 /* (新規) disabled 状態のボタンスタイル */
-#process-payment-btn:disabled {
+#process-payment-btn:disabled,
+#login-btn:disabled,
+#signup-btn:disabled,
+#save-password-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     background-color: #94a3b8; /* bg-slate-400 */
 }
-#process-payment-btn:disabled:hover {
+#process-payment-btn:disabled:hover,
+#login-btn:disabled:hover,
+#signup-btn:disabled:hover,
+#save-password-btn:disabled:hover {
     background-color: #94a3b8; /* hover時も色を変えない */
 }
 
@@ -371,3 +363,26 @@ body {
     ...
 }
 */
+
+/* (★新規★) 顧客詳細モーダルのスタイル */
+/* 顧客メモ欄で改行を保持する */
+#detail-customer-memo {
+    white-space: pre-wrap;
+    font-family: inherit; /* pre タグのフォントを body に合わせる */
+}
+
+/* (★新規★) 招待モーダルのQRコードコンテナ */
+#invite-qr-code {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 1rem;
+    border: 1px solid var(--border-primary);
+    border-radius: 0.5rem;
+    background-color: #f8fafc; /* bg-slate-50 */
+    min-height: 288px; /* 256px + padding */
+}
+/* QRコードが生成されたら (imgタグ)、コンテナのサイズを自動にする */
+#invite-qr-code img {
+    min-height: 0;
+}

@@ -7,15 +7,15 @@ import {
     addDoc, 
     deleteDoc, 
     doc,
-    collection 
+    collection,
+    query, // (★新規★)
+    where, // (★新規★)
+    getDocs // (★新規★)
 } from './firebase-init.js';
 
-// (★新規★) 新しい参照をインポート
-import {
-    settingsRef, // (★追加★) 削除可否判定のために slips を参照
-    castsCollectionRef,
-    slipsCollectionRef
-} from './firebase-init.js';
+// (★変更★) 参照は firebaseReady イベントで受け取る
+let settingsRef, castsCollectionRef, slipsCollectionRef, invitesCollectionRef;
+let currentStoreId;
 
 // ===== グローバル定数・変数 =====
 
@@ -28,31 +28,35 @@ const getUUID = () => {
 };
 
 // (★変更★) state を分割して管理
-let settings = null; // (★追加★)
+let settings = null; 
 let casts = [];
-let slips = []; // (★追加★) キャスト削除可否の判定に必要
-
-// (★削除★) 伝票関連のローカル変数を削除
-
+let slips = []; 
+let currentEditingCastId = null; // (★新規★) 編集モーダル用のID
 
 // ===== DOM要素 =====
 // (変更) cast-settings.js 専用のDOM要素
-let modalCloseBtns, // (★削除★) モーダルが無いため削除
-    saveSettingsBtn, settingsFeedback,
+let modalCloseBtns,
+    saveRolesBtn, settingsFeedback, // (★変更★) ID変更
     
-    // キャスト設定
-    newCastNameInput, addCastBtn, currentCastsList, castSettingsError;
-
-// (★削除★) 伝票関連モーダルDOM (newSlipConfirmModal, slipSelectionModal, etc...) をすべて削除
-// (★削除★) 伝票モーダル内のDOM (orderModalTitle, etc...) をすべて削除
+    // (★変更★) キャスト一覧
+    openNewCastModalBtn, // (★変更★)
+    currentCastsList, castSettingsError,
+    
+    // (★新規★) 招待モーダル
+    inviteModal, inviteQrCodeContainer, inviteLinkInput,
+    
+    // (★新規★) キャスト編集モーダル
+    castEditorModal, castEditorModalTitle, castEditorForm,
+    castDisplayNameInput, castRealNameInput, castEmailInput,
+    castAuthUidInput, castPhoneInput, castAddressInput,
+    castHireDateInput, castEditorError,
+    saveCastBtn, deleteCastBtn;
 
 
 // --- 関数 ---
 
-// (★削除★) 伝票関連のヘルパー関数 (formatCurrency, formatDateTimeLocal, formatElapsedTime, calculateSlipTotal, getCastNameById, getActiveSlipCount) をすべて削除
-
 /**
- * モーダルを開く (cast-settings.js では使われないが念のため残す)
+ * モーダルを開く
  * @param {HTMLElement} modalElement 
  */
 const openModal = (modalElement) => {
@@ -62,14 +66,13 @@ const openModal = (modalElement) => {
 };
 
 /**
- * モーダルを閉じる (cast-settings.js では使われないが念のため残す)
+ * モーダルを閉じる
  * @param {HTMLElement} modalElement 
  */
 const closeModal = (modalElement) => {
-    const modals = document.querySelectorAll('.modal-backdrop');
-    modals.forEach(modal => {
-        modal.classList.remove('active');
-    });
+    if (modalElement) {
+        modalElement.classList.remove('active');
+    }
 };
 
 /**
@@ -84,13 +87,11 @@ const loadSettingsToForm = () => {
 
 
 /**
- * (新規) フォームから設定を保存する
- * (将来的に権限変更などをここで保存)
+ * (★変更★) キャスト権限（ロール）設定を保存する
  */
-const saveSettingsFromForm = async () => { 
-    if (!casts) return; 
+const saveRoles = async () => { 
+    if (!casts || !castsCollectionRef) return; 
     
-    // (★新規★) 権限変更のロジック
     const newCastData = [...casts]; 
     let updateError = false;
 
@@ -105,8 +106,16 @@ const saveSettingsFromForm = async () => {
         
         if (cast && cast.role !== newRole) {
             cast.role = newRole; 
+            
+            // 1. /stores/{storeId}/casts/{castId} ドキュメントを更新
             const castRef = doc(castsCollectionRef, castId);
             updatePromises.push(setDoc(castRef, { role: newRole }, { merge: true }));
+            
+            // 2. /userProfiles/{authUid} ドキュメントを更新
+            if (cast.authUid) {
+                const userProfileRef = doc(db, "userProfiles", cast.authUid);
+                updatePromises.push(setDoc(userProfileRef, { role: newRole }, { merge: true }));
+            }
         }
     });
 
@@ -125,16 +134,16 @@ const saveSettingsFromForm = async () => {
         await Promise.all(updatePromises);
         
         if (settingsFeedback) {
-            settingsFeedback.textContent = "設定を保存しました。";
+            settingsFeedback.textContent = "権限設定を保存しました。";
             settingsFeedback.className = "text-sm text-green-600";
             setTimeout(() => {
                 settingsFeedback.textContent = "";
             }, 3000);
         }
     } catch (e) {
-        console.error("Error saving cast settings: ", e);
+        console.error("Error saving cast roles: ", e);
         if (settingsFeedback) {
-            settingsFeedback.textContent = "設定の保存に失敗しました。";
+            settingsFeedback.textContent = "権限の保存に失敗しました。";
             settingsFeedback.className = "text-sm text-red-600";
         }
     }
@@ -142,7 +151,7 @@ const saveSettingsFromForm = async () => {
 
 
 // ===================================
-// (★新規★) キャスト設定セクション (settings.js から移植・変更)
+// (★変更★) キャスト設定セクション
 // ===================================
 
 /**
@@ -156,20 +165,22 @@ const renderCastSettingsList = () => {
     if (castSettingsError) castSettingsError.textContent = '';
     
     if (!casts || casts.length === 0) { 
-        currentCastsList.innerHTML = '<p class="text-sm text-slate-500">キャストが登録されていません。</p>';
+        currentCastsList.innerHTML = '<p class="text-sm text-slate-500">キャストが登録されていません。「新規キャスト登録」から招待してください。</p>';
         return;
     }
     
-    const sortedCasts = [...casts].sort((a,b) => a.name.localeCompare(b.name));
+    const sortedCasts = [...casts].sort((a,b) => (a.name || "未設定").localeCompare(b.name || "未設定"));
 
     sortedCasts.forEach(cast => {
         const isUsed = (slips || []).some(s => s.nominationCastId === cast.id); 
         
+        // (★変更★) メールアドレスと編集ボタンを追加
         const itemHTML = `
             <div class="flex flex-col md:flex-row justify-between md:items-center bg-slate-50 p-4 rounded-lg border gap-3">
                 <div>
-                    <p class="font-semibold text-lg">${cast.name}</p>
-                    <p class="text-xs text-slate-500 font-mono">ID: ${cast.id}</p>
+                    <p class="font-semibold text-lg">${cast.name || "（名前未設定）"}</p>
+                    <p class="text-sm text-slate-500">${cast.email || "（メール未設定）"}</p>
+                    <p class="text-xs text-slate-400 font-mono mt-1">CastID: ${cast.id}</p>
                 </div>
                 
                 <div class="flex items-center space-x-3">
@@ -178,8 +189,9 @@ const renderCastSettingsList = () => {
                         <option value="admin" ${(cast.role === 'admin') ? 'selected' : ''}>管理者</option>
                     </select>
                     
-                    <button type="button" class="text-blue-600 hover:text-blue-800 disabled:opacity-30" title="パスワードリセット" disabled>
-                        <i class="fa-solid fa-key"></i>
+                    <button type="button" class="edit-cast-btn text-blue-600 hover:text-blue-800" 
+                            data-cast-id="${cast.id}" title="キャスト情報編集">
+                        <i class="fa-solid fa-pen"></i>
                     </button>
                     
                     <button type="button" class="delete-cast-btn text-red-500 hover:text-red-700 disabled:opacity-30 disabled:cursor-not-allowed" 
@@ -196,71 +208,153 @@ const renderCastSettingsList = () => {
 };
 
 /**
- * (★新規★) キャストを追加する (settings.js から移植)
+ * (★新規★) キャスト招待モーダルを開く
  */
-const addCastSetting = async () => { 
-    if (!newCastNameInput || !castSettingsError || !casts) return; 
+const openInviteModal = async () => {
+    if (!invitesCollectionRef || !currentStoreId || !inviteQrCodeContainer) return;
     
-    const newName = newCastNameInput.value.trim();
-    if (newName === "") {
-        castSettingsError.textContent = "キャスト名を入力してください。";
+    const token = getUUID();
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1時間有効
+    
+    try {
+        // 招待トークンをFirestoreに保存
+        await addDoc(invitesCollectionRef, {
+            token: token,
+            expires: expires.toISOString(),
+            role: 'cast', // 管理者も招待できるようにするなら、ここで選択
+            used: false
+        });
+        
+        // 招待URLを生成
+        const inviteUrl = `${window.location.origin}/signup.html?storeId=${currentStoreId}&token=${token}`;
+        
+        // QRコードを生成
+        inviteQrCodeContainer.innerHTML = ''; // 既存のQRコードをクリア
+        new QRCode(inviteQrCodeContainer, {
+            text: inviteUrl,
+            width: 256,
+            height: 256,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+        
+        // 招待リンクを表示
+        inviteLinkInput.value = inviteUrl;
+        
+        openModal(inviteModal);
+
+    } catch (e) {
+        console.error("Error creating invite token: ", e);
+        castSettingsError.textContent = "招待リンクの作成に失敗しました。";
+    }
+};
+
+/**
+ * (★新規★) キャスト編集モーダルを開く
+ * @param {string} castId
+ */
+const openCastEditorModal = (castId) => {
+    const cast = casts.find(c => c.id === castId);
+    if (!cast) {
+        castSettingsError.textContent = "キャスト情報の読み込みに失敗しました。";
         return;
     }
     
-    const exists = casts.some(cast => cast.name === newName); 
-    if (exists) {
-        castSettingsError.textContent = "そのキャスト名は既に使用されています。";
-        return;
-    }
+    currentEditingCastId = castId;
+    castEditorModalTitle.textContent = `キャスト情報編集: ${cast.name || cast.email}`;
+    castEditorError.textContent = '';
     
-    const newCast = { 
-        name: newName,
-        role: 'cast' 
+    // フォームにデータを入力
+    castDisplayNameInput.value = cast.name || '';
+    castRealNameInput.value = cast.realName || '';
+    castEmailInput.value = cast.email || '';
+    castAuthUidInput.value = cast.authUid || '';
+    castPhoneInput.value = cast.phone || '';
+    castAddressInput.value = cast.address || '';
+    castHireDateInput.value = cast.hireDate || '';
+    
+    // Auth UID と Email は編集不可にする（重要）
+    castEmailInput.disabled = true;
+    castAuthUidInput.disabled = true;
+    
+    deleteCastBtn.classList.remove('hidden');
+    
+    openModal(castEditorModal);
+};
+
+/**
+ * (★新規★) キャスト詳細情報を保存（編集）
+ */
+const saveCastDetails = async () => {
+    if (!currentEditingCastId || !castsCollectionRef) return;
+    
+    const castData = {
+        name: castDisplayNameInput.value.trim(),
+        realName: castRealNameInput.value.trim(),
+        phone: castPhoneInput.value.trim(),
+        address: castAddressInput.value.trim(),
+        hireDate: castHireDateInput.value,
+        // email と authUid は変更しない
     };
     
     try {
-        await addDoc(castsCollectionRef, newCast);
-        newCastNameInput.value = '';
-        castSettingsError.textContent = '';
+        const castRef = doc(castsCollectionRef, currentEditingCastId);
+        await setDoc(castRef, castData, { merge: true });
+        closeModal(castEditorModal);
     } catch (e) {
-        console.error("Error adding cast: ", e);
-        castSettingsError.textContent = "キャストの追加に失敗しました。";
+        console.error("Error saving cast details: ", e);
+        castEditorError.textContent = "キャスト情報の保存に失敗しました。";
     }
 };
 
+
 /**
- * (★新規★) キャストを削除する (settings.js から移植)
- * @param {string} castId 
+ * (★変更★) キャストを削除する
  */
-const deleteCastSetting = async (castId) => { 
-    if (!casts || !slips) return; 
+const deleteCast = async () => { 
+    if (!currentEditingCastId || !casts || !slips) return; 
     
-    const isUsed = slips.some(s => s.nominationCastId === castId); 
+    const cast = casts.find(c => c.id === currentEditingCastId);
+    if (!cast) {
+        castEditorError.textContent = "対象のキャストが見つかりません。";
+        return;
+    }
+    
+    const isUsed = slips.some(s => s.nominationCastId === cast.id); 
     if (isUsed) {
-        castSettingsError.textContent = `そのキャストは伝票で使用中のため削除できません。`;
+        castEditorError.textContent = `このキャストは伝票で使用中のため削除できません。`;
+        return;
+    }
+    
+    if (!confirm(`キャスト「${cast.name}」を削除しますか？\n(※注意: 認証アカウント(Auth)は自動削除されません。Firestoreのデータのみ削除されます)`)) {
         return;
     }
 
     try {
-        const castRef = doc(castsCollectionRef, castId);
+        // 1. /stores/{storeId}/casts/{castId} を削除
+        const castRef = doc(castsCollectionRef, currentEditingCastId);
         await deleteDoc(castRef);
+        
+        // 2. /userProfiles/{authUid} を削除
+        if (cast.authUid) {
+            const userProfileRef = doc(db, "userProfiles", cast.authUid);
+            await deleteDoc(userProfileRef);
+        }
+        
+        // (★注意★) Firebase Auth のアカウント削除は、セキュリティルール上
+        // クライアント(ブラウザ)からは実行できません。
+        // 別途 Firebase Functions (バックエンド) で実装するか、
+        // Firebaseコンソールから手動で削除する必要があります。
+        
+        console.log(`Cast ${cast.id} deleted from Firestore.`);
+        
+        closeModal(castEditorModal);
+        
     } catch (e) {
         console.error("Error deleting cast: ", e);
-        castSettingsError.textContent = "キャストの削除に失敗しました。";
+        castEditorError.textContent = "キャストの削除に失敗しました。";
     }
-};
-
-
-/**
- * (★削除★) 伝票・注文関連の関数をすべて削除
- */
-// updateModalCommonInfo, createNewSlip, renderSlipSelectionModal, renderNewSlipConfirmModal
-
-
-// (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
-const getDefaultSettings = () => {
-    // (★簡易版★ cast-settings.js は settings を参照しないため空でも良い)
-    return {};
 };
 
 
@@ -268,45 +362,50 @@ const getDefaultSettings = () => {
 // firebaseReady イベントを待ってからリスナーを設定
 document.addEventListener('firebaseReady', (e) => {
     
-    // (★変更★) 必要な参照のみ取得
+    // (★変更★) 必要な参照をグローバル変数にセット
     const { 
-        settingsRef, // (★追加★)
-        castsCollectionRef,
-        slipsCollectionRef
+        settingsRef: sRef, 
+        castsCollectionRef: cRef, 
+        slipsCollectionRef: slRef,
+        invitesCollectionRef: iRef,
+        currentStoreId: csId
     } = e.detail;
+    
+    settingsRef = sRef;
+    castsCollectionRef = cRef;
+    slipsCollectionRef = slRef;
+    invitesCollectionRef = iRef;
+    currentStoreId = csId;
 
-    let settingsLoaded = false; // (★追加★)
+    let settingsLoaded = false; 
     let castsLoaded = false;
     let slipsLoaded = false;
 
     // (★新規★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
-        // (★変更★) cast-settings.js は loadSettingsToForm を呼ぶ
         if (settingsLoaded && castsLoaded && slipsLoaded) {
             console.log("All data loaded. Rendering UI for cast-settings.js");
             loadSettingsToForm();
-            // (★削除★) updateModalCommonInfo(); 
         }
     };
 
-    // 1. Settings (★追加★) - 削除可否判定のためにslipsが必要なため
+    // 1. Settings (権限チェックなどに将来使う)
     onSnapshot(settingsRef, async (docSnap) => {
         if (docSnap.exists()) {
             settings = docSnap.data();
         } else {
-            // (★変更★) settings.js が作成するはずなので、ここでは作成しない
             console.warn("No settings document found.");
-            settings = getDefaultSettings(); // フォールバック
+            settings = {}; // フォールバック
         }
         settingsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to settings: ", error));
+    }, (error) => {
+        console.error("Error listening to settings: ", error);
+        settingsLoaded = true; // エラーでも続行
+        checkAndRenderAll();
+    });
 
-    // (★削除★) 2. Menu
-
-    // (★削除★) 3. Slip Counter
-
-    // 4. Casts
+    // 2. Casts
     onSnapshot(castsCollectionRef, (querySnapshot) => {
         casts = [];
         querySnapshot.forEach((doc) => {
@@ -315,11 +414,13 @@ document.addEventListener('firebaseReady', (e) => {
         console.log("Casts loaded: ", casts.length);
         castsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to casts: ", error));
+    }, (error) => {
+        console.error("Error listening to casts: ", error);
+        castsLoaded = true; // エラーでも続行
+        checkAndRenderAll();
+    });
 
-    // (★削除★) 5. Customers
-    
-    // 6. Slips
+    // 3. Slips (削除可否判定用)
     onSnapshot(slipsCollectionRef, (querySnapshot) => {
         slips = [];
         querySnapshot.forEach((doc) => {
@@ -330,9 +431,17 @@ document.addEventListener('firebaseReady', (e) => {
         checkAndRenderAll();
     }, (error) => {
         console.error("Error listening to slips: ", error);
-        slipsLoaded = true; // (★変更★) エラーでも続行
+        slipsLoaded = true; // エラーでも続行
         checkAndRenderAll();
     });
+    
+    // (★新規★) QRコードライブラリをロード
+    if (!document.getElementById('qrcode-script')) {
+        const script = document.createElement('script');
+        script.id = 'qrcode-script';
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+        document.head.appendChild(script);
+    }
 });
 
 
@@ -341,71 +450,98 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // ===== DOM要素の取得 =====
     modalCloseBtns = document.querySelectorAll('.modal-close-btn');
-    saveSettingsBtn = document.getElementById('save-cast-settings-btn'); 
+    saveRolesBtn = document.getElementById('save-roles-btn'); 
     settingsFeedback = document.getElementById('settings-feedback');
 
-    // (★新規★) キャスト
-    newCastNameInput = document.getElementById('new-cast-name-input');
-    addCastBtn = document.getElementById('add-cast-btn');
+    // (★変更★) キャスト
+    openNewCastModalBtn = document.getElementById('open-new-cast-modal-btn');
     currentCastsList = document.getElementById('current-casts-list');
     castSettingsError = document.getElementById('cast-settings-error');
-
-    // (★削除★) 伝票関連モーダルDOM
-    // ...
     
+    // (★新規★) 招待モーダル
+    inviteModal = document.getElementById('invite-modal'); // (★注意★) HTML側でこのIDがまだ無い -> style.css と一緒に追加想定
+    inviteQrCodeContainer = document.getElementById('invite-qr-code'); // (★注意★) HTML側でこのIDがまだ無い
+    inviteLinkInput = document.getElementById('invite-link-input'); // (★注意★) HTML側でこのIDがまだ無い
+    
+    // (★新規★) 編集モーダル
+    castEditorModal = document.getElementById('cast-editor-modal');
+    castEditorModalTitle = document.getElementById('cast-editor-modal-title');
+    castEditorForm = document.getElementById('cast-editor-form');
+    castDisplayNameInput = document.getElementById('cast-display-name');
+    castRealNameInput = document.getElementById('cast-real-name');
+    castEmailInput = document.getElementById('cast-email');
+    castAuthUidInput = document.getElementById('cast-auth-uid');
+    castPhoneInput = document.getElementById('cast-phone');
+    castAddressInput = document.getElementById('cast-address');
+    castHireDateInput = document.getElementById('cast-hire-date');
+    castEditorError = document.getElementById('cast-editor-error');
+    saveCastBtn = document.getElementById('save-cast-btn');
+    deleteCastBtn = document.getElementById('delete-cast-btn');
+
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
     
     // ===== イベントリスナーの設定 =====
 
-    // (★変更★) モーダルを閉じるボタン (HTMLにはもう存在しないが、念のため残す)
+    // (★変更★) モーダルを閉じるボタン (共通)
     if (modalCloseBtns) {
         modalCloseBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                closeModal(); // (★変更★)
+            btn.addEventListener('click', (e) => {
+                const modal = e.target.closest('.modal-backdrop');
+                if (modal) {
+                    closeModal(modal);
+                }
             });
         });
     }
 
 
-    // 設定保存ボタン
-    if (saveSettingsBtn) {
-        saveSettingsBtn.addEventListener('click', (e) => {
+    // (★変更★) 権限保存ボタン
+    if (saveRolesBtn) {
+        saveRolesBtn.addEventListener('click', (e) => {
             e.preventDefault(); 
-            saveSettingsFromForm(); 
+            saveRoles(); 
         });
     }
 
-    // --- (★新規★) キャスト設定 ---
-    if (addCastBtn) {
-        addCastBtn.addEventListener('click', () => {
-            addCastSetting(); 
+    // --- (★新規★) キャスト招待 ---
+    if (openNewCastModalBtn) {
+        openNewCastModalBtn.addEventListener('click', () => {
+            // (★変更★) HTML側にモーダルが無いため、ダミーの警告を出す
+            // openInviteModal(); 
+            alert("招待モーダル (invite-modal) がHTMLに存在しません。\nstyle.css と一緒にHTMLの変更が必要です。");
         });
     }
-    if (newCastNameInput) {
-        newCastNameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                addCastSetting(); 
-            }
-        });
-    }
+
+    // --- (★変更★) キャスト一覧のイベント委任 ---
     if (currentCastsList) {
         currentCastsList.addEventListener('click', (e) => {
             const deleteBtn = e.target.closest('.delete-cast-btn');
-            if (deleteBtn && !deleteBtn.disabled) {
-                if (confirm(`キャストを削除しますか？\n(この操作は取り消せません)`)) {
-                    deleteCastSetting(deleteBtn.dataset.castId); 
-                }
+            const editBtn = e.target.closest('.edit-cast-btn');
+            
+            if (editBtn) {
+                openCastEditorModal(editBtn.dataset.castId);
+                return;
             }
-        });
-        
-        currentCastsList.addEventListener('change', (e) => {
-            if (e.target.tagName === 'SELECT') {
-                console.log(`Role selection changed for ${e.target.dataset.castId}. Ready to save.`);
+            
+            if (deleteBtn && !deleteBtn.disabled) {
+                currentEditingCastId = deleteBtn.dataset.castId; // (★変更★) 削除対象IDをセット
+                deleteCast(); // (★変更★) 編集モーダルを開かずに削除
+                return;
             }
         });
     }
     
-    // (★削除★) 伝票関連モーダルリスナー
-    // ...
+    // --- (★新規★) キャスト編集モーダル ---
+    if (castEditorForm) {
+        castEditorForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            saveCastDetails();
+        });
+    }
+    if (deleteCastBtn) {
+        deleteCastBtn.addEventListener('click', () => {
+            deleteCast();
+        });
+    }
+
 });

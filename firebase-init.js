@@ -2,18 +2,29 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import { 
     getAuth, 
-    signInAnonymously, 
-    onAuthStateChanged 
+    // signInAnonymously, (★削除★)
+    onAuthStateChanged,
+    // (★新規★) 必要な認証メソッドをインポート
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signOut,
+    updatePassword,
+    EmailAuthProvider,
+    reauthenticateWithCredential
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
 import { 
     getFirestore, 
     doc, 
-    collection, // (★新規★)
+    collection, 
     setDoc, 
-    addDoc, // (★新規★)
-    deleteDoc, // (★新規★)
+    addDoc, 
+    deleteDoc, 
     onSnapshot,
-    setLogLevel
+    setLogLevel,
+    query, // (★新規★)
+    where, // (★新規★)
+    getDoc, // (★新規★)
+    getDocs // (★新規★)
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
 // Your web app's Firebase configuration (お客様から提供された設定)
@@ -34,63 +45,126 @@ const auth = getAuth(app);
 // (新規) Firestoreのデバッグログを有効にする
 setLogLevel('debug');
 
-// アプリ全体で共有する変数
-let userId = null;
-// (★削除★) stateRef は廃止
-// let stateRef = null; 
+// (★変更★) 
+// 認証されたユーザーのストアIDとキャストID（または管理者ロール）を保持する
+let currentStoreId = null;
+let currentCastId = null; // (★新規★) キャストのFirestoreドキュメントID
+let currentAuthUid = null; // (★新規★) Firebase Auth の UID
+let currentUserRole = null; // (★新規★) 'admin' or 'cast'
 
-// (★新規★) マルチテナント用の設定
-// 開発中は 'devStore' に固定することで、匿名認証IDが変わってもデータを維持します。
-// 本番環境では、ここはログインユーザーに紐づく店舗IDに動的に切り替えます。
-const storeId = "devStore"; 
-
-// (★新規★) 新しいデータ構造への参照
-const storeRef = doc(db, "stores", storeId);
-const settingsRef = doc(db, "stores", storeId, "settings", "data");
-const menuRef = doc(db, "stores", storeId, "menu", "data");
-const slipCounterRef = doc(db, "stores", storeId, "counters", "slip");
-
-const castsCollectionRef = collection(db, "stores", storeId, "casts");
-const customersCollectionRef = collection(db, "stores", storeId, "customers");
-const slipsCollectionRef = collection(db, "stores", storeId, "slips");
+// (★変更★) 認証が完了し、ストアIDが確定してから参照を構築する必要があるため、
+// (★変更★) ここでは参照をエクスポートせず、dbとauthのみをエクスポートする。
+// (★変更★) 各JSファイルが `firebaseReady` イベントで参照を受け取るように変更する。
 
 
-// (新規) 認証状態の監視と匿名サインイン
+// (★新規★) ログインページへのリダイレクト
+const redirectToLogin = () => {
+    // (★修正★) store-signup.html も例外に追加
+    if (!window.location.pathname.endsWith('/login.html') && 
+        !window.location.pathname.endsWith('/signup.html') &&
+        !window.location.pathname.endsWith('/store-signup.html')) {
+        
+        console.log("User not authenticated. Redirecting to login.html");
+        window.location.href = 'login.html';
+    }
+};
+
+// (★新規★) 認証状態の監視とストア情報の取得
 const initializeFirebase = () => {
     onAuthStateChanged(auth, async (user) => {
         if (user) {
-            // ユーザーがサインイン済み
+            // --- ユーザーがサインイン済み ---
             console.log("Firebase Auth: User is signed in.", user.uid);
-            userId = user.uid;
-            // (★削除★) stateRef の設定ロジックを削除
-            
-            // 認証が完了したことを知らせるカスタムイベント
-            // (★変更★) 新しい参照を detail に追加
-            document.dispatchEvent(new CustomEvent('firebaseReady', { 
-                detail: { 
-                    userId, 
-                    storeId,
-                    db, 
-                    auth,
-                    settingsRef,
-                    menuRef,
-                    slipCounterRef,
-                    castsCollectionRef,
-                    customersCollectionRef,
-                    slipsCollectionRef
-                } 
-            }));
+            currentAuthUid = user.uid;
+
+            try {
+                // (★新規★) 1. userProfiles からストアIDとロールを取得
+                const userProfileRef = doc(db, "userProfiles", user.uid);
+                const userProfileSnap = await getDoc(userProfileRef);
+
+                if (!userProfileSnap.exists()) {
+                    // データベースにプロファイルが存在しない (＝不正な状態)
+                    console.error("Auth user exists, but no userProfile found in Firestore. Logging out.");
+                    await signOut(auth);
+                    redirectToLogin();
+                    return;
+                }
+                
+                const userProfile = userProfileSnap.data();
+                currentStoreId = userProfile.storeId;
+                currentUserRole = userProfile.role;
+                
+                if (!currentStoreId) {
+                     // ストアIDが無い (＝不正な状態)
+                    console.error("userProfile found, but no storeId. Logging out.");
+                    await signOut(auth);
+                    redirectToLogin();
+                    return;
+                }
+
+                // (★新規★) 2. ロールに応じて admin か cast かを判定
+                let currentCastDocId = null; // Firestoreの /stores/{storeId}/casts/{docId}
+                if (currentUserRole === 'cast') {
+                    // (★新規★) 3. キャストの場合、Auth UID を使って casts コレクションから自分のドキュメントIDを取得
+                    const castsQuery = query(collection(db, "stores", currentStoreId, "casts"), where("authUid", "==", user.uid));
+                    const querySnapshot = await getDocs(castsQuery);
+                    
+                    if (querySnapshot.empty) {
+                        console.error("userProfile is 'cast', but no matching cast document found in store. Logging out.");
+                        await signOut(auth);
+                        redirectToLogin();
+                        return;
+                    }
+                    
+                    // 該当するキャストドキュメントIDを取得
+                    currentCastId = querySnapshot.docs[0].id;
+                }
+
+                console.log(`Auth Success: StoreID: ${currentStoreId}, Role: ${currentUserRole}, CastDocID: ${currentCastId || 'N/A'}`);
+                
+                // (★新規★) 4. 認証とストアID確定後に、動的に参照を構築
+                const settingsRef = doc(db, "stores", currentStoreId, "settings", "data");
+                const menuRef = doc(db, "stores", currentStoreId, "menu", "data");
+                const slipCounterRef = doc(db, "stores", currentStoreId, "counters", "slip");
+                const castsCollectionRef = collection(db, "stores", currentStoreId, "casts");
+                const customersCollectionRef = collection(db, "stores", currentStoreId, "customers");
+                const slipsCollectionRef = collection(db, "stores", currentStoreId, "slips");
+                const invitesCollectionRef = collection(db, "stores", currentStoreId, "invites"); // (★新規★)
+
+                // (★新規★) 5. 認証が完了したことを知らせるカスタムイベント
+                document.dispatchEvent(new CustomEvent('firebaseReady', { 
+                    detail: { 
+                        auth,
+                        db,
+                        currentAuthUid: user.uid,
+                        currentStoreId: currentStoreId,
+                        currentUserRole: currentUserRole,
+                        currentCastId: currentCastId, // キャストの場合のみセットされる
+                        
+                        // 動的に構築された参照
+                        settingsRef,
+                        menuRef,
+                        slipCounterRef,
+                        castsCollectionRef,
+                        customersCollectionRef,
+                        slipsCollectionRef,
+                        invitesCollectionRef
+                    } 
+                }));
+
+            } catch (error) {
+                console.error("Error fetching user profile:", error);
+                redirectToLogin();
+            }
 
         } else {
-            // ユーザーがサインインしていない -> 匿名でサインイン
-            console.log("Firebase Auth: User is signed out. Signing in anonymously...");
-            try {
-                await signInAnonymously(auth);
-                // 成功すると onAuthStateChanged が再度呼び出される
-            } catch (error) {
-                console.error("Firebase Auth: Anonymous sign-in failed", error);
-                document.body.innerHTML = `<div class="p-8 text-center text-red-600">Firebaseへの接続に失敗しました。設定（firebaseConfig）が正しいか、コンソールの「Authentication」で「匿名」が有効になっているか確認してください。</div>`;
-            }
+            // --- ユーザーがサインインしていない ---
+            console.log("Firebase Auth: User is signed out.");
+            currentAuthUid = null;
+            currentStoreId = null;
+            currentUserRole = null;
+            currentCastId = null;
+            redirectToLogin();
         }
     });
 };
@@ -99,26 +173,30 @@ const initializeFirebase = () => {
 initializeFirebase();
 
 // --- 他ファイルへのエクスポート ---
-// 他のJSファイル (dashboard.js, tables.js など) はこれらをインポートして使用する
+// (★変更★)
+// 認証メソッドと、基本的な db, auth のみエクスポート
+// 各種参照 (Ref) は `firebaseReady` イベントで渡す
 export { 
     db, 
     auth, 
-    userId, // (注意) 初期読み込み時は null の可能性がある
-    storeId, // (★新規★)
     
-    // (★新規★) 新しい参照
-    settingsRef,
-    menuRef,
-    slipCounterRef,
-    castsCollectionRef,
-    customersCollectionRef,
-    slipsCollectionRef,
+    // 認証メソッド
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signOut,
+    updatePassword,
+    EmailAuthProvider,
+    reauthenticateWithCredential,
     
-    // (★変更★) Firestoreメソッド
+    // Firestoreメソッド
     doc, 
     collection,
     setDoc, 
     addDoc,
     deleteDoc,
-    onSnapshot 
+    onSnapshot,
+    query,
+    where,
+    getDoc,
+    getDocs
 };

@@ -4,21 +4,16 @@ import {
     auth, 
     onSnapshot, 
     setDoc, 
-    addDoc, 
-    deleteDoc, 
+    // addDoc, (★削除★)
+    // deleteDoc, (★削除★)
     doc,
-    collection 
+    collection,
+    getDoc, // (★新規★)
+    signOut // (★新規★)
 } from './firebase-init.js';
 
-// (★新規★) 新しい参照をインポート
-import {
-    settingsRef,
-    // menuRef, (★不要★)
-    // slipCounterRef, (★不要★)
-    castsCollectionRef,
-    customersCollectionRef,
-    slipsCollectionRef
-} from './firebase-init.js';
+// (★変更★) 参照は firebaseReady イベントで受け取る
+let settingsRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef;
 
 
 // ===== グローバル定数・変数 =====
@@ -30,21 +25,48 @@ let casts = [];
 let customers = [];
 let slips = [];
 
-// (★新規★) 開発用のログインキャストID (本来は認証情報から取得)
-let DEV_CAST_ID = null; 
-let DEV_CAST_NAME = "キャスト";
+// (★変更★) ログイン中のキャストIDと名前
+let currentCastId = null; 
+let currentCastName = "キャスト";
 
 // ===== DOM要素 =====
 // (★新規★) cast-customers.html に必要なDOM
 let castHeaderName, pageTitle,
     customerSearchInput,
     customerListContainer,
-    customerListLoading;
+    customerListLoading,
+    logoutButtonHeader; // (★新規★)
 
 
 // --- 関数 ---
 
-// (★削除★) 伝票関連のヘルパー関数は不要
+// (★削除★) 伝P... 関連のヘルパー関数は不要
+
+// =================================================
+// (★新規★) 営業日計算ヘルパー (cast-dashboard.js からコピー)
+// =================================================
+/**
+ * (★新規★) 営業日付の開始時刻を取得する
+ * @param {Date} date 対象の日付
+ * @returns {Date} 営業開始日時
+ */
+const getBusinessDayStart = (date) => {
+    if (!settings || !settings.dayChangeTime) {
+        const startDate = new Date(date);
+        startDate.setHours(0, 0, 0, 0);
+        return startDate;
+    }
+    
+    const [hours, minutes] = settings.dayChangeTime.split(':').map(Number);
+    const startDate = new Date(date);
+    startDate.setHours(hours, minutes, 0, 0);
+    
+    if (date.getTime() < startDate.getTime()) {
+        startDate.setDate(startDate.getDate() - 1);
+    }
+    
+    return startDate;
+};
 
 // =================================================
 // (★新規★) 顧客一覧ページ専用ロジック
@@ -56,7 +78,7 @@ let castHeaderName, pageTitle,
  * @returns {string} 最終来店日の説明文字列
  */
 const getLastVisitDate = (customerName) => {
-    if (!slips || slips.length === 0) {
+    if (!slips || slips.length === 0 || !settings) { // (★変更★) settings が必要
         return "来店履歴なし";
     }
 
@@ -75,13 +97,16 @@ const getLastVisitDate = (customerName) => {
     const lastVisitDate = new Date(customerSlips[0].paidTimestamp);
     
     // (★新規★) 何日前か計算
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - lastVisitDate.getTime());
+    // (★変更★) 営業日基準で「今日」を判定
+    const todayBusinessStart = getBusinessDayStart(new Date());
+    const lastVisitBusinessStart = getBusinessDayStart(lastVisitDate);
+
+    const diffTime = Math.abs(todayBusinessStart.getTime() - lastVisitBusinessStart.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
     const dateStr = lastVisitDate.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
 
-    if (diffDays <= 1) {
+    if (diffDays === 0) {
         return `最終来店: ${dateStr} (本日)`;
     } else if (diffDays <= 30) {
         return `最終来店: ${dateStr} (${diffDays}日前)`;
@@ -91,17 +116,17 @@ const getLastVisitDate = (customerName) => {
 };
 
 /**
- * (★新規★) キャストの指名顧客一覧を描画する
+ * (★変更★) キャストの指名顧客一覧を描画する
  * @param {string} searchTerm (オプション) 検索キーワード
  */
 const renderCastCustomerList = (searchTerm = "") => {
-    if (!customerListContainer || !customers || !DEV_CAST_ID) return;
+    if (!customerListContainer || !customers || !currentCastId) return;
     
     const lowerSearchTerm = searchTerm.toLowerCase();
 
     // (★変更★) 自分の指名顧客のみフィルタリング
     let myCustomers = customers.filter(
-        cust => cust.nominatedCastId === DEV_CAST_ID
+        cust => cust.nominatedCastId === currentCastId
     );
     
     // (★新規★) 検索キーワードでフィルタリング
@@ -155,7 +180,9 @@ const renderCastCustomerList = (searchTerm = "") => {
 };
 
 
-// (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+/**
+ * (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+ */
 const getDefaultSettings = () => {
     // (★簡易版★ cast-customers.js は settings を参照しないため空でも良い)
     return {
@@ -163,16 +190,54 @@ const getDefaultSettings = () => {
     };
 };
 
+/**
+ * (★新規★) ログインキャストの情報を取得してグローバル変数にセット
+ */
+const loadCastInfo = async () => {
+    if (!currentCastId || !castsCollectionRef) {
+        console.warn("Cast ID or collection ref not ready.");
+        return;
+    }
+    
+    try {
+        const castRef = doc(castsCollectionRef, currentCastId);
+        const castSnap = await getDoc(castRef);
+
+        if (castSnap.exists()) {
+            currentCastName = castSnap.data().name || "キャスト";
+        } else {
+            console.warn("Cast document not found in Firestore.");
+        }
+    } catch (error) {
+        console.error("Error fetching cast data: ", error);
+    }
+    
+    // UI（ヘッダー名）に反映
+    if (castHeaderName) castHeaderName.textContent = currentCastName;
+};
+
 
 // (★変更★) --- Firestore リアルタイムリスナー ---
-document.addEventListener('firebaseReady', (e) => {
+document.addEventListener('firebaseReady', async (e) => {
     
+    // (★変更★) 認証情報と参照を取得
     const { 
-        settingsRef,
-        castsCollectionRef, 
-        customersCollectionRef, 
-        slipsCollectionRef
+        currentCastId: cId,
+        settingsRef: sRef,
+        castsCollectionRef: cRef, 
+        customersCollectionRef: cuRef, 
+        slipsCollectionRef: slRef
     } = e.detail;
+    
+    // (★変更★) グローバル変数にセット
+    currentCastId = cId;
+    settingsRef = sRef;
+    castsCollectionRef = cRef;
+    customersCollectionRef = cuRef;
+    slipsCollectionRef = slRef;
+    
+    // (★新規★) まずキャスト情報を読み込む
+    await loadCastInfo();
 
     let settingsLoaded = false;
     let castsLoaded = false;
@@ -185,17 +250,9 @@ document.addEventListener('firebaseReady', (e) => {
         if (settingsLoaded && castsLoaded && customersLoaded && slipsLoaded) {
             console.log("All data loaded. Rendering UI for cast-customers.js");
             
-            // (★新規★) 開発用キャストIDを設定
-            if (casts.length > 0) {
-                DEV_CAST_ID = casts[0].id; 
-                DEV_CAST_NAME = casts[0].name;
-            } else {
-                console.warn("No casts found. Defaulting DEV_CAST_ID to null.");
-                DEV_CAST_ID = null;
-                DEV_CAST_NAME = "キャスト未登録";
-            }
+            // (★削除★) 開発用キャストIDの設定ロジックを削除
             
-            if (castHeaderName) castHeaderName.textContent = DEV_CAST_NAME;
+            if (castHeaderName) castHeaderName.textContent = currentCastName;
             
             renderCastCustomerList();
         }
@@ -268,6 +325,8 @@ document.addEventListener('DOMContentLoaded', () => {
     customerListContainer = document.getElementById('customer-list-container');
     customerListLoading = document.getElementById('customer-list-loading');
     
+    logoutButtonHeader = document.querySelector('header #cast-header-name + button'); // (★新規★)
+    
     // (★削除★) モーダル関連のDOM取得を削除
     
     // ===== イベントリスナーの設定 =====
@@ -276,6 +335,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (customerSearchInput) {
         customerSearchInput.addEventListener('input', (e) => {
             renderCastCustomerList(e.target.value);
+        });
+    }
+
+    // (★新規★) ログアウトボタン
+    if (logoutButtonHeader) {
+        logoutButtonHeader.addEventListener('click', async () => {
+            if (confirm("ログアウトしますか？")) {
+                try {
+                    await signOut(auth);
+                    // ログアウト成功時、firebase-init.js が login.html へリダイレクト
+                } catch (error) {
+                    console.error("Sign out error: ", error);
+                }
+            }
         });
     }
 

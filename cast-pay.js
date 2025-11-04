@@ -5,16 +5,13 @@ import {
     onSnapshot, 
     setDoc, 
     doc,
-    collection 
+    collection,
+    getDoc, // (★新規★)
+    signOut // (★新規★)
 } from './firebase-init.js';
 
-// (★新規★) 新しい参照をインポート
-import {
-    settingsRef,
-    menuRef,
-    castsCollectionRef,
-    slipsCollectionRef
-} from './firebase-init.js';
+// (★変更★) 参照は firebaseReady イベントで受け取る
+let settingsRef, menuRef, castsCollectionRef, slipsCollectionRef;
 
 
 // ===== グローバル定数・変数 =====
@@ -25,16 +22,17 @@ let menu = null;
 let casts = [];
 let slips = [];
 
-// (★新規★) 開発用のログインキャストID (本来は認証情報から取得)
-let DEV_CAST_ID = null; 
-let DEV_CAST_NAME = "キャスト";
+// (★変更★) ログイン中のキャストIDと名前
+let currentCastId = null; 
+let currentCastName = "キャスト";
 
 // ===== DOM要素 =====
 // (★新規★) cast-pay.html に必要なDOM
 let castHeaderName, pageTitle,
     payPeriodSelect,
     summaryPayTotal, summaryPayDeductions, summaryPayNet,
-    dailyPayList, payListLoading;
+    dailyPayList, payListLoading,
+    logoutButtonHeader; // (★新規★)
 
 
 // --- 関数 ---
@@ -217,10 +215,10 @@ const aggregatePayByDay = (paidSlips, castId) => {
 
 
 /**
- * (★新規★) 報酬サマリーと日別リストを描画する
+ * (★変更★) 報酬サマリーと日別リストを描画する
  */
 const renderPayPage = () => {
-    if (!slips || !settings || !menu || !DEV_CAST_ID) {
+    if (!slips || !settings || !menu || !currentCastId) { // (★変更★)
         if(payListLoading) payListLoading.textContent = "データが不足しています。";
         return; 
     }
@@ -230,8 +228,8 @@ const renderPayPage = () => {
     // 1. 期間内の伝票を取得
     const { paidSlips } = getSlipsForPeriod(period, new Date());
     
-    // 2. 日別に集計
-    const dailyMap = aggregatePayByDay(paidSlips, DEV_CAST_ID);
+    // 2. 日別に集計 (★変更★)
+    const dailyMap = aggregatePayByDay(paidSlips, currentCastId);
     
     // 3. 期間合計を計算
     let periodTotalPay = 0;
@@ -325,14 +323,54 @@ const getDefaultMenu = () => {
 };
 
 
+/**
+ * (★新規★) ログインキャストの情報を取得してグローバル変数にセット
+ */
+const loadCastInfo = async () => {
+    if (!currentCastId || !castsCollectionRef) {
+        console.warn("Cast ID or collection ref not ready.");
+        return;
+    }
+    
+    try {
+        const castRef = doc(castsCollectionRef, currentCastId);
+        const castSnap = await getDoc(castRef);
+
+        if (castSnap.exists()) {
+            currentCastName = castSnap.data().name || "キャスト";
+        } else {
+            console.warn("Cast document not found in Firestore.");
+        }
+    } catch (error) {
+        console.error("Error fetching cast data: ", error);
+    }
+    
+    // UI（ヘッダー名）に反映
+    if (castHeaderName) castHeaderName.textContent = currentCastName;
+};
+
+
 // (★変更★) --- Firestore リアルタイムリスナー ---
-document.addEventListener('firebaseReady', (e) => {
+document.addEventListener('firebaseReady', async (e) => {
     
     // (★変更★) 必要な参照のみ取得
     const { 
-        settingsRef, menuRef,
-        castsCollectionRef, slipsCollectionRef
+        currentCastId: cId,
+        settingsRef: sRef, 
+        menuRef: mRef,
+        castsCollectionRef: cRef, 
+        slipsCollectionRef: slRef
     } = e.detail;
+    
+    // (★変更★) グローバル変数にセット
+    currentCastId = cId;
+    settingsRef = sRef;
+    menuRef = mRef;
+    castsCollectionRef = cRef;
+    slipsCollectionRef = slRef;
+
+    // (★新規★) まずキャスト情報を読み込む
+    await loadCastInfo();
 
     let settingsLoaded = false;
     let menuLoaded = false;
@@ -346,17 +384,9 @@ document.addEventListener('firebaseReady', (e) => {
         if (settingsLoaded && menuLoaded && castsLoaded && slipsLoaded) {
             console.log("All data loaded. Rendering UI for cast-pay.js");
             
-            // (★新規★) 開発用キャストIDを設定
-            if (casts.length > 0) {
-                DEV_CAST_ID = casts[0].id; 
-                DEV_CAST_NAME = casts[0].name;
-            } else {
-                console.warn("No casts found. Defaulting DEV_CAST_ID to null.");
-                DEV_CAST_ID = null;
-                DEV_CAST_NAME = "キャスト未登録";
-            }
+            // (★削除★) 開発用キャストIDの設定ロジックを削除
             
-            if (castHeaderName) castHeaderName.textContent = DEV_CAST_NAME;
+            if (castHeaderName) castHeaderName.textContent = currentCastName;
             
             setupPeriodSelect(); // (★新規★)
             renderPayPage();
@@ -436,6 +466,8 @@ document.addEventListener('DOMContentLoaded', () => {
     dailyPayList = document.getElementById('daily-pay-list');
     payListLoading = document.getElementById('pay-list-loading');
     
+    logoutButtonHeader = document.querySelector('header #cast-header-name + button'); // (★新規★)
+    
     // (★削除★) モーダル関連のDOM取得を削除
     
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
@@ -446,6 +478,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (payPeriodSelect) {
         payPeriodSelect.addEventListener('change', () => {
             renderPayPage();
+        });
+    }
+
+    // (★新規★) ログアウトボタン
+    if (logoutButtonHeader) {
+        logoutButtonHeader.addEventListener('click', async () => {
+            if (confirm("ログアウトしますか？")) {
+                try {
+                    await signOut(auth);
+                    // ログアウト成功時、firebase-init.js が login.html へリダイレクト
+                } catch (error) {
+                    console.error("Sign out error: ", error);
+                }
+            }
         });
     }
 
