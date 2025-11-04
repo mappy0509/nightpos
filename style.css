@@ -345,16 +345,18 @@ body {
     }
 }
 
-/* (★新規★) スマホ用ボトムナビゲーション */
+/* (★変更★) スマホ用ボトムナビゲーション (アイコンのみ) */
 .bottom-nav-link {
     display: flex;
-    flex-direction: column;
+    /* (★削除★) flex-direction: column; */
     align-items: center;
     justify-content: center;
     flex-grow: 1;
     padding: 0.5rem 0; /* py-2 */
     color: var(--text-secondary);
     transition: all 0.2s ease-in-out;
+    /* (★追加★) 高さを指定してアイコンを中央揃え */
+    height: 100%; 
 }
 .bottom-nav-link:hover {
     background-color: #f8fafc; /* hover:bg-slate-50 */
@@ -364,3 +366,8 @@ body {
     color: #2563eb; /* text-blue-600 */
     background-color: #f0f9ff; /* bg-blue-50 */
 }
+/* (★削除★) 文字SPANのスタイルは不要
+.bottom-nav-link span {
+    ...
+}
+*/

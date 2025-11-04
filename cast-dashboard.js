@@ -37,50 +37,21 @@ let menu = null;
 let casts = [];
 let customers = [];
 let slips = [];
-let slipCounter = 0;
-
-// (★変更★) 現在選択中の伝票ID (ローカル管理)
-let currentSlipId = null;
-let currentBillingAmount = 0;
-
-// (★新規★) 経過時間更新用のタイマーID
-let elapsedTimeTimer = null;
+let slipCounter = 0; // (このJSでは使わないが、他から流用)
 
 // (★新規★) 開発用のログインキャストID (本来は認証情報から取得)
 let DEV_CAST_ID = null; 
 let DEV_CAST_NAME = "キャスト";
 
 // ===== DOM要素 =====
-// (★新規★) cast-dashboard.html に必要なDOM
-let castHeaderName,
+// (★新規★) cast-dashboard.html (実績確認ページ) に必要なDOM
+let castHeaderName, headerDate,
     summaryCastTodaySales, summaryCastTodayNoms,
     summaryCastMonthSales, summaryCastMonthNoms,
-    castActiveSlips,
-    orderModal, checkoutModal, receiptModal,
-    slipPreviewModal, modalCloseBtns, openSlipPreviewBtn, processPaymentBtn,
-    printSlipBtn, goToCheckoutBtn, reopenSlipBtn, menuEditorModal,
-    menuEditorModalTitle, menuEditorForm, menuCategorySelect, menuNameInput,
-    menuDurationGroup, menuDurationInput, menuPriceInput, menuEditorError,
-    saveMenuItemBtn, 
-    cancelSlipModal, openCancelSlipModalBtn, cancelSlipModalTitle, cancelSlipNumber,
-    cancelSlipReasonInput, cancelSlipError, confirmCancelSlipBtn, slipSelectionModal,
-    slipSelectionModalTitle, slipSelectionList, createNewSlipBtn, newSlipConfirmModal,
-    newSlipConfirmTitle, newSlipConfirmMessage, confirmCreateSlipBtn, orderModalTitle,
-    orderItemsList, menuOrderGrid, orderSubtotalEl, orderCustomerNameSelect,
-    orderNominationSelect, newCustomerInputGroup, newCustomerNameInput,
-    saveNewCustomerBtn, newCustomerError, checkoutModalTitle, checkoutItemsList,
-    checkoutSubtotalEl, checkoutServiceChargeEl, checkoutTaxEl, checkoutPaidAmountEl,
-    checkoutTotalEl, paymentCashInput, paymentCardInput, paymentCreditInput,
-    checkoutPaymentTotalEl, checkoutShortageEl, checkoutChangeEl, slipSubtotalEl,
-    slipServiceChargeEl, slipTaxEl, slipPaidAmountEl, slipTotalEl,
-    // (新規) HTML側で追加したID
-    slipStoreName, slipStoreTel, slipServiceRate, slipTaxRate,
-    checkoutStoreName, checkoutStoreTel, checkoutServiceRate, checkoutTaxRate,
-    receiptStoreName, receiptAddress, receiptTel,
-    // (★新規★) 割引機能
-    discountAmountInput, discountTypeSelect,
-    // (★新規★) 伝票作成時間
-    newSlipStartTimeInput, newSlipTimeError;
+    summaryCastPay, summaryCastWorkdays,
+    castCustomerList;
+
+// (★削除★) 伝票操作モーダル関連のDOMをすべて削除
 
 
 // --- 関数 ---
@@ -93,69 +64,6 @@ let castHeaderName,
 const formatCurrency = (amount) => {
     return `¥${amount.toLocaleString()}`;
 };
-
-/**
- * (★新規★) Dateオブジェクトを 'YYYY-MM-DDTHH:MM' 形式の文字列に変換する
- * (datetime-local入力欄用)
- * @param {Date} date 
- * @returns {string}
- */
-const formatDateTimeLocal = (date) => {
-    const YYYY = date.getFullYear();
-    const MM = String(date.getMonth() + 1).padStart(2, '0');
-    const DD = String(date.getDate()).padStart(2, '0');
-    const HH = String(date.getHours()).padStart(2, '0');
-    const MIN = String(date.getMinutes()).padStart(2, '0');
-    return `${YYYY}-${MM}-${DD}T${HH}:${MIN}`;
-};
-
-
-/**
- * (変更) 伝票の合計金額（割引前）を計算する (stateの税率を使用)
- * @param {object} slip 伝票データ
- * @returns {number} 合計金額
- */
-const calculateSlipTotal = (slip) => {
-    if (!settings) return 0; 
-    if (slip.status === 'cancelled') {
-        return 0;
-    }
-    let subtotal = 0;
-    slip.items.forEach(item => {
-        subtotal += item.price * item.qty;
-    });
-    const serviceCharge = subtotal * settings.rates.service;
-    const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * settings.rates.tax;
-    const total = subtotalWithService + tax;
-    return Math.round(total);
-};
-
-/**
- * (新規) キャストIDからキャスト名を取得する
- * @param {string | null} castId
- * @returns {string} キャスト名
- */
-const getCastNameById = (castId) => {
-    if (!casts) return '不明'; 
-    if (!castId) return 'フリー';
-    const cast = casts.find(c => c.id === castId);
-    return cast ? cast.name : '不明';
-};
-
-
-/**
- * (変更) 未会計伝票の数を取得する (ボツ伝は除外)
- * @param {string} tableId 
- * @returns {number} 未会計伝票数
- */
-const getActiveSlipCount = (tableId) => {
-    if (!slips) return 0; 
-    return slips.filter(
-        slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
-    ).length;
-};
-
 
 // =================================================
 // (★新規★) 営業日計算ヘルパー (dashboard.js から移植)
@@ -200,11 +108,11 @@ const getBusinessDayEnd = (businessDayStart) => {
  * (★新規★) 指定された期間の伝票(会計済み・ボツ)を取得する
  * @param {string} period 'daily', 'weekly', 'monthly'
  * @param {Date} baseDate 基準日
- * @returns {object} { paidSlips: [], cancelledSlips: [] }
+ * @returns {object} { paidSlips: [] }
  */
 const getSlipsForPeriod = (period, baseDate) => {
     if (!slips) {
-        return { paidSlips: [], cancelledSlips: [], range: { start: baseDate, end: baseDate } };
+        return { paidSlips: [] };
     }
 
     let startDate, endDate;
@@ -215,15 +123,13 @@ const getSlipsForPeriod = (period, baseDate) => {
         endDate = getBusinessDayEnd(businessDayStart);
     } 
     else if (period === 'monthly') {
-        // 基準日の月の1日（の営業開始時刻）
         startDate = new Date(businessDayStart.getFullYear(), businessDayStart.getMonth(), 1);
-        startDate = getBusinessDayStart(startDate); // 念のため営業日補正
-
-        // 基準日の月の末日（の営業終了時刻）
-        endDate = new Date(businessDayStart.getFullYear(), businessDayStart.getMonth() + 1, 0); // 月末日
-        endDate = getBusinessDayEnd(getBusinessDayStart(endDate)); // 念のため営業日補正
+        startDate = getBusinessDayStart(startDate); 
+        endDate = new Date(businessDayStart.getFullYear(), businessDayStart.getMonth() + 1, 0); 
+        endDate = getBusinessDayEnd(getBusinessDayStart(endDate)); 
+    } else {
+        return { paidSlips: [] };
     }
-    // (★注★) weekly はキャストダッシュボードでは使わないため省略
 
     const startTimestamp = startDate.getTime();
     const endTimestamp = endDate.getTime();
@@ -234,24 +140,19 @@ const getSlipsForPeriod = (period, baseDate) => {
         return paidTime >= startTimestamp && paidTime <= endTimestamp;
     });
 
-    const cancelledSlips = slips.filter(slip => {
-        if (slip.status !== 'cancelled') return false; 
-        return true; 
-    });
-
-    return { paidSlips, cancelledSlips, range: { start: startDate, end: endDate } };
+    return { paidSlips };
 };
 
 
 // =================================================
-// (★新規★) キャストダッシュボード専用ロジック
+// (★新規★) キャストダッシュボード専用ロジック (UI改修版)
 // =================================================
 
 /**
  * (★新規★) キャストのサマリーを描画する
  */
 const renderCastDashboardSummary = () => {
-    if (!slips || !DEV_CAST_ID) return; // (★変更★) IDがセットされるまで待つ
+    if (!slips || !DEV_CAST_ID) return; // IDがセットされるまで待つ
 
     // 1. 本日のデータ
     const { paidSlips: todayPaidSlips } = getSlipsForPeriod('daily', new Date());
@@ -259,7 +160,9 @@ const renderCastDashboardSummary = () => {
     let todayNoms = 0;
     todayPaidSlips.forEach(slip => {
         if (slip.nominationCastId === DEV_CAST_ID) {
-            todaySales += (slip.paidAmount || 0);
+            // (★重要★) 将来的に、ここで settings.performanceSettings に基づく
+            // 詳細な売上計算（バック率など）を行う
+            todaySales += (slip.paidAmount || 0); // (★現在は仮★ 伝票の売上をそのまま計上)
             todayNoms += 1;
         }
     });
@@ -270,817 +173,95 @@ const renderCastDashboardSummary = () => {
     let monthNoms = 0;
     monthPaidSlips.forEach(slip => {
         if (slip.nominationCastId === DEV_CAST_ID) {
-            monthSales += (slip.paidAmount || 0);
+            // (★重要★) 将来的に、ここで settings.performanceSettings に基づく
+            // 詳細な売上計算（バック率など）を行う
+            monthSales += (slip.paidAmount || 0); // (★現在は仮★ 伝票の売上をそのまま計上)
             monthNoms += 1;
         }
     });
-
-    // 3. DOMに反映
+    
+    // 3. 報酬・出勤 (★ダミー★)
+    // (※ 将来的にロジックを実装)
+    const monthPay = monthSales * 0.4; // (★仮★ 売上の40%を報酬とする)
+    const workDays = 10; // (★仮★)
+    
+    // 4. DOMに反映
     if (summaryCastTodaySales) summaryCastTodaySales.textContent = formatCurrency(todaySales);
     if (summaryCastTodayNoms) summaryCastTodayNoms.innerHTML = `${todayNoms} <span class="text-base">組</span>`;
     if (summaryCastMonthSales) summaryCastMonthSales.textContent = formatCurrency(monthSales);
-    if (summaryCastMonthNoms) summaryCastMonthNoms.innerHTML = `${monthNoms} <span class="text-base">組</span>`;
+    if (summaryCastMonthNoms) summaryCastMonthNoms.innerHTML = `${monthNoms} <span class="text-lg">組</span>`;
+    if (summaryCastPay) summaryCastPay.textContent = formatCurrency(monthPay);
+    if (summaryCastWorkdays) summaryCastWorkdays.innerHTML = `${workDays} <span class="text-base">日</span>`;
     
-    // 4. ヘッダーに名前を表示
+    // 5. ヘッダーに名前を表示
     if (castHeaderName) castHeaderName.textContent = DEV_CAST_NAME;
 };
 
-
 /**
- * (★新規★) 経過時間を HH:MM 形式でフォーマットする
- * @param {number} ms - ミリ秒
- * @returns {string} HH:MM 形式の文字列
+ * (★新規★) キャストの指名顧客一覧を描画する
  */
-const formatElapsedTime = (ms) => {
-    if (ms < 0) ms = 0;
-    const totalMinutes = Math.floor(ms / (1000 * 60));
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
+const renderCastCustomerList = () => {
+    if (!castCustomerList || !customers || !DEV_CAST_ID) return;
     
-    const hh = String(hours).padStart(2, '0');
-    const mm = String(minutes).padStart(2, '0');
-    
-    return `${hh}:${mm}`;
-};
-
-/**
- * (★新規★) 担当伝票の経過時間を更新する
- */
-const updateElapsedTimes = () => {
-    if (!castActiveSlips) return;
-    
-    const now = new Date();
-    const slipCards = castActiveSlips.querySelectorAll('.elapsed-time[data-start-time]');
-    
-    slipCards.forEach(el => {
-        try {
-            const startTimeStr = el.dataset.startTime;
-            if (!startTimeStr) { 
-                el.textContent = '??:??';
-                return;
-            }
-            const startTime = new Date(startTimeStr);
-            
-            if (isNaN(startTime.getTime())) {
-                el.textContent = '??:??';
-                return;
-            }
-
-            const diffMs = now.getTime() - startTime.getTime();
-            el.textContent = formatElapsedTime(diffMs);
-
-        } catch (e) {
-            console.error("Error parsing start time:", el.dataset.startTime, e);
-            el.textContent = 'Error';
-        }
-    });
-};
-
-
-/**
- * (★新規★) キャストの担当伝票一覧を描画する
- */
-const renderCastActiveSlips = () => {
-    if (!castActiveSlips || !slips || !DEV_CAST_ID) return; 
-    castActiveSlips.innerHTML = ''; 
-
-    // (★変更★) 自分の担当伝票(指名)のみフィルタリング
-    const activeSlips = slips.filter(
-        slip => (slip.status === 'active' || slip.status === 'checkout') &&
-                (slip.nominationCastId === DEV_CAST_ID)
+    // (★変更★) 自分の指名顧客のみフィルタリング
+    const myCustomers = customers.filter(
+        cust => cust.nominatedCastId === DEV_CAST_ID
     );
     
-    activeSlips.sort((a, b) => b.slipNumber - a.slipNumber);
-
-    if (activeSlips.length === 0) {
-        castActiveSlips.innerHTML = '<p class="text-slate-500 text-sm">現在、担当中の伝票はありません。</p>';
-        if (elapsedTimeTimer) {
-            clearInterval(elapsedTimeTimer);
-            elapsedTimeTimer = null;
-        }
+    // (★仮★) 最終来店日をソート (※現状は顧客データに最終来店日がないため、ダミーで名前ソート)
+    myCustomers.sort((a,b) => a.name.localeCompare(b.name));
+    
+    castCustomerList.innerHTML = '';
+    
+    if (myCustomers.length === 0) {
+        castCustomerList.innerHTML = '<p class="text-slate-500 text-sm p-4 text-center">まだ指名顧客が登録されていません。</p>';
         return;
     }
-
-    activeSlips.forEach(slip => {
-        let statusColor, statusText;
-        switch (slip.status) {
-            case 'active':
-                statusColor = 'blue';
-                statusText = '利用中';
-                break;
-            case 'checkout':
-                statusColor = 'orange';
-                statusText = '会計待ち';
-                break;
-        }
+    
+    // (★変更★) 顧客リストのUI
+    myCustomers.slice(0, 5).forEach(cust => { // (★仮★) 上位5件のみ表示
+        // (※ 将来的に slips から最終来店日を計算するロジックが必要)
+        const lastVisit = "最終来店: (ロジック未実装)"; 
         
-        // (★変更★) キャストダッシュボードでは自分の名前は不要
-        // const nominationText = getCastNameById(slip.nominationCastId);
-        
-        const card = `
-            <button class="w-full text-left p-4 bg-white rounded-lg shadow-md border hover:bg-slate-50" 
-                    data-slip-id="${slip.slipId}" data-status="${slip.status}">
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-xl font-bold">
-                        <i class="fa-solid fa-table fa-fw text-slate-400 mr-1"></i>${slip.tableId} (No.${slip.slipNumber})
-                    </span>
-                    <span class="text-xs font-semibold px-2 py-1 bg-${statusColor}-100 text-${statusColor}-700 border border-${statusColor}-300 rounded-full">${statusText}</span>
-                </div>
-                <div class="text-left">
-                    <p class="text-sm font-medium truncate">${slip.name || 'ゲスト'}</p>
-                    <p class="text-sm font-semibold text-orange-600 elapsed-time" data-start-time="${slip.startTime || ''}">--:--</p>
-                </div>
-            </button>
-        `;
-        castActiveSlips.innerHTML += card;
-    });
-
-    // (★新規★) 描画が完了したら、経過時間を即時更新
-    updateElapsedTimes();
-    
-    // (★新規★) タイマーが動いていなければ、10秒ごとに開始
-    if (!elapsedTimeTimer) {
-        elapsedTimeTimer = setInterval(updateElapsedTimes, 10000); // 10秒ごとに更新
-    }
-};
-
-/**
- * (★新規★) 伝票モーダル（注文入力）を描画する
- */
-const renderOrderModal = () => {
-    if (!settings || !menu) return; 
-    const slipData = slips.find(s => s.slipId === currentSlipId); 
-    if (!slipData) return;
-    
-    orderModalTitle.textContent = `テーブル ${slipData.tableId} (No.${slipData.slipNumber} - ${slipData.name})`;
-
-    orderNominationSelect.innerHTML = '<option value="null">フリー</option>';
-    casts.forEach(cast => { 
-        orderNominationSelect.innerHTML += `<option value="${cast.id}">${cast.name}</option>`;
-    });
-    orderNominationSelect.value = slipData.nominationCastId || 'null';
-
-    renderCustomerDropdown(slipData.nominationCastId);
-    
-    const customerExists = customers.find(c => c.name === slipData.name); 
-    if (customerExists) {
-        orderCustomerNameSelect.value = slipData.name;
-        newCustomerInputGroup.classList.add('hidden');
-    } else {
-        orderCustomerNameSelect.value = 'new_customer';
-        newCustomerInputGroup.classList.remove('hidden');
-        newCustomerNameInput.value = (slipData.name === "新規のお客様") ? "" : slipData.name;
-    }
-    newCustomerError.textContent = '';
-
-    renderSlipTags(slipData);
-    
-    orderItemsList.innerHTML = '';
-    let subtotal = 0;
-    slipData.items.forEach(item => {
-        subtotal += item.price * item.qty;
-        orderItemsList.innerHTML += `
-            <div class="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border">
+        const itemHTML = `
+            <div class="bg-white p-4 rounded-xl shadow border border-slate-200 flex justify-between items-center">
                 <div>
-                    <p class="font-semibold">${item.name}</p>
-                    <p class="text-sm text-slate-500">${formatCurrency(item.price)}</p>
+                    <p class="font-semibold">${cust.name}</p>
+                    <p class="text-xs text-slate-500">${lastVisit}</p>
                 </div>
-                <div class="flex items-center space-x-3">
-                    <input type="number" value="${item.qty}" class="w-16 p-1 border rounded text-center order-item-qty-input" data-item-id="${item.id}">
-                    <span class="font-semibold w-20 text-right">${formatCurrency(item.price * item.qty)}</span>
-                    <button class="remove-order-item-btn text-red-500 hover:text-red-700" data-item-id="${item.id}">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                </div>
+                <i class="fa-solid fa-chevron-right text-slate-400"></i>
             </div>
         `;
-    });
-    
-    orderSubtotalEl.textContent = formatCurrency(subtotal);
-
-    menuOrderGrid.innerHTML = ''; 
-    
-    const allMenuItems = (menu.items || []).sort((a,b) => a.name.localeCompare(b.name));
-    
-    if (allMenuItems.length === 0) {
-        menuOrderGrid.innerHTML = '<p class="text-slate-500 text-sm col-span-3">メニューが登録されていません。<br>「メニュー管理」ページから追加してください。</p>';
-    } else {
-        allMenuItems.forEach(item => {
-            menuOrderGrid.innerHTML += `
-                <button class="menu-order-btn p-3 bg-white rounded-lg shadow border text-left hover:bg-slate-100" data-item-id="${item.id}" data-item-name="${item.name}" data-item-price="${item.price}">
-                    <p class="font-semibold text-sm">${item.name}</p>
-                    <p class="text-xs text-slate-500">${formatCurrency(item.price)}</p>
-                </button>
-            `;
-        });
-    }
-};
-
-/**
- * (★新規★) 伝票タグを描画する
- * @param {object} slipData 
- */
-const renderSlipTags = (slipData) => {
-    const container = document.getElementById('order-tags-container');
-    if (!container || !settings) return;
-    container.innerHTML = '';
-    
-    settings.slipTagsMaster.forEach(tag => {
-        const isSelected = slipData.tags.includes(tag.name);
-        const tagClass = isSelected 
-            ? 'bg-blue-600 text-white' 
-            : 'bg-slate-200 text-slate-700 hover:bg-slate-300';
-        
-        container.innerHTML += `
-            <button class="slip-tag-btn px-3 py-1.5 rounded-full text-sm font-medium ${tagClass}" data-tag-name="${tag.name}">
-                ${tag.name}
-            </button>
-        `;
+        castCustomerList.innerHTML += itemHTML;
     });
 };
 
-/**
- * (★新規★) 伝票にタグを追加/削除する
- * @param {string} tagName 
- */
-const toggleSlipTag = async (tagName) => {
-    if (!slips) return;
-    const slipData = slips.find(s => s.slipId === currentSlipId);
-    if (!slipData) return;
-    
-    const tagIndex = slipData.tags.indexOf(tagName);
-    if (tagIndex > -1) {
-        slipData.tags.splice(tagIndex, 1);
-    } else {
-        slipData.tags.push(tagName);
-    }
-    
-    try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { tags: slipData.tags }, { merge: true });
-    } catch (e) {
-        console.error("Error updating slip tags: ", e);
-    }
-    
-    renderSlipTags(slipData);
-};
-
 
 /**
- * (★新規★) 顧客ドロップダウンを描画する
- * @param {string | null} selectedCastId 選択中のキャストID ('null' 文字列または実際のID)
+ * (★新規★) ヘッダーの日付を更新する
  */
-const renderCustomerDropdown = (selectedCastId) => {
-    if (!customers) return; 
-    const targetCastId = selectedCastId === 'null' ? null : selectedCastId;
-
-    const filteredCustomers = customers.filter( 
-        customer => customer.nominatedCastId === targetCastId
-    );
-
-    orderCustomerNameSelect.innerHTML = '';
-    filteredCustomers.forEach(customer => {
-        orderCustomerNameSelect.innerHTML += `<option value="${customer.name}">${customer.name}</option>`;
-    });
-    
-    if (filteredCustomers.length === 0) {
-        orderCustomerNameSelect.innerHTML += `<option value="" disabled>該当する顧客がいません</option>`;
-    }
-
-    orderCustomerNameSelect.innerHTML += `<option value="new_customer" class="text-blue-600 font-bold">--- 新規顧客を追加 ---</option>`;
-};
-
-
-/**
- * (★新規★) 伝票モーダルの顧客情報フォームの変更をstate.slipsに反映する
- */
-const updateSlipInfo = async () => {
-    if (!slips) return; 
-    const slipData = slips.find(s => s.slipId === currentSlipId); 
-    if (!slipData) return;
-
-    const customerName = orderCustomerNameSelect.value;
-    const nominationCastId = orderNominationSelect.value === 'null' ? null : orderNominationSelect.value; 
-
-    let newName = slipData.name;
-    if (customerName !== 'new_customer' && customerName !== "") { 
-        newName = customerName;
-    }
-    
-    orderModalTitle.textContent = `テーブル ${slipData.tableId} (No.${slipData.slipNumber} - ${newName})`;
-
-    try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { 
-            name: newName,
-            nominationCastId: nominationCastId
-        }, { merge: true });
-    } catch (e) {
-        console.error("Error updating slip info: ", e);
-    }
-};
-
-
-/**
- * (★新規★) 注文リストにアイテムを追加する
- * @param {string} id 商品ID
- * @param {string} name 商品名
- * @param {number} price 価格
- */
-const addOrderItem = async (id, name, price) => {
-    if (!slips) return; 
-    const slipData = slips.find(s => s.slipId === currentSlipId); 
-    if (!slipData) return;
-
-    const existingItem = slipData.items.find(item => item.id === id);
-    if (existingItem) {
-        existingItem.qty += 1;
-    } else {
-        slipData.items.push({ id, name, price, qty: 1 });
-    }
-    
-    try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { items: slipData.items }, { merge: true });
-    } catch (e) {
-        console.error("Error adding order item: ", e);
-    }
-    
-    renderOrderModal();
-};
-
-/**
- * (★新規★) 注文リストからアイテムを削除する
- * @param {string} id 商品ID
- */
-const removeOrderItem = async (id) => {
-    if (!slips) return; 
-    const slipData = slips.find(s => s.slipId === currentSlipId); 
-    if (!slipData) return;
-
-    slipData.items = slipData.items.filter(item => item.id !== id);
-    
-    try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { items: slipData.items }, { merge: true });
-    } catch (e) {
-        console.error("Error removing order item: ", e);
-    }
-    renderOrderModal();
-};
-
-/**
- * (★新規★) 注文アイテムの数量を変更する
- * @param {string} id 商品ID
- * @param {number} qty 数量
- */
-const updateOrderItemQty = async (id, qty) => {
-    if (!slips) return; 
-    const slipData = slips.find(s => s.slipId === currentSlipId); 
-    if (!slipData) return;
-
-    const item = slipData.items.find(item => item.id === id);
-    if (item) {
-        item.qty = qty;
-    }
-    
-    try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { items: slipData.items }, { merge: true });
-    } catch (e) {
-        console.error("Error updating order item qty: ", e);
-    }
-    renderOrderModal();
-};
-
-/**
- * (★新規★) 伝票・会計・領収書モーダルの共通情報を更新する
- */
-const updateModalCommonInfo = () => {
-    if (!settings) return;
-
-    const store = settings.storeInfo;
-    const rates = settings.rates;
-
-    // 伝票プレビュー
-    if (slipStoreName) slipStoreName.textContent = store.name;
-    if (slipStoreTel) slipStoreTel.textContent = `TEL: ${store.tel}`;
-    if (slipServiceRate) slipServiceRate.textContent = `サービス料 (${rates.service * 100}%)`;
-    if (slipTaxRate) slipTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
-
-    // 会計
-    if (checkoutStoreName) checkoutStoreName.textContent = store.name;
-    if (checkoutStoreTel) checkoutStoreTel.textContent = `TEL: ${store.tel}`;
-    if (checkoutServiceRate) checkoutServiceRate.textContent = `サービス料 (${rates.service * 100}%)`;
-    if (checkoutTaxRate) checkoutTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
-
-    // 領収書
-    if (receiptStoreName) receiptStoreName.textContent = store.name;
-    if (receiptAddress) receiptAddress.innerHTML = `〒${store.zip || ''}<br>${store.address || ''}`; 
-    if (receiptTel) receiptTel.textContent = `TEL: ${store.tel}`;
-};
-
-
-/**
- * (★新規★) 伝票プレビューモーダルを描画する
- */
-const renderSlipPreviewModal = async () => {
-    if (!settings) return; 
-    const slipData = slips.find(s => s.slipId === currentSlipId); 
-    if (!slipData) return;
-    
-    try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { status: 'checkout' }, { merge: true });
-        slipData.status = 'checkout';
-    } catch (e) {
-        console.error("Error updating slip status: ", e);
-    }
-
-    document.getElementById('slip-preview-title').textContent = `伝票プレビュー (No.${slipData.slipNumber})`;
-    
+const updateHeaderDate = () => {
+    if (!headerDate) return;
     const now = new Date();
-    document.getElementById('slip-datetime').textContent = now.toLocaleString('ja-JP');
-
-    document.getElementById('slip-slip-number').textContent = slipData.slipNumber;
-    document.getElementById('slip-table-id').textContent = slipData.tableId;
-    document.getElementById('slip-customer-name').textContent = slipData.name || 'ゲスト';
-    document.getElementById('slip-nomination').textContent = getCastNameById(slipData.nominationCastId);
-
-    const slipItemsList = document.getElementById('slip-items-list');
-    slipItemsList.innerHTML = '';
-    let subtotal = 0;
-    slipData.items.forEach(item => {
-        subtotal += item.price * item.qty;
-        slipItemsList.innerHTML += `
-            <div class="flex justify-between">
-                <span>${item.name} x ${item.qty}</span>
-                <span class="font-medium">${formatCurrency(item.price * item.qty)}</span>
-            </div>
-        `;
-    });
-    
-    const serviceCharge = subtotal * settings.rates.service;
-    const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * settings.rates.tax;
-    const total = Math.round(subtotalWithService + tax);
-    const paidAmount = slipData.paidAmount || 0;
-    const billingAmount = total - paidAmount;
-
-    slipSubtotalEl.textContent = formatCurrency(subtotal);
-    slipServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
-    slipTaxEl.textContent = formatCurrency(Math.round(tax));
-    slipPaidAmountEl.parentElement.style.display = paidAmount > 0 ? 'flex' : 'none';
-    slipPaidAmountEl.textContent = `-${formatCurrency(paidAmount)}`;
-    slipTotalEl.textContent = formatCurrency(billingAmount);
+    const dateStr = now.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' });
+    const weekdayStr = now.toLocaleDateString('ja-JP', { weekday: 'short' });
+    headerDate.textContent = `${dateStr} (${weekdayStr})`;
 };
 
+// (★削除★) 伝票操作関連の関数をすべて削除
+// renderOrderModal, renderSlipTags, toggleSlipTag, renderCustomerDropdown,
+// updateSlipInfo, addOrderItem, removeOrderItem, updateOrderItemQty,
+// renderSlipPreviewModal, renderCheckoutModal, updatePaymentStatus,
+// renderReceiptModal, renderCancelSlipModal, createNewSlip,
+// renderSlipSelectionModal, renderNewSlipConfirmModal,
+// handleSlipClick, handlePaidSlipClick
 
-/**
- * (★新規★) 会計モーダルを描画する
- */
-const renderCheckoutModal = () => {
-    if (!settings) return; 
-    const slipData = slips.find(s => s.slipId === currentSlipId); 
-    if (!slipData) return;
-
-    checkoutModalTitle.textContent = `テーブル ${slipData.tableId} (No.${slipData.slipNumber} - ${slipData.name}) - お会計`;
-    
-    let subtotal = 0;
-    checkoutItemsList.innerHTML = '';
-    slipData.items.forEach(item => {
-        subtotal += item.price * item.qty;
-        checkoutItemsList.innerHTML += `
-            <div class="flex justify-between">
-                <span>${item.name} x ${item.qty}</span>
-                <span class="font-medium">${formatCurrency(item.price * item.qty)}</span>
-            </div>
-        `;
-    });
-    
-    const serviceCharge = subtotal * settings.rates.service;
-    const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * settings.rates.tax;
-    const total = Math.round(subtotalWithService + tax);
-    const paidAmount = slipData.paidAmount || 0;
-    const preDiscountTotal = total - paidAmount; 
-
-    const discountAmount = parseInt(discountAmountInput.value) || 0;
-    const discountType = discountTypeSelect.value;
-    
-    let finalBillingAmount = preDiscountTotal;
-    if (discountType === 'yen') {
-        finalBillingAmount = preDiscountTotal - discountAmount;
-    } else if (discountType === 'percent') {
-        finalBillingAmount = preDiscountTotal * (1 - (discountAmount / 100));
-    }
-    finalBillingAmount = Math.round(finalBillingAmount); 
-
-    if (finalBillingAmount < 0) {
-        finalBillingAmount = 0;
-    }
-
-    currentBillingAmount = finalBillingAmount; 
-
-    checkoutSubtotalEl.textContent = formatCurrency(subtotal);
-    checkoutServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
-    checkoutTaxEl.textContent = formatCurrency(Math.round(tax));
-    checkoutPaidAmountEl.parentElement.style.display = paidAmount > 0 ? 'flex' : 'none';
-    checkoutPaidAmountEl.textContent = `-${formatCurrency(paidAmount)}`;
-    checkoutTotalEl.textContent = formatCurrency(finalBillingAmount); 
-    
-    paymentCashInput.value = '';
-    paymentCardInput.value = '';
-    paymentCreditInput.value = '';
-
-    updatePaymentStatus(); 
-
-    document.getElementById('receipt-total').textContent = formatCurrency(finalBillingAmount);
-};
-
-/**
- * (★新規★) 会計モーダルの支払い状況を計算・更新する
- */
-const updatePaymentStatus = () => {
-    if (!settings) return; 
-
-    const slipData = slips.find(s => s.slipId === currentSlipId); 
-    if (!slipData) return;
-
-    let subtotal = 0;
-    slipData.items.forEach(item => {
-        subtotal += item.price * item.qty;
-    });
-    
-    const serviceCharge = subtotal * settings.rates.service;
-    const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * settings.rates.tax;
-    const total = Math.round(subtotalWithService + tax);
-    const paidAmount = slipData.paidAmount || 0;
-    const preDiscountTotal = total - paidAmount; 
-
-    const discountAmount = parseInt(discountAmountInput.value) || 0;
-    const discountType = discountTypeSelect.value;
-    
-    let finalBillingAmount = preDiscountTotal;
-    if (discountType === 'yen') {
-        finalBillingAmount = preDiscountTotal - discountAmount;
-    } else if (discountType === 'percent') {
-        finalBillingAmount = preDiscountTotal * (1 - (discountAmount / 100));
-    }
-    finalBillingAmount = Math.round(finalBillingAmount);
-
-    if (finalBillingAmount < 0) {
-        finalBillingAmount = 0;
-    }
-
-    currentBillingAmount = finalBillingAmount;
-    checkoutTotalEl.textContent = formatCurrency(finalBillingAmount);
-    document.getElementById('receipt-total').textContent = formatCurrency(finalBillingAmount);
-    
-    const billingAmount = currentBillingAmount; 
-
-    const cashPayment = parseInt(paymentCashInput.value) || 0;
-    const cardPayment = parseInt(paymentCardInput.value) || 0;
-    const creditPayment = parseInt(paymentCreditInput.value) || 0;
-
-    const totalPayment = cashPayment + cardPayment + creditPayment;
-    
-    let shortage = 0;
-    let change = 0;
-
-    if (totalPayment >= billingAmount) {
-        shortage = 0;
-        const cashDue = billingAmount - cardPayment - creditPayment;
-        if (cashPayment > cashDue && cashDue >= 0) {
-            change = cashPayment - cashDue;
-        } else if (cashPayment > 0 && cashDue < 0) {
-             change = cashPayment;
-        }
-        else {
-            change = 0;
-        }
-    } else {
-        shortage = billingAmount - totalPayment;
-        change = 0;
-    }
-
-    checkoutPaymentTotalEl.textContent = formatCurrency(totalPayment);
-    checkoutShortageEl.textContent = formatCurrency(shortage);
-    checkoutChangeEl.textContent = formatCurrency(change);
-
-    if (shortage > 0) {
-        processPaymentBtn.disabled = true;
-    } else {
-        processPaymentBtn.disabled = false;
-    }
-};
-
-
-/**
- * (★新規★) 領収書モーダルを描画する
- */
-const renderReceiptModal = () => {
-    if (!settings) return; 
-    const now = new Date();
-    document.getElementById('receipt-date').textContent = now.toLocaleDateString('ja-JP');
-    
-    const slipData = slips.find(s => s.slipId === currentSlipId); 
-    if (slipData) {
-        const receiptCustomerName = document.getElementById('receipt-customer-name');
-        if (receiptCustomerName) receiptCustomerName.value = slipData.name || '';
-    }
-    document.getElementById('receipt-total').textContent = formatCurrency(currentBillingAmount);
-};
-
-/**
- * (★新規★) ボツ伝理由入力モーダルを描画する
- */
-const renderCancelSlipModal = () => {
-    if (!slips) return; 
-    const slip = slips.find(s => s.slipId === currentSlipId); 
-    if (!slip) return;
-
-    cancelSlipNumber.textContent = slip.slipNumber;
-    cancelSlipReasonInput.value = '';
-    cancelSlipError.textContent = '';
-    openModal(cancelSlipModal);
-};
-
-
-/**
- * (★新規★) 新しい伝票を作成し、伝票モーダルを開く
- * @param {string} tableId 
- * @param {string} startTimeISO (★変更★) 開始時刻のISO文字列
- */
-const createNewSlip = async (tableId, startTimeISO) => {
-    if (!settings) return; 
-    const table = settings.tables.find(t => t.id === tableId); 
-    if (!table) return;
-
-    const newSlipCounter = (slipCounter || 0) + 1;
-    const newSlipNumber = newSlipCounter;
-
-    const newSlip = {
-        // slipId は addDoc で自動生成
-        slipNumber: newSlipNumber,
-        tableId: tableId,
-        status: 'active',
-        name: "新規のお客様",
-        startTime: startTimeISO,
-        nominationCastId: null, 
-        items: [],
-        tags: [],
-        paidAmount: 0,
-        cancelReason: null,
-        paymentDetails: { cash: 0, card: 0, credit: 0 },
-        paidTimestamp: null, 
-        discount: { type: 'yen', value: 0 }, 
-    };
-    
-    try {
-        const docRef = await addDoc(slipsCollectionRef, newSlip);
-        await setDoc(slipCounterRef, { count: newSlipCounter });
-        currentSlipId = docRef.id;
-
-        if (discountAmountInput) discountAmountInput.value = '';
-        if (discountTypeSelect) discountTypeSelect.value = 'yen';
-
-        renderOrderModal();
-        openModal(orderModal);
-
-    } catch (e) {
-        console.error("Error creating new slip: ", e);
-    }
-};
-
-/**
- * (★新規★) 伝票選択モーダルを描画する
- * @param {string} tableId 
- */
-const renderSlipSelectionModal = (tableId) => {
-    if (!slips) return; 
-    slipSelectionModalTitle.textContent = `テーブル ${tableId} の伝票一覧`;
-    slipSelectionList.innerHTML = '';
-
-    const activeSlips = slips.filter(
-        slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
-    );
-    
-    activeSlips.sort((a, b) => b.slipNumber - a.slipNumber);
-
-    if (activeSlips.length === 0) {
-        slipSelectionList.innerHTML = '<p class="text-slate-500 text-sm">現在アクティブな伝票はありません。</p>';
-    } else {
-        activeSlips.forEach(slip => {
-            let statusColor, statusText;
-            switch (slip.status) {
-                case 'active':
-                    statusColor = 'blue';
-                    statusText = '利用中';
-                    break;
-                case 'checkout':
-                    statusColor = 'orange';
-                    statusText = '会計待ち';
-                    break;
-            }
-            const nominationText = getCastNameById(slip.nominationCastId);
-            
-            const now = new Date();
-            const startTime = new Date(slip.startTime);
-            const diffMs = now.getTime() - startTime.getTime();
-            const elapsedTimeStr = formatElapsedTime(diffMs);
-            const startTimeStr = isNaN(startTime.getTime()) ? '??:??' : startTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-
-            slipSelectionList.innerHTML += `
-                <button class="w-full text-left p-4 bg-slate-50 rounded-lg hover:bg-slate-100 border" data-slip-id="${slip.slipId}">
-                    <div class="flex justify-between items-center">
-                        <span class="font-semibold text-lg truncate">(No.${slip.slipNumber}) ${slip.name} (${nominationText})</span>
-                        <span class="text-sm font-medium text-${statusColor}-600 bg-${statusColor}-100 px-2 py-1 rounded-full">${statusText}</span>
-                    </div>
-                    <p class="text-sm text-slate-500 mt-1">
-                        開始: ${startTimeStr}〜 
-                        (<span class="font-semibold text-orange-600">${elapsedTimeStr}</span> 経過)
-                    </p>
-                </button>
-            `;
-        });
-    }
-    
-    createNewSlipBtn.dataset.tableId = tableId;
-    openModal(slipSelectionModal);
-};
-
-/**
- * (★新規★) 新規伝票の作成確認モーダルを描画・表示する
- * @param {string} tableId 
- */
-const renderNewSlipConfirmModal = (tableId) => {
-    const modalStartTimeInput = document.getElementById('new-slip-start-time-input');
-    const modalTimeError = document.getElementById('new-slip-time-error');
-    
-    newSlipConfirmTitle.textContent = `伝票の新規作成 (${tableId})`;
-    newSlipConfirmMessage.textContent = `テーブル ${tableId} で新しい伝票を作成しますか？`;
-
-    if (modalStartTimeInput) {
-        modalStartTimeInput.value = formatDateTimeLocal(new Date());
-    }
-    if (modalTimeError) {
-        modalTimeError.textContent = '';
-    }
-
-    confirmCreateSlipBtn.dataset.tableId = tableId; 
-
-    openModal(newSlipConfirmModal);
-};
-
-/**
- * (★新規★) 未会計伝票カードクリック時の処理
- * @param {string} slipId 
- */
-const handleSlipClick = (slipId) => {
-    if (!slips) return; 
-    const slipData = slips.find(s => s.slipId === slipId); 
-    if (!slipData) return;
-
-    currentSlipId = slipId; 
-
-    const discount = slipData.discount || { type: 'yen', value: 0 };
-    discountAmountInput.value = discount.value;
-    discountTypeSelect.value = discount.type;
-    
-    renderOrderModal();
-    openModal(orderModal);
-};
-
-/**
- * (★新規★) 会計済み伝票カードクリック時の処理
- * @param {string} slipId 
- */
-const handlePaidSlipClick = (slipId) => {
-    if (!slips) return; 
-    const slipData = slips.find(s => s.slipId === slipId); 
-    if (!slipData) return;
-
-    currentSlipId = slipId; 
-    
-    const discount = slipData.discount || { type: 'yen', value: 0 };
-    discountAmountInput.value = discount.value;
-    discountTypeSelect.value = discount.type;
-
-    renderCheckoutModal(); 
-    renderReceiptModal();
-    openModal(receiptModal);
-};
-
-
-// (★新規★) デフォルトデータ取得（開発用）
+// (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+// (※ データ構造の基盤となるため、このファイルにも定義を残します)
 const getDefaultSettings = () => {
     return {
         slipTagsMaster: [
             { id: 'tag1', name: '指名' }, { id: 'tag2', name: '初指名' },
-            { id: 'tag3', name: '初回' }, { id: 'tag4', name: '枝' },
-            { id: 'tag5', name: '切替' }, { id: 'tag6', name: '案内所' },
         ],
         tables: [
             { id: 'V1', status: 'available' }, { id: 'V2', status: 'available' },
@@ -1123,6 +304,7 @@ const getDefaultMenu = () => {
     };
 };
 
+
 // (★変更★) --- Firestore リアルタイムリスナー ---
 document.addEventListener('firebaseReady', (e) => {
     
@@ -1146,17 +328,22 @@ document.addEventListener('firebaseReady', (e) => {
             
             // (★新規★) 開発用キャストIDを設定
             if (casts.length > 0) {
-                DEV_CAST_ID = casts[0].id;
+                // (★仮★) 本来は認証ユーザーIDと紐づくキャストIDを使う
+                // 開発用として、リストの先頭のキャストIDを使用する
+                DEV_CAST_ID = casts[0].id; 
                 DEV_CAST_NAME = casts[0].name;
+                console.log(`DEV_CAST_ID set to: ${DEV_CAST_ID} (${DEV_CAST_NAME})`);
             } else {
                 console.warn("No casts found. Defaulting DEV_CAST_ID to null.");
                 DEV_CAST_ID = null;
                 DEV_CAST_NAME = "キャスト未登録";
             }
             
+            // (★変更★) 呼び出す関数を変更
             renderCastDashboardSummary();
-            renderCastActiveSlips();
-            updateModalCommonInfo(); 
+            renderCastCustomerList();
+            updateHeaderDate();
+            // (★削除★) 注文モーダルは無いため updateModalCommonInfo は不要
         }
     };
 
@@ -1227,7 +414,7 @@ document.addEventListener('firebaseReady', (e) => {
     onSnapshot(slipsCollectionRef, (querySnapshot) => {
         slips = [];
         querySnapshot.forEach((doc) => {
-            slips.push({ ...doc.data(), slipId: doc.id }); // (★注意★) slipId フィールド
+            slips.push({ ...doc.data(), slipId: doc.id }); 
         });
         console.log("Slips loaded: ", slips.length);
         slipsLoaded = true;
@@ -1246,421 +433,25 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // ===== DOM要素の取得 =====
     castHeaderName = document.getElementById('cast-header-name');
+    headerDate = document.getElementById('header-date');
     summaryCastTodaySales = document.getElementById('summary-cast-today-sales');
     summaryCastTodayNoms = document.getElementById('summary-cast-today-noms');
     summaryCastMonthSales = document.getElementById('summary-cast-month-sales');
     summaryCastMonthNoms = document.getElementById('summary-cast-month-noms');
-    castActiveSlips = document.getElementById('cast-active-slips');
+    summaryCastPay = document.getElementById('summary-cast-pay');
+    summaryCastWorkdays = document.getElementById('summary-cast-workdays');
+    castCustomerList = document.getElementById('cast-customer-list');
     
-    orderModal = document.getElementById('order-modal');
-    checkoutModal = document.getElementById('checkout-modal');
-    receiptModal = document.getElementById('receipt-modal');
-    slipPreviewModal = document.getElementById('slip-preview-modal');
-    modalCloseBtns = document.querySelectorAll('.modal-close-btn');
-    openSlipPreviewBtn = document.getElementById('open-slip-preview-btn');
-    processPaymentBtn = document.getElementById('process-payment-btn');
-    printSlipBtn = document.getElementById('print-slip-btn');
-    goToCheckoutBtn = document.getElementById('go-to-checkout-btn');
-    reopenSlipBtn = document.getElementById('reopen-slip-btn');
-    menuEditorModal = document.getElementById('menu-editor-modal');
-    menuEditorModalTitle = document.getElementById('menu-editor-modal-title');
-    menuEditorForm = document.getElementById('menu-editor-form');
-    menuCategorySelect = document.getElementById('menu-category');
-    menuNameInput = document.getElementById('menu-name');
-    menuDurationGroup = document.getElementById('menu-duration-group');
-    menuDurationInput = document.getElementById('menu-duration');
-    menuPriceInput = document.getElementById('menu-price');
-    menuEditorError = document.getElementById('menu-editor-error');
-    saveMenuItemBtn = document.getElementById('save-menu-item-btn');
-    cancelSlipModal = document.getElementById('cancel-slip-modal');
-    openCancelSlipModalBtn = document.getElementById('open-cancel-slip-modal-btn');
-    cancelSlipModalTitle = document.getElementById('cancel-slip-modal-title');
-    cancelSlipNumber = document.getElementById('cancel-slip-number');
-    cancelSlipReasonInput = document.getElementById('cancel-slip-reason-input');
-    cancelSlipError = document.getElementById('cancel-slip-error');
-    confirmCancelSlipBtn = document.getElementById('confirm-cancel-slip-btn');
-    slipSelectionModal = document.getElementById('slip-selection-modal');
-    slipSelectionModalTitle = document.getElementById('slip-selection-modal-title');
-    slipSelectionList = document.getElementById('slip-selection-list');
-    createNewSlipBtn = document.getElementById('create-new-slip-btn');
-    newSlipConfirmModal = document.getElementById('new-slip-confirm-modal');
-    newSlipConfirmTitle = document.getElementById('new-slip-confirm-title');
-    newSlipConfirmMessage = document.getElementById('new-slip-confirm-message');
-    confirmCreateSlipBtn = document.getElementById('confirm-create-slip-btn');
+    // (★削除★) 注文モーダル関連のDOM取得を削除
+    // orderModal = document.getElementById('order-modal');
+    // ... (以下すべて削除) ...
+    modalCloseBtns = document.querySelectorAll('.modal-close-btn'); // (★削除★) モーダルが無いため不要
     
-    newSlipStartTimeInput = document.getElementById('new-slip-start-time-input');
-    newSlipTimeError = document.getElementById('new-slip-time-error');
-    
-    orderModalTitle = document.getElementById('order-modal-title');
-    orderItemsList = document.getElementById('order-items-list');
-    menuOrderGrid = document.getElementById('menu-order-grid');
-    orderSubtotalEl = document.getElementById('order-subtotal');
-    orderCustomerNameSelect = document.getElementById('order-customer-name-select');
-    orderNominationSelect = document.getElementById('order-nomination-select');
-    newCustomerInputGroup = document.getElementById('new-customer-input-group');
-    newCustomerNameInput = document.getElementById('new-customer-name-input');
-    saveNewCustomerBtn = document.getElementById('save-new-customer-btn');
-    newCustomerError = document.getElementById('new-customer-error');
-    checkoutModalTitle = document.getElementById('checkout-modal-title');
-    checkoutItemsList = document.getElementById('checkout-items-list');
-    checkoutSubtotalEl = document.getElementById('checkout-subtotal');
-    checkoutServiceChargeEl = document.getElementById('checkout-service-charge');
-    checkoutTaxEl = document.getElementById('checkout-tax');
-    checkoutPaidAmountEl = document.getElementById('checkout-paid-amount');
-    checkoutTotalEl = document.getElementById('checkout-total');
-    paymentCashInput = document.getElementById('payment-cash');
-    paymentCardInput = document.getElementById('payment-card');
-    paymentCreditInput = document.getElementById('payment-credit');
-    checkoutPaymentTotalEl = document.getElementById('checkout-payment-total');
-    checkoutShortageEl = document.getElementById('checkout-shortage');
-    checkoutChangeEl = document.getElementById('checkout-change');
-    slipSubtotalEl = document.getElementById('slip-subtotal');
-    slipServiceChargeEl = document.getElementById('slip-service-charge');
-    slipTaxEl = document.getElementById('slip-tax');
-    slipPaidAmountEl = document.getElementById('slip-paid-amount');
-    slipTotalEl = document.getElementById('slip-total');
-    
-    slipStoreName = document.getElementById('slip-store-name');
-    slipStoreTel = document.getElementById('slip-store-tel');
-    slipServiceRate = document.getElementById('slip-service-rate');
-    slipTaxRate = document.getElementById('slip-tax-rate');
-    checkoutStoreName = document.getElementById('checkout-store-name');
-    checkoutStoreTel = document.getElementById('checkout-store-tel');
-    checkoutServiceRate = document.getElementById('checkout-service-rate');
-    checkoutTaxRate = document.getElementById('checkout-tax-rate');
-    receiptStoreName = document.getElementById('receipt-store-name');
-    receiptAddress = document.getElementById('receipt-address');
-    receiptTel = document.getElementById('receipt-tel');
-
-    discountAmountInput = document.getElementById('discount-amount');
-    discountTypeSelect = document.getElementById('discount-type');
-
-
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
     
     // ===== イベントリスナーの設定 =====
 
-    // (★新規★) 担当伝票一覧のイベント委任
-    if (castActiveSlips) {
-        castActiveSlips.addEventListener('click', (e) => {
-            const card = e.target.closest('button[data-slip-id]');
-            if (card) {
-                if (card.dataset.status !== 'paid') {
-                    handleSlipClick(card.dataset.slipId);
-                }
-            }
-        });
-    }
-
-    // モーダルを閉じるボタン
-    modalCloseBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            closeModal(orderModal);
-            closeModal(checkoutModal);
-            closeModal(receiptModal);
-            closeModal(slipPreviewModal);
-            closeModal(slipSelectionModal);
-            closeModal(newSlipConfirmModal);
-            closeModal(cancelSlipModal);
-            closeModal(menuEditorModal);
-            
-            if(discountAmountInput) discountAmountInput.value = '';
-            if(discountTypeSelect) discountTypeSelect.value = 'yen';
-        });
-    });
-    
-    // (★流用★) 以下、伝票操作に必要なリスナー
-    
-    if (orderNominationSelect) {
-        orderNominationSelect.addEventListener('change', (e) => {
-            const selectedCastId = e.target.value;
-            renderCustomerDropdown(selectedCastId);
-            updateSlipInfo(); 
-        });
-    }
-
-    if (orderCustomerNameSelect) {
-        orderCustomerNameSelect.addEventListener('change', (e) => {
-            if (e.target.value === 'new_customer') {
-                newCustomerInputGroup.classList.remove('hidden');
-                newCustomerNameInput.value = '';
-                newCustomerError.textContent = '';
-                newCustomerNameInput.focus();
-                
-                if (slips) {
-                    const slipData = slips.find(s => s.slipId === currentSlipId);
-                    if (slipData) {
-                        slipData.name = "新規のお客様";
-                        updateSlipInfo();
-                    }
-                }
-
-            } else {
-                newCustomerInputGroup.classList.add('hidden');
-                newCustomerError.textContent = '';
-                updateSlipInfo();
-            }
-        });
-    }
-
-    if (saveNewCustomerBtn) {
-        saveNewCustomerBtn.addEventListener('click', async () => {
-            if (!customers) return;
-            const newName = newCustomerNameInput.value.trim();
-            if (newName === "") {
-                newCustomerError.textContent = "顧客名を入力してください。";
-                return;
-            }
-            
-            const existingCustomer = customers.find(c => c.name === newName);
-            if (existingCustomer) {
-                newCustomerError.textContent = "その顧客名は既に使用されています。";
-                return;
-            }
-
-            const currentCastId = orderNominationSelect.value === 'null' ? null : orderNominationSelect.value;
-            const newCustomer = { id: getUUID(), name: newName, nominatedCastId: currentCastId };
-            
-            try {
-                await addDoc(customersCollectionRef, newCustomer);
-                
-                const slipData = slips.find(s => s.slipId === currentSlipId);
-                if (slipData) {
-                    slipData.name = newName;
-                    updateSlipInfo();
-                }
-                
-                newCustomerInputGroup.classList.add('hidden');
-                newCustomerError.textContent = '';
-                
-            } catch (e) {
-                 console.error("Error adding new customer: ", e);
-                 newCustomerError.textContent = "顧客の保存に失敗しました。";
-            }
-        });
-    }
-
-    if (openSlipPreviewBtn) {
-        openSlipPreviewBtn.addEventListener('click', async () => {
-            await updateSlipInfo();
-            await renderSlipPreviewModal(); 
-            closeModal(orderModal);
-            openModal(slipPreviewModal);
-        });
-    }
-
-    if (openCancelSlipModalBtn) {
-        openCancelSlipModalBtn.addEventListener('click', () => {
-            renderCancelSlipModal();
-        });
-    }
-
-    if (confirmCancelSlipBtn) {
-        confirmCancelSlipBtn.addEventListener('click', async () => {
-            if (!slips) return;
-            const reason = cancelSlipReasonInput.value.trim();
-            if (reason === "") {
-                cancelSlipError.textContent = "ボツ伝にする理由を必ず入力してください。";
-                return;
-            }
-
-            const slip = slips.find(s => s.slipId === currentSlipId);
-            if (slip) {
-                try {
-                    const slipRef = doc(slipsCollectionRef, currentSlipId);
-                    await setDoc(slipRef, { 
-                        status: 'cancelled',
-                        cancelReason: reason
-                    }, { merge: true });
-                    
-                    closeModal(orderModal);
-                    closeModal(cancelSlipModal);
-
-                } catch (e) {
-                    console.error("Error cancelling slip: ", e);
-                    cancelSlipError.textContent = "伝票のキャンセルに失敗しました。";
-                }
-            }
-        });
-    }
-
-    if (printSlipBtn) {
-        printSlipBtn.addEventListener('click', () => {
-            window.print();
-        });
-    }
-
-    if (goToCheckoutBtn) {
-        goToCheckoutBtn.addEventListener('click', () => {
-            renderCheckoutModal();
-            closeModal(slipPreviewModal);
-            openModal(checkoutModal);
-        });
-    }
-
-    if (discountAmountInput) {
-        discountAmountInput.addEventListener('input', updatePaymentStatus);
-    }
-    if (discountTypeSelect) {
-        discountTypeSelect.addEventListener('change', updatePaymentStatus);
-    }
-
-    if (paymentCashInput) {
-        paymentCashInput.addEventListener('input', updatePaymentStatus);
-    }
-    if (paymentCardInput) {
-        paymentCardInput.addEventListener('input', updatePaymentStatus);
-    }
-    if (paymentCreditInput) {
-        paymentCreditInput.addEventListener('input', updatePaymentStatus);
-    }
-
-    if (processPaymentBtn) {
-        processPaymentBtn.addEventListener('click', async () => {
-            if (!slips) return;
-            const slip = slips.find(s => s.slipId === currentSlipId);
-            if (!slip) return;
-
-            const updatedSlipData = {
-                paidAmount: currentBillingAmount, 
-                paymentDetails: {
-                    cash: parseInt(paymentCashInput.value) || 0,
-                    card: parseInt(paymentCardInput.value) || 0,
-                    credit: parseInt(paymentCreditInput.value) || 0
-                },
-                discount: {
-                    type: discountTypeSelect.value,
-                    value: parseInt(discountAmountInput.value) || 0
-                },
-                status: 'paid',
-                paidTimestamp: new Date().toISOString()
-            };
-            
-            try {
-                const slipRef = doc(slipsCollectionRef, currentSlipId);
-                await setDoc(slipRef, updatedSlipData, { merge: true });
-
-                renderReceiptModal();
-                closeModal(checkoutModal);
-                openModal(receiptModal);
-
-            } catch (e) {
-                console.error("Error processing payment: ", e);
-            }
-        });
-    }
-
-    if (reopenSlipBtn) {
-        reopenSlipBtn.addEventListener('click', async () => {
-            if (!slips) return;
-            const slip = slips.find(s => s.slipId === currentSlipId);
-            if (slip) {
-                const updatedSlipData = {
-                    status: 'active', 
-                    paidAmount: 0,
-                    paymentDetails: { cash: 0, card: 0, credit: 0 },
-                    paidTimestamp: null, 
-                    discount: { type: 'yen', value: 0 }
-                };
-                
-                try {
-                    const slipRef = doc(slipsCollectionRef, currentSlipId);
-                    await setDoc(slipRef, updatedSlipData, { merge: true });
-                    
-                    closeModal(receiptModal);
-                    handleSlipClick(currentSlipId);
-                } catch (e) {
-                    console.error("Error reopening slip: ", e);
-                }
-            }
-        });
-    }
-
-    if (orderItemsList) {
-        orderItemsList.addEventListener('click', (e) => {
-            const removeBtn = e.target.closest('.remove-order-item-btn');
-            if (removeBtn) {
-                const itemId = removeBtn.dataset.itemId;
-                if (itemId) {
-                    removeOrderItem(itemId);
-                }
-            }
-        });
-        
-        orderItemsList.addEventListener('change', (e) => {
-            if (e.target.classList.contains('order-item-qty-input')) {
-                const itemId = e.target.dataset.itemId;
-                const newQty = parseInt(e.target.value);
-                
-                if (itemId && !isNaN(newQty) && newQty > 0) {
-                    updateOrderItemQty(itemId, newQty);
-                } else if (itemId && (!isNaN(newQty) && newQty <= 0)) {
-                    removeOrderItem(itemId);
-                }
-            }
-        });
-    }
-    
-    const tagsContainer = document.getElementById('order-tags-container');
-    if (tagsContainer) {
-        tagsContainer.addEventListener('click', (e) => {
-            const tagBtn = e.target.closest('.slip-tag-btn');
-            if (tagBtn) {
-                toggleSlipTag(tagBtn.dataset.tagName);
-            }
-        });
-    }
-    
-    if (menuOrderGrid) {
-        menuOrderGrid.addEventListener('click', (e) => {
-            const menuBtn = e.target.closest('.menu-order-btn');
-            if (menuBtn) {
-                addOrderItem(
-                    menuBtn.dataset.itemId,
-                    menuBtn.dataset.itemName,
-                    parseInt(menuBtn.dataset.itemPrice)
-                );
-            }
-        });
-    }
-    
-    if (slipSelectionList) {
-        slipSelectionList.addEventListener('click', (e) => {
-            const slipBtn = e.target.closest('button[data-slip-id]');
-            if (slipBtn) {
-                handleSlipClick(slipBtn.dataset.slipId);
-                closeModal(slipSelectionModal);
-            }
-        });
-    }
-
-    if (createNewSlipBtn) {
-        createNewSlipBtn.addEventListener('click', () => {
-            const tableId = createNewSlipBtn.dataset.tableId;
-            if (tableId) {
-                renderNewSlipConfirmModal(tableId);
-                closeModal(slipSelectionModal);
-            }
-        });
-    }
-    
-    if (confirmCreateSlipBtn) {
-        confirmCreateSlipBtn.addEventListener('click', () => {
-            const tableId = confirmCreateSlipBtn.dataset.tableId;
-            const startTimeValue = newSlipStartTimeInput ? newSlipStartTimeInput.value : '';
-            if (!startTimeValue) {
-                if (newSlipTimeError) newSlipTimeError.textContent = '開始時刻を入力してください。';
-                return;
-            }
-            if (newSlipTimeError) newSlipTimeError.textContent = '';
-            
-            const startTimeISO = new Date(startTimeValue).toISOString();
-            
-            if (tableId) {
-                createNewSlip(tableId, startTimeISO); 
-                closeModal(newSlipConfirmModal);
-            }
-        });
-    }
+    // (★削除★) 注文モーダル関連のリスナーをすべて削除
+    // (modalCloseBtns, castActiveSlips, orderNominationSelect, etc...)
 
 });

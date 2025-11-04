@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Night POS - 設定</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="text-slate-800 bg-slate-50">
+
+    <header class="h-16 bg-white shadow-md flex items-center justify-between px-4 sticky top-0 z-40 non-printable">
+        <div>
+            <h2 id="page-title" class="text-xl font-semibold text-slate-700">設定</h2>
+        </div>
+        <div class="flex items-center space-x-4">
+            <span id="cast-header-name" class="text-sm font-semibold">キャスト名...</span>
+            <button id="logout-button-header" class="text-slate-500 hover:text-red-600">
+                <i class="fa-solid fa-right-from-bracket fa-lg"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 p-4 pb-24">
+        
+        <div id="cast-app-settings-page" class="space-y-6">
+            
+            <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
+                <h3 class="text-lg font-semibold mb-4 border-b pb-2">プロフィール</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label for="cast-name-input" class="text-sm font-semibold text-slate-600">表示名</label>
+                        <input type="text" id="cast-name-input" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-slate-100" value="キャスト名..." disabled>
+                        <p class="text-xs text-slate-500 mt-1">表示名の変更は管理者に依頼してください。</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
+                <h3 class="text-lg font-semibold mb-4 border-b pb-2">セキュリティ</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label for="cast-password-current" class="text-sm font-semibold text-slate-600">現在のパスワード</label>
+                        <input type="password" id="cast-password-current" class="w-full p-2 border border-slate-300 rounded-lg mt-1" disabled>
+                    </div>
+                    <div>
+                        <label for="cast-password-new" class="text-sm font-semibold text-slate-600">新しいパスワード</label>
+                        <input type="password" id="cast-password-new" class="w-full p-2 border border-slate-300 rounded-lg mt-1" disabled>
+                    </div>
+                    <button id="save-password-btn" class="w-full px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-50" disabled>
+                        パスワードを変更
+                    </button>
+                    <p id="password-feedback" class="text-sm text-center"></p>
+                </div>
+            </div>
+            
+            <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200">
+                <h3 class="text-lg font-semibold mb-4 border-b pb-2">通知設定</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <label for="notify-new-slip" class="font-medium text-slate-700">指名伝票の開始通知</label>
+                        <input type="checkbox" id="notify-new-slip" class="rounded h-5 w-5 text-blue-600" checked disabled>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <label for="notify-checkout" class="font-medium text-slate-700">担当伝票の会計通知</label>
+                        <input type="checkbox" id="notify-checkout" class="rounded h-5 w-5 text-blue-600" checked disabled>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-8">
+                 <button id="logout-button-main" class="w-full px-4 py-3 rounded-lg bg-white text-red-600 font-semibold border border-red-300 hover:bg-red-50">
+                    ログアウト
+                </button>
+            </div>
+
+
+        </div>
+
+    </main>
+
+    <nav class="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 shadow-t-lg flex justify-around items-center z-40 non-printable">
+        <a href="cast-dashboard.html" class="bottom-nav-link">
+            <i class="fa-solid fa-chart-pie fa-lg"></i>
+        </a>
+        <a href="cast-customers.html" class="bottom-nav-link">
+            <i class="fa-solid fa-users fa-lg"></i>
+        </a>
+        <a href="cast-pay.html" class="bottom-nav-link">
+            <i class="fa-solid fa-yen-sign fa-lg"></i>
+        </a>
+        <a href="cast-app-settings.html" class="bottom-nav-link active">
+            <i class="fa-solid fa-gear fa-lg"></i>
+        </a>
+    </nav>
+
+
+    <script type="module" src="cast-app-settings.js"></script>
+</body>
+</html>
