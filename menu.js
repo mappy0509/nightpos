@@ -4,9 +4,21 @@ import {
     auth, 
     onSnapshot, 
     setDoc, 
-    doc 
+    addDoc, // (★新規★)
+    deleteDoc, // (★新規★)
+    doc,
+    collection // (★新規★)
 } from './firebase-init.js';
-// (削除) getFirebaseServices のインポートを削除
+
+// (★新規★) 新しい参照をインポート
+import {
+    settingsRef,
+    menuRef,
+    slipCounterRef,
+    castsCollectionRef,
+    customersCollectionRef,
+    slipsCollectionRef
+} from './firebase-init.js';
 
 // ===== グローバル定数・変数 =====
 
@@ -18,9 +30,18 @@ const getUUID = () => {
     return crypto.randomUUID();
 };
 
-// (変更) state は onSnapshot で取得するため、ローカルの state オブジェクトを削除
-let state = null;
-let stateDocRef = null; // (変更) stateDocRef をグローバルで保持
+// (★変更★) state を分割して管理
+let settings = null;
+let menu = null;
+let casts = [];
+let customers = [];
+let slips = [];
+let slipCounter = 0;
+
+// (★変更★) 現在選択中の伝票ID (ローカル管理)
+let currentSlipId = null;
+let currentBillingAmount = 0;
+let currentEditingMenuId = null; // (★変更★) ローカル管理
 
 // ===== DOM要素 =====
 // (★修正★) menu.js (menu.html) に必要なDOMのみに限定
@@ -111,22 +132,19 @@ const formatElapsedTime = (ms) => {
  * @returns {number} 合計金額
  */
 const calculateSlipTotal = (slip) => {
-    if (!state) return 0; // (変更) state がロードされるまで待つ
+    if (!settings) return 0; // (★変更★)
     if (slip.status === 'cancelled') {
         return 0;
     }
     let subtotal = 0;
-    // (★変更★) state.menu.items から商品情報を参照
-    if (!state.menu || !state.menu.items) return 0;
     
     slip.items.forEach(slipItem => {
-        // (★変更★) 伝票保存時の価格を使う (state.menu.items[N].price は変わる可能性があるため)
         subtotal += slipItem.price * slipItem.qty;
     });
     
-    const serviceCharge = subtotal * state.rates.service;
+    const serviceCharge = subtotal * settings.rates.service; // (★変更★)
     const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * state.rates.tax;
+    const tax = subtotalWithService * settings.rates.tax; // (★変更★)
     const total = subtotalWithService + tax;
     return Math.round(total);
 };
@@ -143,9 +161,9 @@ const calculateSlipTotal = (slip) => {
  * @returns {string} キャスト名
  */
 const getCastNameById = (castId) => {
-    if (!state) return '不明'; // (変更) state がロードされるまで待つ
+    if (!casts) return '不明'; // (★変更★)
     if (!castId) return 'フリー';
-    const cast = state.casts.find(c => c.id === castId);
+    const cast = casts.find(c => c.id === castId); // (★変更★)
     return cast ? cast.name : '不明';
 };
 
@@ -156,8 +174,8 @@ const getCastNameById = (castId) => {
  * @returns {number} 未会計伝票数
  */
 const getActiveSlipCount = (tableId) => {
-    if (!state) return 0; // (変更) state がロードされるまで待つ
-    return state.slips.filter(
+    if (!slips) return 0; // (★変更★)
+    return slips.filter( // (★変更★)
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     ).length;
 };
@@ -171,61 +189,277 @@ const getActiveSlipCount = (tableId) => {
 
 
 /**
- * (変更) 伝票モーダル（注文入力）を描画する (menu.jsでは不要)
+ * (変更) 伝票モーダル（注文入力）を描画する (menu.jsでは不要だがモーダルが存在するため残す)
  */
-// (★削除★)
-// const renderOrderModal = () => { ... };
+const renderOrderModal = () => {
+    if (!settings || !menu) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
+    if (!slipData) return;
+    
+    orderModalTitle.textContent = `テーブル ${slipData.tableId} (No.${slipData.slipNumber} - ${slipData.name})`;
+
+    orderNominationSelect.innerHTML = '<option value="null">フリー</option>';
+    casts.forEach(cast => { // (★変更★)
+        orderNominationSelect.innerHTML += `<option value="${cast.id}">${cast.name}</option>`;
+    });
+    orderNominationSelect.value = slipData.nominationCastId || 'null';
+
+    renderCustomerDropdown(slipData.nominationCastId);
+    
+    const customerExists = customers.find(c => c.name === slipData.name); // (★変更★)
+    if (customerExists) {
+        orderCustomerNameSelect.value = slipData.name;
+        newCustomerInputGroup.classList.add('hidden');
+    } else {
+        orderCustomerNameSelect.value = 'new_customer';
+        newCustomerInputGroup.classList.remove('hidden');
+        newCustomerNameInput.value = (slipData.name === "新規のお客様") ? "" : slipData.name;
+    }
+    newCustomerError.textContent = '';
+
+    // (新規) 伝票タグを描画
+    renderSlipTags(slipData);
+    
+    orderItemsList.innerHTML = '';
+    let subtotal = 0;
+    slipData.items.forEach(item => {
+        subtotal += item.price * item.qty;
+        orderItemsList.innerHTML += `
+            <div class="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border">
+                <div>
+                    <p class="font-semibold">${item.name}</p>
+                    <p class="text-sm text-slate-500">${formatCurrency(item.price)}</p>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <input type="number" value="${item.qty}" class="w-16 p-1 border rounded text-center order-item-qty-input" data-item-id="${item.id}">
+                    <span class="font-semibold w-20 text-right">${formatCurrency(item.price * item.qty)}</span>
+                    <button class="remove-order-item-btn text-red-500 hover:text-red-700" data-item-id="${item.id}">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    orderSubtotalEl.textContent = formatCurrency(subtotal);
+
+    menuOrderGrid.innerHTML = ''; 
+    
+    const allMenuItems = (menu.items || []).sort((a,b) => a.name.localeCompare(b.name)); // (★変更★)
+    
+    if (allMenuItems.length === 0) {
+        menuOrderGrid.innerHTML = '<p class="text-slate-500 text-sm col-span-3">メニューが登録されていません。<br>「メニュー管理」ページから追加してください。</p>';
+    } else {
+        allMenuItems.forEach(item => {
+            menuOrderGrid.innerHTML += `
+                <button class="menu-order-btn p-3 bg-white rounded-lg shadow border text-left hover:bg-slate-100" data-item-id="${item.id}" data-item-name="${item.name}" data-item-price="${item.price}">
+                    <p class="font-semibold text-sm">${item.name}</p>
+                    <p class="text-xs text-slate-500">${formatCurrency(item.price)}</p>
+                </button>
+            `;
+        });
+    }
+};
 
 /**
- * (新規) 顧客ドロップダウンを描画する (menu.jsでは不要)
+ * (新規) 伝票タグを描画する
+ * @param {object} slipData 
  */
-// (★削除★)
-// const renderCustomerDropdown = (selectedCastId) => { ... };
+const renderSlipTags = (slipData) => {
+    const container = document.getElementById('order-tags-container');
+    if (!container || !settings) return; // (★変更★)
+    container.innerHTML = '';
+    
+    settings.slipTagsMaster.forEach(tag => { // (★変更★)
+        const isSelected = slipData.tags.includes(tag.name);
+        const tagClass = isSelected 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-slate-200 text-slate-700 hover:bg-slate-300';
+        
+        container.innerHTML += `
+            <button class="slip-tag-btn px-3 py-1.5 rounded-full text-sm font-medium ${tagClass}" data-tag-name="${tag.name}">
+                ${tag.name}
+            </button>
+        `;
+    });
+};
+
+/**
+ * (新規) 伝票にタグを追加/削除する
+ * @param {string} tagName 
+ */
+const toggleSlipTag = async (tagName) => {
+    if (!slips) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
+    if (!slipData) return;
+    
+    const tagIndex = slipData.tags.indexOf(tagName);
+    if (tagIndex > -1) {
+        slipData.tags.splice(tagIndex, 1);
+    } else {
+        slipData.tags.push(tagName);
+    }
+    
+    // (★変更★)
+    try {
+        const slipRef = doc(slipsCollectionRef, currentSlipId);
+        await setDoc(slipRef, { tags: slipData.tags }, { merge: true });
+    } catch (e) {
+        console.error("Error updating slip tags: ", e);
+    }
+    
+    renderSlipTags(slipData);
+};
 
 
 /**
- * (変更) 伝票モーダルの顧客情報フォームの変更をstate.slipsに反映する (menu.jsでは不要)
+ * (新規) 顧客ドロップダウンを描画する (menu.jsでは不要だがモーダルが存在するため残す)
+ * @param {string | null} selectedCastId 選択中のキャストID ('null' 文字列または実際のID)
  */
-// (★削除★)
-// const updateSlipInfo = () => { ... };
+const renderCustomerDropdown = (selectedCastId) => {
+    if (!customers) return; // (★変更★)
+    const targetCastId = selectedCastId === 'null' ? null : selectedCastId;
+
+    const filteredCustomers = customers.filter( // (★変更★)
+        customer => customer.nominatedCastId === targetCastId
+    );
+
+    orderCustomerNameSelect.innerHTML = '';
+    filteredCustomers.forEach(customer => {
+        orderCustomerNameSelect.innerHTML += `<option value="${customer.name}">${customer.name}</option>`;
+    });
+    
+    if (filteredCustomers.length === 0) {
+        orderCustomerNameSelect.innerHTML += `<option value="" disabled>該当する顧客がいません</option>`;
+    }
+
+    orderCustomerNameSelect.innerHTML += `<option value="new_customer" class="text-blue-600 font-bold">--- 新規顧客を追加 ---</option>`;
+};
 
 
 /**
- * 注文リストにアイテムを追加する (menu.jsでは不要)
+ * (変更) 伝票モーダルの顧客情報フォームの変更をstate.slipsに反映する (menu.jsでは不要だがモーダルが存在するため残す)
  */
-// (★削除★)
-// const addOrderItem = (id, name, price) => { ... };
+const updateSlipInfo = async () => {
+    if (!slips) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
+    if (!slipData) return;
+
+    const customerName = orderCustomerNameSelect.value;
+    const nominationCastId = orderNominationSelect.value === 'null' ? null : orderNominationSelect.value; 
+
+    let newName = slipData.name;
+    if (customerName !== 'new_customer' && customerName !== "") { 
+        newName = customerName;
+    }
+    
+    orderModalTitle.textContent = `テーブル ${slipData.tableId} (No.${slipData.slipNumber} - ${newName})`;
+
+    // (★変更★)
+    try {
+        const slipRef = doc(slipsCollectionRef, currentSlipId);
+        await setDoc(slipRef, { 
+            name: newName,
+            nominationCastId: nominationCastId
+        }, { merge: true });
+    } catch (e) {
+        console.error("Error updating slip info: ", e);
+    }
+};
+
 
 /**
- * (新規) 注文リストからアイテムを削除する (menu.jsでは不要)
+ * 注文リストにアイテムを追加する (menu.jsでは不要だがモーダルが存在するため残す)
+ * @param {string} id 商品ID
+ * @param {string} name 商品名
+ * @param {number} price 価格
  */
-// (★削除★)
-// const removeOrderItem = (id) => { ... };
+const addOrderItem = async (id, name, price) => {
+    if (!slips) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
+    if (!slipData) return;
+
+    const existingItem = slipData.items.find(item => item.id === id);
+    if (existingItem) {
+        existingItem.qty += 1;
+    } else {
+        slipData.items.push({ id, name, price, qty: 1 });
+    }
+    
+    // (★変更★)
+    try {
+        const slipRef = doc(slipsCollectionRef, currentSlipId);
+        await setDoc(slipRef, { items: slipData.items }, { merge: true });
+    } catch (e) {
+        console.error("Error adding order item: ", e);
+    }
+    
+    renderOrderModal();
+};
 
 /**
- * (新規) 注文アイテムの数量を変更する (menu.jsでは不要)
+ * (新規) 注文リストからアイテムを削除する (menu.jsでは不要だがモーダルが存在するため残す)
+ * @param {string} id 商品ID
  */
-// (★削除★)
-// const updateOrderItemQty = (id, qty) => { ... };
+const removeOrderItem = async (id) => {
+    if (!slips) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
+    if (!slipData) return;
+
+    slipData.items = slipData.items.filter(item => item.id !== id);
+    
+    // (★変更★)
+    try {
+        const slipRef = doc(slipsCollectionRef, currentSlipId);
+        await setDoc(slipRef, { items: slipData.items }, { merge: true });
+    } catch (e) {
+        console.error("Error removing order item: ", e);
+    }
+    renderOrderModal();
+};
+
+/**
+ * (新規) 注文アイテムの数量を変更する (menu.jsでは不要だがモーダルが存在するため残す)
+ * @param {string} id 商品ID
+ * @param {number} qty 数量
+ */
+const updateOrderItemQty = async (id, qty) => {
+    if (!slips) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
+    if (!slipData) return;
+
+    const item = slipData.items.find(item => item.id === id);
+    if (item) {
+        item.qty = qty;
+    }
+    
+    // (★変更★)
+    try {
+        const slipRef = doc(slipsCollectionRef, currentSlipId);
+        await setDoc(slipRef, { items: slipData.items }, { merge: true });
+    } catch (e) {
+        console.error("Error updating order item qty: ", e);
+    }
+    renderOrderModal();
+};
 
 /**
  * (★変更★) メニュー管理タブを動的に描画する
  */
 const renderMenuTabs = () => {
-    if (!menuTabsContainer || !state || !state.menu) return; 
+    if (!menuTabsContainer || !menu) return; // (★変更★)
     
     menuTabsContainer.innerHTML = '';
     
-    // (★変更★) state.menu.categories からタブを生成
-    const categories = state.menu.categories || [];
+    const categories = menu.categories || []; // (★変更★)
     
-    // (★新規★) アクティブなカテゴリIDをstateから取得
-    let activeCategoryId = state.currentActiveMenuCategoryId;
+    // (★変更★)
+    let activeCategoryId = menu.currentActiveMenuCategoryId;
 
     // (★新規★) アクティブなIDがstateにない、またはカテゴリリストに存在しない場合、最初のカテゴリをアクティブにする
     if (!activeCategoryId || !categories.some(c => c.id === activeCategoryId)) {
         activeCategoryId = categories.length > 0 ? categories[0].id : null;
-        if (state) state.currentActiveMenuCategoryId = activeCategoryId; // stateを更新 (DB保存は不要)
+        if (menu) menu.currentActiveMenuCategoryId = activeCategoryId; // (★変更★)
     }
 
     if (categories.length === 0) {
@@ -236,7 +470,6 @@ const renderMenuTabs = () => {
         const isActive = (category.id === activeCategoryId);
         const activeClass = isActive ? 'active' : '';
         
-        // (★新規★) タブに編集ボタンを追加
         const tabHTML = `
             <button class="menu-tab ${activeClass}" data-category-id="${category.id}">
                 <span>${category.name}</span>
@@ -248,7 +481,6 @@ const renderMenuTabs = () => {
         menuTabsContainer.innerHTML += tabHTML;
     });
 
-    // (★新規★) 対応するメニューリストを描画
     renderMenuList();
 };
 
@@ -256,19 +488,17 @@ const renderMenuTabs = () => {
  * (★変更★) 指定されたカテゴリのメニューリストを描画する
  */
 const renderMenuList = () => {
-    if (!state || !state.menu) return;
+    if (!menu) return; // (★変更★)
     
-    const activeCategoryId = state.currentActiveMenuCategoryId;
-    const activeCategory = (state.menu.categories || []).find(c => c.id === activeCategoryId);
+    const activeCategoryId = menu.currentActiveMenuCategoryId; // (★変更★)
+    const activeCategory = (menu.categories || []).find(c => c.id === activeCategoryId); // (★変更★)
     
     if (!activeCategory) {
-        // カテゴリが選択されていない（カテゴリが0件など）
         menuTableHeader.innerHTML = '';
         menuTableBody.innerHTML = `<tr><td class="p-3 text-slate-500 text-sm" colspan="3">カテゴリを選択してください。</td></tr>`;
         return;
     }
 
-    // (★変更★) ヘッダーを動的に設定
     const isSetCategory = activeCategory.isSetCategory;
     menuTableHeader.innerHTML = `
         <th class="p-3">項目名</th>
@@ -278,8 +508,8 @@ const renderMenuList = () => {
     `;
     const colSpan = isSetCategory ? 4 : 3;
 
-    // (★変更★) アイテムを state.menu.items からフィルタリング
-    const items = (state.menu.items || [])
+    // (★変更★)
+    const items = (menu.items || [])
         .filter(item => item.categoryId === activeCategoryId)
         .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -316,21 +546,19 @@ const renderMenuList = () => {
  * @param {string|null} menuId 編集対象のメニューID
  */
 const openMenuEditorModal = (mode = 'new', menuId = null) => {
-    if (!state || !state.menu) return; 
+    if (!menu) return; // (★変更★)
     menuEditorForm.reset();
     menuEditorError.textContent = '';
     
-    // (★変更★) カテゴリドロップダウンを動的に生成
     menuCategorySelect.innerHTML = '';
-    (state.menu.categories || []).forEach(category => {
+    (menu.categories || []).forEach(category => { // (★変更★)
         menuCategorySelect.innerHTML += `<option value="${category.id}">${category.name}</option>`;
     });
 
-    // (変更) state を丸ごと保存
-    state.currentEditingMenuId = null;
+    currentEditingMenuId = null; // (★変更★)
     
     const toggleDurationField = (selectedCategoryId) => {
-        const category = (state.menu.categories || []).find(c => c.id === selectedCategoryId);
+        const category = (menu.categories || []).find(c => c.id === selectedCategoryId); // (★変更★)
         if (category && category.isSetCategory) {
             menuDurationGroup.classList.remove('hidden');
         } else {
@@ -341,22 +569,20 @@ const openMenuEditorModal = (mode = 'new', menuId = null) => {
 
     if (mode === 'new') {
         menuEditorModalTitle.textContent = '新規メニュー追加';
-        // (★変更★) アクティブなカテゴリをデフォルト選択
-        menuCategorySelect.value = state.currentActiveMenuCategoryId;
-        toggleDurationField(state.currentActiveMenuCategoryId);
+        menuCategorySelect.value = menu.currentActiveMenuCategoryId; // (★変更★)
+        toggleDurationField(menu.currentActiveMenuCategoryId); // (★変更★)
 
     } else if (mode === 'edit' && menuId) {
         menuEditorModalTitle.textContent = 'メニュー編集';
         
-        // (★変更★) state.menu.items から探す
-        const itemToEdit = (state.menu.items || []).find(item => item.id === menuId);
+        const itemToEdit = (menu.items || []).find(item => item.id === menuId); // (★変更★)
 
         if (itemToEdit) {
-            state.currentEditingMenuId = menuId;
+            currentEditingMenuId = menuId; // (★変更★)
             menuCategorySelect.value = itemToEdit.categoryId;
             menuNameInput.value = itemToEdit.name;
             menuPriceInput.value = itemToEdit.price;
-            toggleDurationField(itemToEdit.categoryId); // (★変更★) 
+            toggleDurationField(itemToEdit.categoryId); 
             if (itemToEdit.duration) {
                 menuDurationInput.value = itemToEdit.duration;
             }
@@ -372,8 +598,8 @@ const openMenuEditorModal = (mode = 'new', menuId = null) => {
 /**
  * (★変更★) メニューアイテムを保存（新規作成または更新）する
  */
-const saveMenuItem = () => {
-    if (!state || !state.menu) return; 
+const saveMenuItem = async () => {
+    if (!menu) return; // (★変更★)
     
     const categoryId = menuCategorySelect.value;
     const name = menuNameInput.value.trim();
@@ -384,42 +610,46 @@ const saveMenuItem = () => {
         return;
     }
     
-    // (★変更★) カテゴリの属性(isSetCategory)を確認
-    const category = (state.menu.categories || []).find(c => c.id === categoryId);
+    const category = (menu.categories || []).find(c => c.id === categoryId); // (★変更★)
     const duration = (category && category.isSetCategory) ? (parseInt(menuDurationInput.value) || null) : null;
 
     const newItemData = {
-        id: state.currentEditingMenuId || getUUID(), 
-        categoryId: categoryId, // (★変更★)
+        id: currentEditingMenuId || getUUID(), // (★変更★)
+        categoryId: categoryId, 
         name: name,
         price: price,
-        duration: duration // (★変更★)
+        duration: duration 
     };
     
-    // (変更) state を直接変更
-    if (state.currentEditingMenuId) {
+    // (★変更★) ローカルの menu オブジェクトを直接変更
+    if (currentEditingMenuId) {
         // --- 編集モード ---
-        // (★変更★) state.menu.items を検索
-        const index = (state.menu.items || []).findIndex(item => item.id === state.currentEditingMenuId);
+        const index = (menu.items || []).findIndex(item => item.id === currentEditingMenuId);
         if (index !== -1) {
-            state.menu.items[index] = newItemData;
+            menu.items[index] = newItemData;
         } else {
              console.error('Save error: Item to edit not found');
         }
 
     } else {
         // --- 新規作成モード ---
-        if (!state.menu.items) {
-            state.menu.items = [];
+        if (!menu.items) {
+            menu.items = [];
         }
-        state.menu.items.push(newItemData);
+        menu.items.push(newItemData);
     }
 
     menuEditorError.textContent = '';
-    state.currentEditingMenuId = null;
+    currentEditingMenuId = null; // (★変更★)
     
-    // (変更) state を丸ごと保存
-    updateStateInFirestore(state);
+    // (★変更★) menuRef に保存
+    try {
+        await setDoc(menuRef, menu);
+    } catch (e) {
+        console.error("Error saving menu item: ", e);
+        menuEditorError.textContent = "メニューの保存に失敗しました。";
+        return;
+    }
     
     closeModal(menuEditorModal);
     // (変更) renderMenuTabs() は onSnapshot が自動で呼び出す
@@ -429,16 +659,19 @@ const saveMenuItem = () => {
  * (★変更★) メニューアイテムを削除する
  * @param {string} menuId 
  */
-const deleteMenuItem = (menuId) => {
-    if (!state || !menuId || !state.menu || !state.menu.items) { 
+const deleteMenuItem = async (menuId) => {
+    if (!menu || !menuId || !menu.items) { // (★変更★)
         return;
     }
     
-    // (変更) state を直接変更
-    state.menu.items = state.menu.items.filter(item => item.id !== menuId);
+    menu.items = menu.items.filter(item => item.id !== menuId); // (★変更★)
     
-    // (変更) state を丸ごと保存
-    updateStateInFirestore(state);
+    // (★変更★) menuRef に保存
+    try {
+        await setDoc(menuRef, menu);
+    } catch (e) {
+        console.error("Error deleting menu item: ", e);
+    }
     
     // (変更) renderMenuTabs() は onSnapshot が自動で呼び出す
 };
@@ -451,7 +684,7 @@ const deleteMenuItem = (menuId) => {
  * (★新規★) カテゴリ管理モーダルを開く
  */
 const openCategoryEditorModal = () => {
-    if (!state || !state.menu) return;
+    if (!menu) return; // (★変更★)
     renderCategoryList();
     newCategoryNameInput.value = '';
     categoryAddError.textContent = '';
@@ -462,10 +695,10 @@ const openCategoryEditorModal = () => {
  * (★新規★) カテゴリ管理リストを描画する
  */
 const renderCategoryList = () => {
-    if (!currentCategoriesList || !state || !state.menu) return;
+    if (!currentCategoriesList || !menu) return; // (★変更★)
     
     currentCategoriesList.innerHTML = '';
-    const categories = state.menu.categories || [];
+    const categories = menu.categories || []; // (★変更★)
     
     if (categories.length === 0) {
         currentCategoriesList.innerHTML = '<p class="text-sm text-slate-500">カテゴリがありません。</p>';
@@ -473,8 +706,6 @@ const renderCategoryList = () => {
     }
     
     categories.forEach(category => {
-        // (★新規★) 削除不可フラグ (キャスト料金/セット料金は 1 つは必須など)
-        // (★簡易実装★) ここでは「キャスト料金」フラグを持つカテゴリは削除不可とする
         const isProtected = category.isCastCategory; 
         
         const itemHTML = `
@@ -513,8 +744,8 @@ const renderCategoryList = () => {
 /**
  * (★新規★) カテゴリを追加する
  */
-const addCategory = () => {
-    if (!state || !state.menu) return;
+const addCategory = async () => {
+    if (!menu) return; // (★変更★)
     
     const newName = newCategoryNameInput.value.trim();
     if (newName === "") {
@@ -522,7 +753,7 @@ const addCategory = () => {
         return;
     }
     
-    const exists = (state.menu.categories || []).some(c => c.name === newName);
+    const exists = (menu.categories || []).some(c => c.name === newName); // (★変更★)
     if (exists) {
         categoryAddError.textContent = "そのカテゴリ名は既に使用されています。";
         return;
@@ -532,15 +763,23 @@ const addCategory = () => {
         id: getUUID(),
         name: newName,
         isSetCategory: false,
-        isCastCategory: false // (★新規★)
+        isCastCategory: false 
     };
     
-    if (!state.menu.categories) {
-        state.menu.categories = [];
+    if (!menu.categories) { // (★変更★)
+        menu.categories = [];
     }
-    state.menu.categories.push(newCategory);
+    menu.categories.push(newCategory); // (★変更★)
     
-    updateStateInFirestore(state);
+    // (★変更★)
+    try {
+        await setDoc(menuRef, menu);
+    } catch (e) {
+         console.error("Error adding category: ", e);
+         categoryAddError.textContent = "カテゴリの追加に失敗しました。";
+         menu.categories.pop(); // (★変更★) 失敗したらローカルからも削除
+         return;
+    }
     
     newCategoryNameInput.value = '';
     categoryAddError.textContent = '';
@@ -552,13 +791,18 @@ const addCategory = () => {
  * @param {string} categoryId 
  * @param {string} newName 
  */
-const updateCategoryName = (categoryId, newName) => {
-    if (!state || !state.menu) return;
+const updateCategoryName = async (categoryId, newName) => {
+    if (!menu) return; // (★変更★)
     
-    const category = (state.menu.categories || []).find(c => c.id === categoryId);
+    const category = (menu.categories || []).find(c => c.id === categoryId); // (★変更★)
     if (category) {
         category.name = newName;
-        updateStateInFirestore(state);
+        // (★変更★)
+        try {
+            await setDoc(menuRef, menu);
+        } catch (e) {
+            console.error("Error updating category name: ", e);
+        }
     }
 };
 
@@ -568,17 +812,23 @@ const updateCategoryName = (categoryId, newName) => {
  * @param {string} flagType 'isSetCategory' または 'isCastCategory'
  * @param {boolean} isChecked 
  */
-const updateCategoryFlag = (categoryId, flagType, isChecked) => {
-    if (!state || !state.menu) return;
+const updateCategoryFlag = async (categoryId, flagType, isChecked) => {
+    if (!menu) return; // (★変更★)
     
-    const category = (state.menu.categories || []).find(c => c.id === categoryId);
+    const category = (menu.categories || []).find(c => c.id === categoryId); // (★変更★)
     if (category) {
         if (flagType === 'isSetCategory') {
             category.isSetCategory = isChecked;
         } else if (flagType === 'isCastCategory') {
             category.isCastCategory = isChecked;
         }
-        updateStateInFirestore(state);
+        
+        // (★変更★)
+        try {
+            await setDoc(menuRef, menu);
+        } catch (e) {
+            console.error("Error updating category flag: ", e);
+        }
     }
 };
 
@@ -587,29 +837,31 @@ const updateCategoryFlag = (categoryId, flagType, isChecked) => {
  * (★新規★) カテゴリを削除する
  * @param {string} categoryId 
  */
-const deleteCategory = (categoryId) => {
-    if (!state || !state.menu) return;
+const deleteCategory = async (categoryId) => {
+    if (!menu) return; // (★変更★)
     
     // (★新規★) 削除対象カテゴリに商品が紐付いているか確認
-    const itemsInCategory = (state.menu.items || []).filter(item => item.categoryId === categoryId);
+    const itemsInCategory = (menu.items || []).filter(item => item.categoryId === categoryId); // (★変更★)
     
     if (itemsInCategory.length > 0) {
         if (!confirm(`このカテゴリには ${itemsInCategory.length} 件の商品が登録されています。\nカテゴリを削除すると、これらの商品もすべて削除されます。\n本当に削除しますか？`)) {
             return;
         }
-        // (★新規★) 紐付いた商品も削除
-        state.menu.items = state.menu.items.filter(item => item.categoryId !== categoryId);
+        menu.items = menu.items.filter(item => item.categoryId !== categoryId); // (★変更★)
     }
     
-    // (★新規★) カテゴリ自体を削除
-    state.menu.categories = state.menu.categories.filter(c => c.id !== categoryId);
+    menu.categories = menu.categories.filter(c => c.id !== categoryId); // (★変更★)
     
-    // (★新規★) もしアクティブなカテゴリを削除したら、アクティブIDをリセット
-    if (state.currentActiveMenuCategoryId === categoryId) {
-        state.currentActiveMenuCategoryId = null;
+    if (menu.currentActiveMenuCategoryId === categoryId) { // (★変更★)
+        menu.currentActiveMenuCategoryId = null;
     }
     
-    updateStateInFirestore(state);
+    // (★変更★)
+    try {
+        await setDoc(menuRef, menu);
+    } catch (e) {
+        console.error("Error deleting category: ", e);
+    }
     // (変更) onSnapshot が renderCategoryList() と renderMenuTabs() を呼び出す
 };
 
@@ -619,10 +871,10 @@ const deleteCategory = (categoryId) => {
  * (店舗名、税率など)
  */
 const updateModalCommonInfo = () => {
-    if (!state) return;
+    if (!settings) return; // (★変更★)
 
-    const store = state.storeInfo;
-    const rates = state.rates;
+    const store = settings.storeInfo; // (★変更★)
+    const rates = settings.rates; // (★変更★)
 
     // 伝票プレビュー
     if (slipStoreName) slipStoreName.textContent = store.name;
@@ -644,36 +896,234 @@ const updateModalCommonInfo = () => {
 
 
 /**
- * (変更) 伝票プレビューモーダルを描画する (menu.jsでは不要)
+ * (変更) 伝票プレビューモーダルを描画する (menu.jsでは不要だがモーダルが存在するため残す)
  */
-// (★削除★)
-// const renderSlipPreviewModal = () => { ... };
+const renderSlipPreviewModal = async () => {
+    if (!settings) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
+    if (!slipData) return;
+    
+    // (★変更★)
+    try {
+        const slipRef = doc(slipsCollectionRef, currentSlipId);
+        await setDoc(slipRef, { status: 'checkout' }, { merge: true });
+        slipData.status = 'checkout'; // (★変更★)
+    } catch (e) {
+        console.error("Error updating slip status: ", e);
+    }
+
+    document.getElementById('slip-preview-title').textContent = `伝票プレビュー (No.${slipData.slipNumber})`;
+    
+    const now = new Date();
+    document.getElementById('slip-datetime').textContent = now.toLocaleString('ja-JP');
+
+    document.getElementById('slip-slip-number').textContent = slipData.slipNumber;
+    document.getElementById('slip-table-id').textContent = slipData.tableId;
+    document.getElementById('slip-customer-name').textContent = slipData.name || 'ゲスト';
+    document.getElementById('slip-nomination').textContent = getCastNameById(slipData.nominationCastId);
+
+    const slipItemsList = document.getElementById('slip-items-list');
+    slipItemsList.innerHTML = '';
+    let subtotal = 0;
+    slipData.items.forEach(item => {
+        subtotal += item.price * item.qty;
+        slipItemsList.innerHTML += `
+            <div class="flex justify-between">
+                <span>${item.name} x ${item.qty}</span>
+                <span class="font-medium">${formatCurrency(item.price * item.qty)}</span>
+            </div>
+        `;
+    });
+    
+    const serviceCharge = subtotal * settings.rates.service; // (★変更★)
+    const subtotalWithService = subtotal + serviceCharge;
+    const tax = subtotalWithService * settings.rates.tax; // (★変更★)
+    const total = Math.round(subtotalWithService + tax);
+    const paidAmount = slipData.paidAmount || 0;
+    const billingAmount = total - paidAmount;
+
+    slipSubtotalEl.textContent = formatCurrency(subtotal);
+    slipServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
+    slipTaxEl.textContent = formatCurrency(Math.round(tax));
+    slipPaidAmountEl.parentElement.style.display = paidAmount > 0 ? 'flex' : 'none';
+    slipPaidAmountEl.textContent = `-${formatCurrency(paidAmount)}`;
+    slipTotalEl.textContent = formatCurrency(billingAmount);
+};
 
 
 /**
- * 会計モーダルを描画する (menu.jsでは不要)
+ * 会計モーダルを描画する (menu.jsでは不要だがモーダルが存在するため残す)
  */
-// (★削除★)
-// const renderCheckoutModal = () => { ... };
+const renderCheckoutModal = () => {
+    if (!settings) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
+    if (!slipData) return;
+
+    checkoutModalTitle.textContent = `テーブル ${slipData.tableId} (No.${slipData.slipNumber} - ${slipData.name}) - お会計`;
+    
+    let subtotal = 0;
+    checkoutItemsList.innerHTML = '';
+    slipData.items.forEach(item => {
+        subtotal += item.price * item.qty;
+        checkoutItemsList.innerHTML += `
+            <div class="flex justify-between">
+                <span>${item.name} x ${item.qty}</span>
+                <span class="font-medium">${formatCurrency(item.price * item.qty)}</span>
+            </div>
+        `;
+    });
+    
+    const serviceCharge = subtotal * settings.rates.service; // (★変更★)
+    const subtotalWithService = subtotal + serviceCharge;
+    const tax = subtotalWithService * settings.rates.tax; // (★変更★)
+    const total = Math.round(subtotalWithService + tax);
+    const paidAmount = slipData.paidAmount || 0;
+    const preDiscountTotal = total - paidAmount; 
+
+    // (★追加★) 割引計算
+    const discountAmount = parseInt(discountAmountInput.value) || 0;
+    const discountType = discountTypeSelect.value;
+    
+    let finalBillingAmount = preDiscountTotal;
+    if (discountType === 'yen') {
+        finalBillingAmount = preDiscountTotal - discountAmount;
+    } else if (discountType === 'percent') {
+        finalBillingAmount = preDiscountTotal * (1 - (discountAmount / 100));
+    }
+    finalBillingAmount = Math.round(finalBillingAmount); // 最終金額を丸める
+
+    if (finalBillingAmount < 0) {
+        finalBillingAmount = 0;
+    }
+
+    currentBillingAmount = finalBillingAmount; // (★変更★)
+
+    checkoutSubtotalEl.textContent = formatCurrency(subtotal);
+    checkoutServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
+    checkoutTaxEl.textContent = formatCurrency(Math.round(tax));
+    checkoutPaidAmountEl.parentElement.style.display = paidAmount > 0 ? 'flex' : 'none';
+    checkoutPaidAmountEl.textContent = `-${formatCurrency(paidAmount)}`;
+    checkoutTotalEl.textContent = formatCurrency(finalBillingAmount); 
+    
+    paymentCashInput.value = '';
+    paymentCardInput.value = '';
+    paymentCreditInput.value = '';
+
+    updatePaymentStatus(); 
+
+    document.getElementById('receipt-total').textContent = formatCurrency(finalBillingAmount);
+};
 
 /**
- * (新規) 会計モーダルの支払い状況を計算・更新する (menu.jsでは不要)
+ * (新規) 会計モーダルの支払い状況を計算・更新する (menu.jsでは不要だがモーダルが存在するため残す)
  */
-// (★削除★)
-// const updatePaymentStatus = () => { ... };
+const updatePaymentStatus = () => {
+    if (!settings) return; // (★変更★)
+
+    // (★追加★) 割引を先に再計算
+    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
+    if (!slipData) return;
+
+    let subtotal = 0;
+    slipData.items.forEach(item => {
+        subtotal += item.price * item.qty;
+    });
+    
+    const serviceCharge = subtotal * settings.rates.service; // (★変更★)
+    const subtotalWithService = subtotal + serviceCharge;
+    const tax = subtotalWithService * settings.rates.tax; // (★変更★)
+    const total = Math.round(subtotalWithService + tax);
+    const paidAmount = slipData.paidAmount || 0;
+    const preDiscountTotal = total - paidAmount; 
+
+    const discountAmount = parseInt(discountAmountInput.value) || 0;
+    const discountType = discountTypeSelect.value;
+    
+    let finalBillingAmount = preDiscountTotal;
+    if (discountType === 'yen') {
+        finalBillingAmount = preDiscountTotal - discountAmount;
+    } else if (discountType === 'percent') {
+        finalBillingAmount = preDiscountTotal * (1 - (discountAmount / 100));
+    }
+    finalBillingAmount = Math.round(finalBillingAmount);
+
+    if (finalBillingAmount < 0) {
+        finalBillingAmount = 0;
+    }
+
+    currentBillingAmount = finalBillingAmount; // (★変更★)
+    checkoutTotalEl.textContent = formatCurrency(finalBillingAmount);
+    document.getElementById('receipt-total').textContent = formatCurrency(finalBillingAmount);
+    
+    // --- ここから下は支払い計算 ---
+    const billingAmount = currentBillingAmount; // (★変更★)
+
+    const cashPayment = parseInt(paymentCashInput.value) || 0;
+    const cardPayment = parseInt(paymentCardInput.value) || 0;
+    const creditPayment = parseInt(paymentCreditInput.value) || 0;
+
+    const totalPayment = cashPayment + cardPayment + creditPayment;
+    
+    let shortage = 0;
+    let change = 0;
+
+    if (totalPayment >= billingAmount) {
+        shortage = 0;
+        const cashDue = billingAmount - cardPayment - creditPayment;
+        if (cashPayment > cashDue && cashDue >= 0) {
+            change = cashPayment - cashDue;
+        } else if (cashPayment > 0 && cashDue < 0) {
+             change = cashPayment;
+        }
+        else {
+            change = 0;
+        }
+    } else {
+        shortage = billingAmount - totalPayment;
+        change = 0;
+    }
+
+    checkoutPaymentTotalEl.textContent = formatCurrency(totalPayment);
+    checkoutShortageEl.textContent = formatCurrency(shortage);
+    checkoutChangeEl.textContent = formatCurrency(change);
+
+    if (shortage > 0) {
+        processPaymentBtn.disabled = true;
+    } else {
+        processPaymentBtn.disabled = false;
+    }
+};
 
 
 /**
- * 領収書モーダルを描画する (menu.jsでは不要)
+ * 領収書モーダルを描画する (menu.jsでは不要だがモーダルが存在するため残す)
  */
-// (★削除★)
-// const renderReceiptModal = () => { ... };
+const renderReceiptModal = () => {
+    if (!settings) return; // (★変更★)
+    const now = new Date();
+    document.getElementById('receipt-date').textContent = now.toLocaleDateString('ja-JP');
+    
+    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
+    if (slipData) {
+        const receiptCustomerName = document.getElementById('receipt-customer-name');
+        if (receiptCustomerName) receiptCustomerName.value = slipData.name || '';
+    }
+    document.getElementById('receipt-total').textContent = formatCurrency(currentBillingAmount); // (★変更★)
+};
 
 /**
- * (新規) ボツ伝理由入力モーダルを描画する (menu.jsでは不要)
+ * (新規) ボツ伝理由入力モーダルを描画する (menu.jsでは不要だがモーダルが存在するため残す)
  */
-// (★削除★)
-// const renderCancelSlipModal = () => { ... };
+const renderCancelSlipModal = () => {
+    if (!slips) return; // (★変更★)
+    const slip = slips.find(s => s.slipId === currentSlipId); // (★変更★)
+    if (!slip) return;
+
+    cancelSlipNumber.textContent = slip.slipNumber;
+    cancelSlipReasonInput.value = '';
+    cancelSlipError.textContent = '';
+    openModal(cancelSlipModal);
+};
 
 
 /**
@@ -697,24 +1147,24 @@ const closeModal = (modalElement) => {
 };
 
 /**
- * (★新規★) 新しい伝票を作成し、伝票モーダルを開く (menu.jsでは不要)
+ * (★新規★) 新しい伝票を作成し、伝票モーダルを開く (menu.jsでは不要だがモーダルが存在するため残す)
  * (★変更★) startTimeISO を引数に追加
  */
-const createNewSlip = (tableId, startTimeISO) => {
-    if (!state) return; 
-    const table = state.tables.find(t => t.id === tableId);
+const createNewSlip = async (tableId, startTimeISO) => {
+    if (!settings) return; // (★変更★)
+    const table = settings.tables.find(t => t.id === tableId); // (★変更★)
     if (!table) return;
 
-    const newSlipCounter = (state.slipCounter || 0) + 1;
+    const newSlipCounter = (slipCounter || 0) + 1; // (★変更★)
     const newSlipNumber = newSlipCounter;
 
     const newSlip = {
-        slipId: getUUID(),
+        // slipId は addDoc で自動生成
         slipNumber: newSlipNumber,
         tableId: tableId,
         status: 'active',
         name: "新規のお客様",
-        startTime: startTimeISO, // (★変更★)
+        startTime: startTimeISO,
         nominationCastId: null, 
         items: [],
         tags: [],
@@ -725,33 +1175,35 @@ const createNewSlip = (tableId, startTimeISO) => {
         discount: { type: 'yen', value: 0 }, 
     };
     
-    state.slips.push(newSlip);
-    state.slipCounter = newSlipCounter;
-    state.currentSlipId = newSlip.slipId;
-    
-    updateStateInFirestore(state);
-    
-    // (★追加★) 割引フォームをリセット (存在すれば)
-    const discountAmountInput = document.getElementById('discount-amount');
-    const discountTypeSelect = document.getElementById('discount-type');
-    if (discountAmountInput) discountAmountInput.value = '';
-    if (discountTypeSelect) discountTypeSelect.value = 'yen';
+    // (★変更★)
+    try {
+        const docRef = await addDoc(slipsCollectionRef, newSlip);
+        await setDoc(slipCounterRef, { count: newSlipCounter });
+        currentSlipId = docRef.id;
 
-    // (★変更★) 伝票モーダルは menu.js には存在しないため、描画・表示ロジックは削除
-    // renderOrderModal();
-    // openModal(orderModal);
+        const discountAmountInput = document.getElementById('discount-amount');
+        const discountTypeSelect = document.getElementById('discount-type');
+        if (discountAmountInput) discountAmountInput.value = '';
+        if (discountTypeSelect) discountTypeSelect.value = 'yen';
+
+        renderOrderModal();
+        openModal(orderModal);
+
+    } catch (e) {
+        console.error("Error creating new slip: ", e);
+    }
 };
 
 /**
- * (★新規★) 伝票選択モーダルを描画する (menu.jsでは不要)
+ * (★新規★) 伝票選択モーダルを描画する (menu.jsでは不要だがモーダルが存在するため残す)
  * (★変更★) 経過時間表示ロジック追加
  */
 const renderSlipSelectionModal = (tableId) => {
-    if (!state) return; 
+    if (!slips) return; // (★変更★)
     slipSelectionModalTitle.textContent = `テーブル ${tableId} の伝票一覧`;
     slipSelectionList.innerHTML = '';
 
-    const activeSlips = state.slips.filter(
+    const activeSlips = slips.filter( // (★変更★)
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     );
     
@@ -774,7 +1226,6 @@ const renderSlipSelectionModal = (tableId) => {
             }
             const nominationText = getCastNameById(slip.nominationCastId);
 
-            // (★変更★) 経過時間表示用のロジックを追加
             const now = new Date();
             const startTime = new Date(slip.startTime);
             const diffMs = now.getTime() - startTime.getTime();
@@ -806,14 +1257,12 @@ const renderSlipSelectionModal = (tableId) => {
  * @param {string} tableId 
  */
 const renderNewSlipConfirmModal = (tableId) => {
-    // (★変更★) HTMLファイル側でDOMを取得する必要がある
     const modalStartTimeInput = document.getElementById('new-slip-start-time-input');
     const modalTimeError = document.getElementById('new-slip-time-error');
 
     newSlipConfirmTitle.textContent = `伝票の新規作成 (${tableId})`;
     newSlipConfirmMessage.textContent = `テーブル ${tableId} で新しい伝票を作成しますか？`;
 
-    // (★新規★) 現在時刻をセット
     if (modalStartTimeInput) {
         modalStartTimeInput.value = formatDateTimeLocal(new Date());
     }
@@ -833,16 +1282,43 @@ const renderNewSlipConfirmModal = (tableId) => {
 // const handleTableClick = (tableId) => { ... };
 
 /**
- * (新規) 未会計伝票カードクリック時の処理 (menu.jsでは不要)
+ * (新規) 未会計伝票カードクリック時の処理 (menu.jsでは不要だがモーダルが存在するため残す)
  */
-// (★削除★)
-// const handleSlipClick = (slipId) => { ... };
+const handleSlipClick = (slipId) => {
+    if (!slips) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === slipId); // (★変更★)
+    if (!slipData) return;
+
+    currentSlipId = slipId; // (★変更★)
+
+    // (★追加★) 割引情報をフォームに読み込む
+    const discount = slipData.discount || { type: 'yen', value: 0 };
+    discountAmountInput.value = discount.value;
+    discountTypeSelect.value = discount.type;
+    
+    renderOrderModal();
+    openModal(orderModal);
+};
 
 /**
- * (新規) 会計済み伝票カードクリック時の処理 (menu.jsでは不要)
+ * (新規) 会計済み伝票カードクリック時の処理 (menu.jsでは不要だがモーダルが存在するため残す)
  */
-// (★削除★)
-// const handlePaidSlipClick = (slipId) => { ... };
+const handlePaidSlipClick = (slipId) => {
+    if (!slips) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === slipId); // (★変更★)
+    if (!slipData) return;
+
+    currentSlipId = slipId; // (★変更★)
+    
+    // (★追加★) 割引情報をフォームに読み込む
+    const discount = slipData.discount || { type: 'yen', value: 0 };
+    discountAmountInput.value = discount.value;
+    discountTypeSelect.value = discount.type;
+
+    renderCheckoutModal(); 
+    renderReceiptModal();
+    openModal(receiptModal);
+};
 
 
 /**
@@ -852,148 +1328,176 @@ const renderNewSlipConfirmModal = (tableId) => {
 // const renderCastRanking = () => { ... };
 
 // (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
-const getDefaultState = () => {
-    // (★変更★) 新しいデータ構造
-    const catSetId = getUUID();
-    const catDrinkId = getUUID();
-    const catBottleId = getUUID();
-    const catFoodId = getUUID();
-    const catCastId = getUUID(); // (★重要★) キャスト料金
-    const catOtherId = getUUID();
-
+const getDefaultSettings = () => {
     return {
-        currentPage: 'menu', // (★修正★)
-        currentStore: 'store1',
-        slipCounter: 0,
+        // currentPage: 'menu', (settings には不要)
         slipTagsMaster: [
             { id: 'tag1', name: '指名' }, { id: 'tag2', name: '初指名' },
             { id: 'tag3', name: '初回' }, { id: 'tag4', name: '枝' },
             { id: 'tag5', name: '切替' }, { id: 'tag6', name: '案内所' },
             { id: 'tag7', name: '20歳未満' }, { id: 'tag8', name: '同業' },
         ],
-        casts: [ 
-            { id: 'c1', name: 'あい' }, { id: 'c2', name: 'みう' },
-            { id: 'c3', name: 'さくら' }, { id: 'c4', name: 'れな' },
-            { id: 'c5', name: 'ひな' }, { id: 'c6', name: '体験A' },
-        ],
-        customers: [
-            { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
-            { id: 'cust2', name: '田中様', nominatedCastId: null },
-            { id: 'cust3', name: '佐藤様', nominatedCastId: 'c2' },
-        ],
         tables: [
             { id: 'V1', status: 'available' }, { id: 'V2', status: 'available' },
             { id: 'T1', status: 'available' }, { id: 'T2', status: 'available' },
             { id: 'C1', status: 'available' }, { id: 'C2', status: 'available' },
         ],
-        slips: [],
-        menu: {
-            // (★変更★) カテゴリを定義
-            categories: [
-                { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false },
-                { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false },
-                { id: catBottleId, name: 'ボトル', isSetCategory: false, isCastCategory: false },
-                { id: catFoodId, name: 'フード', isSetCategory: false, isCastCategory: false },
-                { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true }, // (★重要★)
-                { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false },
-            ],
-            // (★変更★) アイテムを定義 (categoryId で紐付け)
-            items: [
-                { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60 },
-                { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60 },
-                { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null },
-                { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null },
-                { id: 'm14', categoryId: catCastId, name: '本指名料', price: 3000, duration: null },
-            ]
-        },
-        currentActiveMenuCategoryId: catSetId, // (★新規★)
         storeInfo: {
             name: "Night POS",
             address: "東京都新宿区歌舞伎町1-1-1",
-            tel: "03-0000-0000"
+            tel: "03-0000-0000",
+            zip: "160-0021" // (★追加★)
         },
         rates: { tax: 0.10, service: 0.20 },
         dayChangeTime: "05:00",
         performanceSettings: {
-            // (★変更★) 'm14' (本指名料) のIDは getDefaultState 内で固定
+            // (★注意★) m14 は getDefaultMenu で生成されるIDと合わせる必要あり
             menuItems: {
-                'm14': { salesType: 'percentage', salesValue: 100, countNomination: true }
+                'm14_default': { salesType: 'percentage', salesValue: 100, countNomination: true }
             },
             serviceCharge: { salesType: 'percentage', salesValue: 0 },
             tax: { salesType: 'percentage', salesValue: 0 },
             sideCustomer: { salesValue: 100, countNomination: true }
         },
-        currentSlipId: null, 
-        currentEditingMenuId: null,
-        currentBillingAmount: 0, 
         ranking: { period: 'monthly', type: 'nominations' }
     };
 };
 
-// (新規) Firestore への state 保存関数（エラーハンドリング付き）
-const updateStateInFirestore = async (newState) => {
-    if (!stateDocRef) {
-        console.error("stateDocRef is not ready. State not saved to Firestore.");
-        return;
-    }
-    try {
-        await setDoc(stateDocRef, newState); 
-    } catch (error) {
-        console.error("Error saving state to Firestore:", error);
-    }
+const getDefaultMenu = () => {
+    const catSetId = getUUID();
+    const catDrinkId = getUUID();
+    const catBottleId = getUUID();
+    const catFoodId = getUUID();
+    const catCastId = getUUID(); 
+    const catOtherId = getUUID();
+    
+    return {
+        categories: [
+            { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false },
+            { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false },
+            { id: catBottleId, name: 'ボトル', isSetCategory: false, isCastCategory: false },
+            { id: catFoodId, name: 'フード', isSetCategory: false, isCastCategory: false },
+            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true }, 
+            { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false },
+        ],
+        items: [
+            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60 },
+            { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60 },
+            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null },
+            { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null },
+            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null }, // (★ID変更★)
+        ],
+        currentActiveMenuCategoryId: catSetId,
+    };
 };
 
-// (変更) --- Firestore リアルタイムリスナー ---
+// (★削除★) Firestore への state 保存関数
+// const updateStateInFirestore = async (newState) => { ... };
+
+// (★変更★) --- Firestore リアルタイムリスナー ---
 // firebaseReady イベントを待ってからリスナーを設定
 document.addEventListener('firebaseReady', (e) => {
-    const { db, auth, userId, stateRef: ref } = e.detail;
     
-    if (!ref) {
-        console.error("Firestore reference (stateRef) is not available.");
-        return;
-    }
-    
-    stateDocRef = ref;
+    // (★変更★) 新しい参照を取得
+    const { 
+        settingsRef, menuRef, slipCounterRef,
+        castsCollectionRef, customersCollectionRef, slipsCollectionRef
+    } = e.detail;
 
-    onSnapshot(stateDocRef, async (docSnap) => {
-        if (docSnap.exists()) {
-            console.log("Firestore data loaded.");
-            state = docSnap.data();
-            
-            // (★新規★) 古いデータ構造 (menu.set) だった場合、新しい構造に移行する (簡易)
-            if (state.menu && state.menu.set) {
-                console.warn("Old menu structure detected. Migrating...");
-                const defaultMenu = getDefaultState().menu;
-                state.menu = defaultMenu;
-                state.currentActiveMenuCategoryId = defaultMenu.categories[0].id;
-                // (注意) 実際は旧データを移行すべきだが、ここではデフォルトで上書き
-                await updateStateInFirestore(state); // 移行を保存
-            }
-            
-            // (重要) state がロードされたら、UIを初回描画
+    // (★新規★) 全データをロードできたか確認するフラグ
+    let settingsLoaded = false;
+    let menuLoaded = false;
+    let castsLoaded = false;
+    let customersLoaded = false;
+    let slipsLoaded = false;
+    let counterLoaded = false;
+
+    // (★新規★) 全データロード後にUIを初回描画する関数
+    const checkAndRenderAll = () => {
+        // (★変更★) menu.js は renderMenuTabs を呼ぶ
+        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded) {
+            console.log("All data loaded. Rendering UI for menu.js");
             renderMenuTabs();
-            updateModalCommonInfo(); // (新規) モーダル内の共通情報を更新
-            
-        } else {
-            console.log("No state document found. Creating default state...");
-            const defaultState = getDefaultState();
-            state = defaultState;
-            
-            try {
-                await setDoc(stateDocRef, defaultState);
-                console.log("Default state saved to Firestore.");
-                // (重要) state がロードされたら、UIを初回描画
-                renderMenuTabs();
-                updateModalCommonInfo(); // (新規) モーダル内の共通情報を更新
-                
-            } catch (error) {
-                console.error("Error saving default state to Firestore:", error);
-            }
+            updateModalCommonInfo(); 
         }
+    };
+
+    // 1. Settings
+    onSnapshot(settingsRef, async (docSnap) => {
+        if (docSnap.exists()) {
+            settings = docSnap.data();
+        } else {
+            console.log("No settings document found. Creating default settings...");
+            const defaultSettings = getDefaultSettings();
+            await setDoc(settingsRef, defaultSettings);
+            settings = defaultSettings;
+        }
+        settingsLoaded = true;
+        checkAndRenderAll();
+    }, (error) => console.error("Error listening to settings: ", error));
+
+    // 2. Menu
+    onSnapshot(menuRef, async (docSnap) => {
+        if (docSnap.exists()) {
+            menu = docSnap.data();
+        } else {
+            console.log("No menu document found. Creating default menu...");
+            const defaultMenu = getDefaultMenu();
+            await setDoc(menuRef, defaultMenu);
+            menu = defaultMenu;
+        }
+        menuLoaded = true;
+        checkAndRenderAll();
+    }, (error) => console.error("Error listening to menu: ", error));
+
+    // 3. Slip Counter
+    onSnapshot(slipCounterRef, async (docSnap) => {
+        if (docSnap.exists()) {
+            slipCounter = docSnap.data().count;
+        } else {
+            console.log("No slip counter document found. Creating default counter...");
+            await setDoc(slipCounterRef, { count: 0 });
+            slipCounter = 0;
+        }
+        counterLoaded = true;
+        checkAndRenderAll();
+    }, (error) => console.error("Error listening to slip counter: ", error));
+
+    // 4. Casts
+    onSnapshot(castsCollectionRef, (querySnapshot) => {
+        casts = [];
+        querySnapshot.forEach((doc) => {
+            casts.push({ ...doc.data(), id: doc.id });
+        });
+        console.log("Casts loaded: ", casts.length);
+        castsLoaded = true;
+        checkAndRenderAll();
+    }, (error) => console.error("Error listening to casts: ", error));
+
+    // 5. Customers
+    onSnapshot(customersCollectionRef, (querySnapshot) => {
+        customers = [];
+        querySnapshot.forEach((doc) => {
+            customers.push({ ...doc.data(), id: doc.id });
+        });
+        console.log("Customers loaded: ", customers.length);
+        customersLoaded = true;
+        checkAndRenderAll();
+    }, (error) => console.error("Error listening to customers: ", error));
+    
+    // 6. Slips
+    onSnapshot(slipsCollectionRef, (querySnapshot) => {
+        slips = [];
+        querySnapshot.forEach((doc) => {
+            slips.push({ ...doc.data(), slipId: doc.id }); // (★注意★) slipId フィールド
+        });
+        console.log("Slips loaded: ", slips.length);
+        slipsLoaded = true;
+        checkAndRenderAll();
     }, (error) => {
-        console.error("Error listening to Firestore snapshot:", error);
-        if (error.code === 'permission-denied') {
-            document.body.innerHTML = `<div class="p-8 text-center text-red-600">データベースへのアクセスが拒否されました。Firestoreのセキュリティルール（state/{userId}）が正しく設定されているか確認してください。</div>`;
+        console.error("Error listening to slips: ", error);
+        if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
+             document.body.innerHTML = `<div class="p-8 text-center text-red-600">データベースへのアクセスに失敗しました。Firestoreのセキュリティルール（slipsコレクション）が正しく設定されているか、または必要なインデックスが作成されているか確認してください。</div>`;
         }
     });
 });
@@ -1106,15 +1610,18 @@ document.addEventListener('DOMContentLoaded', () => {
     newCategoryNameInput = document.getElementById('new-category-name-input');
     addCategoryBtn = document.getElementById('add-category-btn');
     categoryAddError = document.getElementById('category-add-error');
+    
+    // (★新規★) 割引
+    discountAmountInput = document.getElementById('discount-amount');
+    discountTypeSelect = document.getElementById('discount-type');
 
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
-    // renderMenuTabs(); 
     
     // ===== イベントリスナーの設定 =====
     
     // (★変更★) タブのイベント委任
     if (menuTabsContainer) { 
-        menuTabsContainer.addEventListener('click', (e) => {
+        menuTabsContainer.addEventListener('click', async (e) => { // (★変更★) async
             const tabButton = e.target.closest('.menu-tab');
             const editButton = e.target.closest('.menu-tab-edit-btn');
             
@@ -1129,11 +1636,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 // タブ本体が押された
                 e.preventDefault();
                 const categoryId = tabButton.dataset.categoryId;
-                if (state) state.currentActiveMenuCategoryId = categoryId;
-                
-                // (★変更★) onSnapshot が renderMenuTabs を呼ぶので、DB保存は不要
-                // (★変更★) 即時反映のため、ローカルで描画
-                renderMenuTabs(); 
+                if (menu) { // (★変更★)
+                    menu.currentActiveMenuCategoryId = categoryId;
+                    
+                    // (★変更★) DBに保存
+                    try {
+                        await setDoc(menuRef, menu);
+                    } catch (e) {
+                        console.error("Error updating active category: ", e);
+                    }
+                    // (★変更★) onSnapshotが renderMenuTabs を呼ぶ
+                }
             }
         });
     }
@@ -1152,6 +1665,10 @@ document.addEventListener('DOMContentLoaded', () => {
             closeModal(slipSelectionModal);
             closeModal(newSlipConfirmModal);
             closeModal(cancelSlipModal);
+            
+            // (★追加★) 割引をリセット
+            if(discountAmountInput) discountAmountInput.value = '';
+            if(discountTypeSelect) discountTypeSelect.value = 'yen';
         });
     });
     
@@ -1165,7 +1682,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // (★新規★) カテゴリ追加ボタン
     if (addCategoryBtn) {
         addCategoryBtn.addEventListener('click', () => {
-            addCategory();
+            addCategory(); // (★変更★)
         });
     }
     // (★新規★) カテゴリ名入力でEnter
@@ -1173,7 +1690,7 @@ document.addEventListener('DOMContentLoaded', () => {
         newCategoryNameInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                addCategory();
+                addCategory(); // (★変更★)
             }
         });
     }
@@ -1185,11 +1702,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const deleteBtn = e.target.closest('.delete-category-btn');
             if (deleteBtn && !deleteBtn.disabled) {
                 const categoryId = deleteBtn.dataset.categoryId;
-                const category = (state.menu.categories || []).find(c => c.id === categoryId);
+                const category = (menu.categories || []).find(c => c.id === categoryId); // (★変更★)
                 const categoryName = category ? category.name : 'このカテゴリ';
                 
                 if (confirm(`「${categoryName}」を削除しますか？\n(カテゴリに紐付いた商品も全て削除されます)`)) {
-                    deleteCategory(categoryId);
+                    deleteCategory(categoryId); // (★変更★)
                 }
             }
         });
@@ -1199,13 +1716,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target.classList.contains('category-name-input')) {
                 const categoryId = e.target.dataset.categoryId;
                 const newName = e.target.value.trim();
-                const category = (state.menu.categories || []).find(c => c.id === categoryId);
+                const category = (menu.categories || []).find(c => c.id === categoryId); // (★変更★)
                 
                 if (newName === "") {
                     // (変更) onSnapshot が再描画するので、入力値を戻す必要はない
-                    // e.target.value = category.name; 
                 } else if (category && category.name !== newName) {
-                    updateCategoryName(categoryId, newName);
+                    updateCategoryName(categoryId, newName); // (★変更★)
                 }
             }
         });
@@ -1214,10 +1730,10 @@ document.addEventListener('DOMContentLoaded', () => {
         currentCategoriesList.addEventListener('change', (e) => {
             const categoryId = e.target.dataset.categoryId;
             if (e.target.classList.contains('category-set-toggle')) {
-                updateCategoryFlag(categoryId, 'isSetCategory', e.target.checked);
+                updateCategoryFlag(categoryId, 'isSetCategory', e.target.checked); // (★変更★)
             }
             else if (e.target.classList.contains('category-cast-toggle')) {
-                updateCategoryFlag(categoryId, 'isCastCategory', e.target.checked);
+                updateCategoryFlag(categoryId, 'isCastCategory', e.target.checked); // (★変更★)
             }
         });
     }
@@ -1226,7 +1742,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // (★変更★) 新規メニュー追加ボタン
     if (openNewMenuModalBtn) {
         openNewMenuModalBtn.addEventListener('click', () => {
-            // (★変更★) 引数なしで呼び出し (アクティブカテゴリは 'openMenuEditorModal' が内部で参照)
             openMenuEditorModal('new');
         });
     }
@@ -1234,9 +1749,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // (★変更★) メニュー編集モーダル > カテゴリ変更
     if (menuCategorySelect) {
         menuCategorySelect.addEventListener('change', (e) => {
-            // (★変更★) 選択されたカテゴリIDの 'isSetCategory' を見て判断
             const selectedCategoryId = e.target.value;
-            const category = (state.menu.categories || []).find(c => c.id === selectedCategoryId);
+            const category = (menu.categories || []).find(c => c.id === selectedCategoryId); // (★変更★)
             
             if (category && category.isSetCategory) {
                 menuDurationGroup.classList.remove('hidden');
@@ -1250,7 +1764,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (saveMenuItemBtn) {
         saveMenuItemBtn.addEventListener('click', (e) => {
             e.preventDefault(); 
-            saveMenuItem();
+            saveMenuItem(); // (★変更★)
         });
     }
 
@@ -1260,7 +1774,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const editBtn = e.target.closest('.edit-menu-btn');
             if (editBtn) {
                 const menuId = editBtn.dataset.menuId;
-                // (★変更★) カテゴリIDは不要
                 openMenuEditorModal('edit', menuId);
                 return;
             }
@@ -1270,8 +1783,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const menuId = deleteBtn.dataset.menuId;
                 
                 if (confirm(`「${deleteBtn.closest('tr').querySelector('td').textContent}」を削除しますか？\nこの操作は取り消せません。`)) {
-                    // (★変更★) カテゴリIDは不要
-                    deleteMenuItem(menuId);
+                    deleteMenuItem(menuId); // (★変更★)
                 }
                 return;
             }
@@ -1286,8 +1798,7 @@ document.addEventListener('DOMContentLoaded', () => {
         slipSelectionList.addEventListener('click', (e) => {
             const slipBtn = e.target.closest('button[data-slip-id]');
             if (slipBtn) {
-                // handleSlipClick(slipBtn.dataset.slipId); // (★変更★) menu.js には handleSlipClick がない
-                console.warn('handleSlipClick is not implemented in menu.js');
+                handleSlipClick(slipBtn.dataset.slipId); // (★変更★)
                 closeModal(slipSelectionModal);
             }
         });
@@ -1309,7 +1820,6 @@ document.addEventListener('DOMContentLoaded', () => {
         confirmCreateSlipBtn.addEventListener('click', () => {
             const tableId = confirmCreateSlipBtn.dataset.tableId;
 
-            // (★変更★) 時間を取得して検証
             const startTimeValue = newSlipStartTimeInput ? newSlipStartTimeInput.value : '';
             if (!startTimeValue) {
                 if (newSlipTimeError) newSlipTimeError.textContent = '開始時刻を入力してください。';
@@ -1317,12 +1827,262 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (newSlipTimeError) newSlipTimeError.textContent = '';
             
-            // (★変更★) ISO文字列に変換して渡す
             const startTimeISO = new Date(startTimeValue).toISOString();
             
             if (tableId) {
                 createNewSlip(tableId, startTimeISO); // (★変更★)
                 closeModal(newSlipConfirmModal);
+            }
+        });
+    }
+    
+    // (★変更★) 伝票関連のリスナー (menu.htmlのモーダル群に含まれるため)
+    if (orderNominationSelect) {
+        orderNominationSelect.addEventListener('change', (e) => {
+            updateSlipInfo(); 
+            const selectedCastId = e.target.value;
+            renderCustomerDropdown(selectedCastId);
+        });
+    }
+
+    if (orderCustomerNameSelect) {
+        orderCustomerNameSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'new_customer') {
+                newCustomerInputGroup.classList.remove('hidden');
+                newCustomerNameInput.value = '';
+                newCustomerError.textContent = '';
+                newCustomerNameInput.focus();
+                
+                if (slips) {
+                    const slipData = slips.find(s => s.slipId === currentSlipId);
+                    if (slipData) {
+                        slipData.name = "新規のお客様";
+                        updateSlipInfo();
+                    }
+                }
+
+            } else {
+                newCustomerInputGroup.classList.add('hidden');
+                newCustomerError.textContent = '';
+                updateSlipInfo();
+            }
+        });
+    }
+
+    if (saveNewCustomerBtn) {
+        saveNewCustomerBtn.addEventListener('click', async () => {
+            if (!customers) return;
+            const newName = newCustomerNameInput.value.trim();
+            if (newName === "") {
+                newCustomerError.textContent = "顧客名を入力してください。";
+                return;
+            }
+            
+            const existingCustomer = customers.find(c => c.name === newName);
+            if (existingCustomer) {
+                newCustomerError.textContent = "その顧客名は既に使用されています。";
+                return;
+            }
+
+            const currentCastId = orderNominationSelect.value === 'null' ? null : orderNominationSelect.value;
+            const newCustomer = { id: getUUID(), name: newName, nominatedCastId: currentCastId };
+            
+            try {
+                await addDoc(customersCollectionRef, newCustomer);
+                
+                const slipData = slips.find(s => s.slipId === currentSlipId);
+                if (slipData) {
+                    slipData.name = newName;
+                    updateSlipInfo();
+                }
+                
+                newCustomerInputGroup.classList.add('hidden');
+                newCustomerError.textContent = '';
+                
+            } catch (e) {
+                 console.error("Error adding new customer: ", e);
+                 newCustomerError.textContent = "顧客の保存に失敗しました。";
+            }
+        });
+    }
+
+    if (openSlipPreviewBtn) {
+        openSlipPreviewBtn.addEventListener('click', async () => {
+            await updateSlipInfo();
+            await renderSlipPreviewModal(); 
+            closeModal(orderModal);
+            openModal(slipPreviewModal);
+        });
+    }
+
+    if (openCancelSlipModalBtn) {
+        openCancelSlipModalBtn.addEventListener('click', () => {
+            renderCancelSlipModal();
+        });
+    }
+
+    if (confirmCancelSlipBtn) {
+        confirmCancelSlipBtn.addEventListener('click', async () => {
+            if (!slips) return;
+            const reason = cancelSlipReasonInput.value.trim();
+            if (reason === "") {
+                cancelSlipError.textContent = "ボツ伝にする理由を必ず入力してください。";
+                return;
+            }
+
+            const slip = slips.find(s => s.slipId === currentSlipId);
+            if (slip) {
+                try {
+                    const slipRef = doc(slipsCollectionRef, currentSlipId);
+                    await setDoc(slipRef, { 
+                        status: 'cancelled',
+                        cancelReason: reason
+                    }, { merge: true });
+                    
+                    closeModal(orderModal);
+                    closeModal(cancelSlipModal);
+                } catch (e) {
+                     console.error("Error cancelling slip: ", e);
+                    cancelSlipError.textContent = "伝票のキャンセルに失敗しました。";
+                }
+            }
+        });
+    }
+
+    if (printSlipBtn) {
+        printSlipBtn.addEventListener('click', () => {
+            window.print();
+        });
+    }
+
+    if (goToCheckoutBtn) {
+        goToCheckoutBtn.addEventListener('click', () => {
+            renderCheckoutModal();
+            closeModal(slipPreviewModal);
+            openModal(checkoutModal);
+        });
+    }
+
+    if (discountAmountInput) {
+        discountAmountInput.addEventListener('input', updatePaymentStatus);
+    }
+    if (discountTypeSelect) {
+        discountTypeSelect.addEventListener('change', updatePaymentStatus);
+    }
+
+    if (paymentCashInput) {
+        paymentCashInput.addEventListener('input', updatePaymentStatus);
+    }
+    if (paymentCardInput) {
+        paymentCardInput.addEventListener('input', updatePaymentStatus);
+    }
+    if (paymentCreditInput) {
+        paymentCreditInput.addEventListener('input', updatePaymentStatus);
+    }
+
+    if (processPaymentBtn) {
+        processPaymentBtn.addEventListener('click', async () => {
+            if (!slips) return;
+            const slip = slips.find(s => s.slipId === currentSlipId);
+            if (!slip) return;
+
+            const updatedSlipData = {
+                paidAmount: currentBillingAmount,
+                paymentDetails: {
+                    cash: parseInt(paymentCashInput.value) || 0,
+                    card: parseInt(paymentCardInput.value) || 0,
+                    credit: parseInt(paymentCreditInput.value) || 0
+                },
+                discount: {
+                    type: discountTypeSelect.value,
+                    value: parseInt(discountAmountInput.value) || 0
+                },
+                status: 'paid',
+                paidTimestamp: new Date().toISOString()
+            };
+            
+            try {
+                const slipRef = doc(slipsCollectionRef, currentSlipId);
+                await setDoc(slipRef, updatedSlipData, { merge: true });
+
+                renderReceiptModal();
+                closeModal(checkoutModal);
+                openModal(receiptModal);
+            } catch (e) {
+                 console.error("Error processing payment: ", e);
+            }
+        });
+    }
+
+    if (reopenSlipBtn) {
+        reopenSlipBtn.addEventListener('click', async () => {
+            if (!slips) return;
+            const slip = slips.find(s => s.slipId === currentSlipId);
+            if (slip) {
+                const updatedSlipData = {
+                    status: 'active',
+                    paidAmount: 0,
+                    paymentDetails: { cash: 0, card: 0, credit: 0 },
+                    paidTimestamp: null,
+                    discount: { type: 'yen', value: 0 }
+                };
+
+                try {
+                    const slipRef = doc(slipsCollectionRef, currentSlipId);
+                    await setDoc(slipRef, updatedSlipData, { merge: true });
+                    
+                    closeModal(receiptModal);
+                    handleSlipClick(currentSlipId);
+                } catch (e) {
+                    console.error("Error reopening slip: ", e);
+                }
+            }
+        });
+    }
+
+    if (orderItemsList) {
+        orderItemsList.addEventListener('click', (e) => {
+            const removeBtn = e.target.closest('.remove-order-item-btn');
+            if (removeBtn) {
+                const itemId = removeBtn.dataset.itemId;
+                if (itemId) {
+                    removeOrderItem(itemId);
+                }
+            }
+        });
+        
+        orderItemsList.addEventListener('change', (e) => {
+            if (e.target.classList.contains('order-item-qty-input')) {
+                const itemId = e.target.dataset.itemId;
+                const newQty = parseInt(e.target.value);
+                
+                if (itemId && !isNaN(newQty) && newQty > 0) {
+                    updateOrderItemQty(itemId, newQty);
+                } else if (itemId && (!isNaN(newQty) && newQty <= 0)) {
+                    removeOrderItem(itemId);
+                }
+            }
+        });
+    }
+    
+    if (tagsContainer) {
+        tagsContainer.addEventListener('click', (e) => {
+            const tagBtn = e.target.closest('.slip-tag-btn');
+            if (tagBtn) {
+                toggleSlipTag(tagBtn.dataset.tagName);
+            }
+        });
+    }
+    
+    if (menuOrderGrid) {
+        menuOrderGrid.addEventListener('click', (e) => {
+            const menuBtn = e.target.closest('.menu-order-btn');
+            if (menuBtn) {
+                addOrderItem(
+                    menuBtn.dataset.itemId,
+                    menuBtn.dataset.itemName,
+                    parseInt(menuBtn.dataset.itemPrice)
+                );
             }
         });
     }

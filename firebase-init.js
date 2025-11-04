@@ -8,7 +8,10 @@ import {
 import { 
     getFirestore, 
     doc, 
+    collection, // (★新規★)
     setDoc, 
+    addDoc, // (★新規★)
+    deleteDoc, // (★新規★)
     onSnapshot,
     setLogLevel
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
@@ -33,11 +36,24 @@ setLogLevel('debug');
 
 // アプリ全体で共有する変数
 let userId = null;
-let stateRef = null; // Firestoreのドキュメント参照を保持する変数
+// (★削除★) stateRef は廃止
+// let stateRef = null; 
 
-// (削除) 互換性のための getFirebaseServices() 関数を削除
-// この関数はレースコンディション（競合状態）を引き起こすため削除します。
-// 代わりに 'firebaseReady' イベントを使用します。
+// (★新規★) マルチテナント用の設定
+// 開発中は 'devStore' に固定することで、匿名認証IDが変わってもデータを維持します。
+// 本番環境では、ここはログインユーザーに紐づく店舗IDに動的に切り替えます。
+const storeId = "devStore"; 
+
+// (★新規★) 新しいデータ構造への参照
+const storeRef = doc(db, "stores", storeId);
+const settingsRef = doc(db, "stores", storeId, "settings", "data");
+const menuRef = doc(db, "stores", storeId, "menu", "data");
+const slipCounterRef = doc(db, "stores", storeId, "counters", "slip");
+
+const castsCollectionRef = collection(db, "stores", storeId, "casts");
+const customersCollectionRef = collection(db, "stores", storeId, "customers");
+const slipsCollectionRef = collection(db, "stores", storeId, "slips");
+
 
 // (新規) 認証状態の監視と匿名サインイン
 const initializeFirebase = () => {
@@ -46,11 +62,24 @@ const initializeFirebase = () => {
             // ユーザーがサインイン済み
             console.log("Firebase Auth: User is signed in.", user.uid);
             userId = user.uid;
-            // ユーザーIDに基づいてFirestoreのドキュメント参照を設定
-            stateRef = doc(db, "state", userId);
+            // (★削除★) stateRef の設定ロジックを削除
             
             // 認証が完了したことを知らせるカスタムイベント
-            document.dispatchEvent(new CustomEvent('firebaseReady', { detail: { userId, stateRef, db, auth } })); // (修正) dbとauthも渡す
+            // (★変更★) 新しい参照を detail に追加
+            document.dispatchEvent(new CustomEvent('firebaseReady', { 
+                detail: { 
+                    userId, 
+                    storeId,
+                    db, 
+                    auth,
+                    settingsRef,
+                    menuRef,
+                    slipCounterRef,
+                    castsCollectionRef,
+                    customersCollectionRef,
+                    slipsCollectionRef
+                } 
+            }));
 
         } else {
             // ユーザーがサインインしていない -> 匿名でサインイン
@@ -60,7 +89,6 @@ const initializeFirebase = () => {
                 // 成功すると onAuthStateChanged が再度呼び出される
             } catch (error) {
                 console.error("Firebase Auth: Anonymous sign-in failed", error);
-                // (重要) ここでエラーが発生した場合のUIフィードバック
                 document.body.innerHTML = `<div class="p-8 text-center text-red-600">Firebaseへの接続に失敗しました。設定（firebaseConfig）が正しいか、コンソールの「Authentication」で「匿名」が有効になっているか確認してください。</div>`;
             }
         }
@@ -76,9 +104,21 @@ export {
     db, 
     auth, 
     userId, // (注意) 初期読み込み時は null の可能性がある
-    stateRef, // (注意) 初期読み込み時は null の可能性がある
+    storeId, // (★新規★)
+    
+    // (★新規★) 新しい参照
+    settingsRef,
+    menuRef,
+    slipCounterRef,
+    castsCollectionRef,
+    customersCollectionRef,
+    slipsCollectionRef,
+    
+    // (★変更★) Firestoreメソッド
     doc, 
+    collection,
     setDoc, 
+    addDoc,
+    deleteDoc,
     onSnapshot 
 };
-

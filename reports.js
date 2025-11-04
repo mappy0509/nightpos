@@ -4,9 +4,21 @@ import {
     auth, 
     onSnapshot, 
     setDoc, 
-    doc 
+    addDoc, // (★新規★)
+    deleteDoc, // (★新規★)
+    doc,
+    collection // (★新規★)
 } from './firebase-init.js';
-// (削除) getFirebaseServices のインポートを削除
+
+// (★新規★) 新しい参照をインポート
+import {
+    settingsRef,
+    menuRef,
+    slipCounterRef,
+    castsCollectionRef,
+    customersCollectionRef,
+    slipsCollectionRef
+} from './firebase-init.js';
 
 // ===== グローバル定数・変数 =====
 
@@ -18,9 +30,17 @@ const getUUID = () => {
     return crypto.randomUUID();
 };
 
-// (変更) state は onSnapshot で取得するため、ローカルの state オブジェクトを削除
-let state = null;
-let stateDocRef = null; // (変更) stateDocRef をグローバルで保持
+// (★変更★) state を分割して管理
+let settings = null;
+let menu = null;
+let casts = [];
+let customers = [];
+let slips = [];
+let slipCounter = 0;
+
+// (★変更★) 現在選択中の伝票ID (ローカル管理)
+let currentSlipId = null;
+// let currentBillingAmount = 0; // (reports.js では不要)
 
 // ===== DOM要素 =====
 // (★修正★) reports.js (reports.html) に必要なDOMのみに限定
@@ -92,7 +112,7 @@ const formatElapsedTime = (ms) => {
  * @returns {number} 合計金額
  */
 const calculateSlipTotal = (slip) => {
-    if (!state) return 0; // (変更) state がロードされるまで待つ
+    if (!settings) return 0; // (★変更★)
     if (slip.status === 'cancelled') {
         return 0;
     }
@@ -100,9 +120,9 @@ const calculateSlipTotal = (slip) => {
     slip.items.forEach(item => {
         subtotal += item.price * item.qty;
     });
-    const serviceCharge = subtotal * state.rates.service;
+    const serviceCharge = subtotal * settings.rates.service; // (★変更★)
     const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * state.rates.tax;
+    const tax = subtotalWithService * settings.rates.tax; // (★変更★)
     const total = subtotalWithService + tax;
     return Math.round(total);
 };
@@ -114,9 +134,9 @@ const calculateSlipTotal = (slip) => {
  * @returns {string} キャスト名
  */
 const getCastNameById = (castId) => {
-    if (!state) return '不明'; // (変更) state がロードされるまで待つ
+    if (!casts) return '不明'; // (★変更★)
     if (!castId) return 'フリー';
-    const cast = state.casts.find(c => c.id === castId);
+    const cast = casts.find(c => c.id === castId); // (★変更★)
     return cast ? cast.name : '不明';
 };
 
@@ -127,8 +147,8 @@ const getCastNameById = (castId) => {
  * @returns {number} 未会計伝票数
  */
 const getActiveSlipCount = (tableId) => {
-    if (!state) return 0; // (変更) state がロードされるまで待つ
-    return state.slips.filter(
+    if (!slips) return 0; // (★変更★)
+    return slips.filter( // (★変更★)
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     ).length;
 };
@@ -166,14 +186,14 @@ const closeModal = (modalElement) => {
  * @returns {Date} 営業開始日時
  */
 const getBusinessDayStart = (date) => {
-    if (!state || !state.dayChangeTime) {
+    if (!settings || !settings.dayChangeTime) { // (★変更★)
         // state未読み込みか、設定がない場合は AM 00:00
         const startDate = new Date(date);
         startDate.setHours(0, 0, 0, 0);
         return startDate;
     }
     
-    const [hours, minutes] = state.dayChangeTime.split(':').map(Number);
+    const [hours, minutes] = settings.dayChangeTime.split(':').map(Number); // (★変更★)
     const startDate = new Date(date);
     startDate.setHours(hours, minutes, 0, 0);
     
@@ -205,7 +225,7 @@ const getBusinessDayEnd = (businessDayStart) => {
  * @returns {object} { paidSlips: [], cancelledSlips: [] }
  */
 const getSlipsForPeriod = (period, baseDate) => {
-    if (!state || !state.slips) {
+    if (!slips) { // (★変更★)
         return { paidSlips: [], cancelledSlips: [], range: { start: baseDate, end: baseDate } };
     }
 
@@ -241,13 +261,13 @@ const getSlipsForPeriod = (period, baseDate) => {
     const startTimestamp = startDate.getTime();
     const endTimestamp = endDate.getTime();
 
-    const paidSlips = state.slips.filter(slip => {
+    const paidSlips = slips.filter(slip => { // (★変更★)
         if (slip.status !== 'paid' || !slip.paidTimestamp) return false;
         const paidTime = new Date(slip.paidTimestamp).getTime();
         return paidTime >= startTimestamp && paidTime <= endTimestamp;
     });
 
-    const cancelledSlips = state.slips.filter(slip => {
+    const cancelledSlips = slips.filter(slip => { // (★変更★)
         // (注意) ボツ伝の日時は paidTimestamp がないため、仮で startTime を使う (要件次第)
         // 本来はボツにした日時 (cancelledTimestamp) が必要
         if (slip.status !== 'cancelled') return false; 
@@ -269,7 +289,7 @@ const getSlipsForPeriod = (period, baseDate) => {
  * (★修正★) 売上分析サマリーを計算・表示する
  */
 const renderReportsSummary = () => {
-    if (!reportsSummaryCards || !state) return; 
+    if (!reportsSummaryCards || !slips) return; // (★変更★)
     
     const { paidSlips, cancelledSlips } = getSlipsForPeriod(currentReportPeriod, currentReportDate);
     
@@ -293,7 +313,7 @@ const renderReportsSummary = () => {
  * (★修正★) 売れ筋商品ランキングを計算・表示する
  */
 const renderReportsRanking = () => {
-    if (!reportsRankingList || !state) return; 
+    if (!reportsRankingList || !slips) return; // (★変更★)
     
     const { paidSlips } = getSlipsForPeriod(currentReportPeriod, currentReportDate);
     const itemMap = new Map();
@@ -327,7 +347,7 @@ const renderReportsRanking = () => {
  * (★修正★) 売上推移グラフを描画する
  */
 const renderSalesChart = () => {
-    if (!reportsChartCanvas || !state) return;
+    if (!reportsChartCanvas || !slips) return; // (★変更★)
     
     const period = currentReportPeriod;
     const baseDate = currentReportDate;
@@ -443,7 +463,7 @@ const renderSalesChart = () => {
                     display: false // ラベルを非表示
                 }
             },
-            animation: true // (★修正★) アニメーションを有効化
+            animation: true 
         }
     });
 };
@@ -453,7 +473,7 @@ const renderSalesChart = () => {
  * (店舗名、税率など)
  */
 const updateModalCommonInfo = () => {
-    if (!state) return;
+    if (!settings) return; // (★変更★)
     // (変更) reports.js でモーダル内のDOM要素は取得しないため、中身を空にする
     // (ただし、HTMLにはモーダルが存在するため、関数自体は残す)
 };
@@ -462,7 +482,7 @@ const updateModalCommonInfo = () => {
  * (★新規★) 全レポートを更新する
  */
 const updateAllReports = () => {
-    if (!state) return;
+    if (!settings || !slips || !menu) return; // (★変更★)
     renderReportsSummary();
     renderReportsRanking();
     renderSalesChart();
@@ -477,24 +497,24 @@ const updateAllReports = () => {
  * @param {string} tableId 
  * @param {string} startTimeISO (★変更★) 開始時刻のISO文字列
  */
-const createNewSlip = (tableId, startTimeISO) => {
-    if (!state) return; 
-    const table = state.tables.find(t => t.id === tableId);
+const createNewSlip = async (tableId, startTimeISO) => {
+    if (!settings) return; // (★変更★)
+    const table = settings.tables.find(t => t.id === tableId); // (★変更★)
     if (!table) {
         console.error("Table not found for creation:", tableId);
         return;
     }
 
-    const newSlipCounter = (state.slipCounter || 0) + 1;
+    const newSlipCounter = (slipCounter || 0) + 1; // (★変更★)
     const newSlipNumber = newSlipCounter;
 
     const newSlip = {
-        slipId: getUUID(),
+        // slipId は addDoc で自動生成
         slipNumber: newSlipNumber,
         tableId: tableId,
         status: 'active',
         name: "新規のお客様",
-        startTime: startTimeISO, // (★変更★)
+        startTime: startTimeISO,
         nominationCastId: null, 
         items: [],
         tags: [],
@@ -505,15 +525,19 @@ const createNewSlip = (tableId, startTimeISO) => {
         discount: { type: 'yen', value: 0 }, 
     };
     
-    state.slips.push(newSlip);
-    state.slipCounter = newSlipCounter;
-    state.currentSlipId = newSlip.slipId;
-    
-    updateStateInFirestore(state);
-    
-    // (★変更★) 伝票モーダルは reports.js には存在しないため、描画・表示ロジックは削除
-    // renderOrderModal();
-    // openModal(orderModal);
+    // (★変更★)
+    try {
+        const docRef = await addDoc(slipsCollectionRef, newSlip);
+        await setDoc(slipCounterRef, { count: newSlipCounter });
+        currentSlipId = docRef.id; // (★変更★)
+
+        // (★変更★) 伝票モーダルは reports.js には存在しないため、描画・表示ロジックは削除
+        // renderOrderModal();
+        // openModal(orderModal);
+
+    } catch (e) {
+        console.error("Error creating new slip: ", e);
+    }
 };
 
 /**
@@ -521,13 +545,13 @@ const createNewSlip = (tableId, startTimeISO) => {
  * @param {string} tableId 
  */
 const renderSlipSelectionModal = (tableId) => {
-    if (!state) return; 
+    if (!slips) return; // (★変更★)
     if (!slipSelectionModalTitle || !slipSelectionList) return; // DOM存在チェック
 
     slipSelectionModalTitle.textContent = `テーブル ${tableId} の伝票一覧`;
     slipSelectionList.innerHTML = '';
 
-    const activeSlips = state.slips.filter(
+    const activeSlips = slips.filter( // (★変更★)
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     );
     
@@ -598,149 +622,176 @@ const renderNewSlipConfirmModal = (tableId) => {
 
 
 // (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
-const getDefaultState = () => {
-    // (★変更★) 新しいデータ構造
-    const catSetId = getUUID();
-    const catDrinkId = getUUID();
-    const catBottleId = getUUID();
-    const catFoodId = getUUID();
-    const catCastId = getUUID(); // (★重要★) キャスト料金
-    const catOtherId = getUUID();
-
+const getDefaultSettings = () => {
     return {
-        currentPage: 'reports',
-        currentStore: 'store1',
-        slipCounter: 0,
+        // currentPage: 'reports', (settings には不要)
         slipTagsMaster: [
             { id: 'tag1', name: '指名' }, { id: 'tag2', name: '初指名' },
             { id: 'tag3', name: '初回' }, { id: 'tag4', name: '枝' },
             { id: 'tag5', name: '切替' }, { id: 'tag6', name: '案内所' },
             { id: 'tag7', name: '20歳未満' }, { id: 'tag8', name: '同業' },
         ],
-        casts: [ 
-            { id: 'c1', name: 'あい' }, { id: 'c2', name: 'みう' },
-            { id: 'c3', name: 'さくら' }, { id: 'c4', name: 'れな' },
-            { id: 'c5', name: 'ひな' }, { id: 'c6', name: '体験A' },
-        ],
-        customers: [
-            { id: 'cust1', name: '鈴木様', nominatedCastId: 'c1' },
-            { id: 'cust2', name: '田中様', nominatedCastId: null },
-            { id: 'cust3', name: '佐藤様', nominatedCastId: 'c2' },
-        ],
         tables: [
             { id: 'V1', status: 'available' }, { id: 'V2', status: 'available' },
             { id: 'T1', status: 'available' }, { id: 'T2', status: 'available' },
             { id: 'C1', status: 'available' }, { id: 'C2', status: 'available' },
         ],
-        slips: [],
-        menu: {
-            // (★変更★) カテゴリを定義
-            categories: [
-                { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false },
-                { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false },
-                { id: catBottleId, name: 'ボトル', isSetCategory: false, isCastCategory: false },
-                { id: catFoodId, name: 'フード', isSetCategory: false, isCastCategory: false },
-                { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true }, // (★重要★)
-                { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false },
-            ],
-            // (★変更★) アイテムを定義 (categoryId で紐付け)
-            items: [
-                { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60 },
-                { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60 },
-                { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null },
-                { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null },
-                { id: 'm14', categoryId: catCastId, name: '本指名料', price: 3000, duration: null },
-            ]
-        },
-        currentActiveMenuCategoryId: catSetId, // (★新規★)
         storeInfo: {
             name: "Night POS",
             address: "東京都新宿区歌舞伎町1-1-1",
-            tel: "03-0000-0000"
+            tel: "03-0000-0000",
+            zip: "160-0021" // (★追加★)
         },
         rates: { tax: 0.10, service: 0.20 },
         dayChangeTime: "05:00",
         performanceSettings: {
-            // (★変更★) 'm14' (本指名料) のIDは getDefaultState 内で固定
+            // (★注意★) m14 は getDefaultMenu で生成されるIDと合わせる必要あり
             menuItems: {
-                'm14': { salesType: 'percentage', salesValue: 100, countNomination: true }
+                'm14_default': { salesType: 'percentage', salesValue: 100, countNomination: true }
             },
             serviceCharge: { salesType: 'percentage', salesValue: 0 },
             tax: { salesType: 'percentage', salesValue: 0 },
             sideCustomer: { salesValue: 100, countNomination: true }
         },
-        currentSlipId: null, 
-        currentEditingMenuId: null,
-        currentBillingAmount: 0, 
         ranking: { period: 'monthly', type: 'nominations' }
     };
 };
 
-// (新規) Firestore への state 保存関数（reports.js では原則使わない）
-const updateStateInFirestore = async (newState) => {
-    if (!stateDocRef) {
-        console.error("stateDocRef is not ready. State not saved to Firestore.");
-        return;
-    }
-    try {
-        await setDoc(stateDocRef, newState); 
-    } catch (error) {
-        console.error("Error saving state to Firestore:", error);
-    }
+const getDefaultMenu = () => {
+    const catSetId = getUUID();
+    const catDrinkId = getUUID();
+    const catBottleId = getUUID();
+    const catFoodId = getUUID();
+    const catCastId = getUUID(); 
+    const catOtherId = getUUID();
+    
+    return {
+        categories: [
+            { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false },
+            { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false },
+            { id: catBottleId, name: 'ボトル', isSetCategory: false, isCastCategory: false },
+            { id: catFoodId, name: 'フード', isSetCategory: false, isCastCategory: false },
+            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true }, 
+            { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false },
+        ],
+        items: [
+            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60 },
+            { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60 },
+            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null },
+            { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null },
+            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null }, // (★ID変更★)
+        ],
+        currentActiveMenuCategoryId: catSetId,
+    };
 };
 
-// (変更) --- Firestore リアルタイムリスナー ---
+// (★削除★) Firestore への state 保存関数
+// const updateStateInFirestore = async (newState) => { ... };
+
+// (★変更★) --- Firestore リアルタイムリスナー ---
 // firebaseReady イベントを待ってからリスナーを設定
 document.addEventListener('firebaseReady', (e) => {
-    const { db, auth, userId, stateRef: ref } = e.detail;
     
-    if (!ref) {
-        console.error("Firestore reference (stateRef) is not available.");
-        return;
-    }
-    
-    stateDocRef = ref;
+    // (★変更★) 新しい参照を取得
+    const { 
+        settingsRef, menuRef, slipCounterRef,
+        castsCollectionRef, customersCollectionRef, slipsCollectionRef
+    } = e.detail;
 
-    onSnapshot(stateDocRef, async (docSnap) => {
-        if (docSnap.exists()) {
-            console.log("Firestore data loaded.");
-            state = docSnap.data();
-            
-            // (★新規★) 古いデータ構造 (menu.set) だった場合、新しい構造に移行する (簡易)
-            if (state.menu && state.menu.set) {
-                console.warn("Old menu structure detected. Migrating...");
-                const defaultMenu = getDefaultState().menu;
-                state.menu = defaultMenu;
-                state.currentActiveMenuCategoryId = defaultMenu.categories[0].id;
-                // (注意) 実際は旧データを移行すべきだが、ここではデフォルトで上書き
-                await updateStateInFirestore(state); // 移行を保存
-            }
+    // (★新規★) 全データをロードできたか確認するフラグ
+    let settingsLoaded = false;
+    let menuLoaded = false;
+    let castsLoaded = false;
+    let customersLoaded = false;
+    let slipsLoaded = false;
+    let counterLoaded = false;
 
-            // (重要) state がロードされたら、UIを初回描画
-            // (★修正★) 全レポートを更新
+    // (★新規★) 全データロード後にUIを初回描画する関数
+    const checkAndRenderAll = () => {
+        // (★変更★) reports.js は updateAllReports を呼ぶ
+        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded) {
+            console.log("All data loaded. Rendering UI for reports.js");
             updateAllReports();
             updateModalCommonInfo(); 
-            
-        } else {
-            console.log("No state document found. Creating default state...");
-            const defaultState = getDefaultState();
-            state = defaultState;
-            
-            try {
-                await setDoc(stateDocRef, defaultState);
-                console.log("Default state saved to Firestore.");
-                // (重要) state がロードされたら、UIを初回描画
-                updateAllReports();
-                updateModalCommonInfo(); 
-                
-            } catch (error) {
-                console.error("Error saving default state to Firestore:", error);
-            }
         }
+    };
+
+    // 1. Settings
+    onSnapshot(settingsRef, async (docSnap) => {
+        if (docSnap.exists()) {
+            settings = docSnap.data();
+        } else {
+            console.log("No settings document found. Creating default settings...");
+            const defaultSettings = getDefaultSettings();
+            await setDoc(settingsRef, defaultSettings);
+            settings = defaultSettings;
+        }
+        settingsLoaded = true;
+        checkAndRenderAll();
+    }, (error) => console.error("Error listening to settings: ", error));
+
+    // 2. Menu
+    onSnapshot(menuRef, async (docSnap) => {
+        if (docSnap.exists()) {
+            menu = docSnap.data();
+        } else {
+            console.log("No menu document found. Creating default menu...");
+            const defaultMenu = getDefaultMenu();
+            await setDoc(menuRef, defaultMenu);
+            menu = defaultMenu;
+        }
+        menuLoaded = true;
+        checkAndRenderAll();
+    }, (error) => console.error("Error listening to menu: ", error));
+
+    // 3. Slip Counter
+    onSnapshot(slipCounterRef, async (docSnap) => {
+        if (docSnap.exists()) {
+            slipCounter = docSnap.data().count;
+        } else {
+            console.log("No slip counter document found. Creating default counter...");
+            await setDoc(slipCounterRef, { count: 0 });
+            slipCounter = 0;
+        }
+        counterLoaded = true;
+        checkAndRenderAll();
+    }, (error) => console.error("Error listening to slip counter: ", error));
+
+    // 4. Casts
+    onSnapshot(castsCollectionRef, (querySnapshot) => {
+        casts = [];
+        querySnapshot.forEach((doc) => {
+            casts.push({ ...doc.data(), id: doc.id });
+        });
+        console.log("Casts loaded: ", casts.length);
+        castsLoaded = true;
+        checkAndRenderAll();
+    }, (error) => console.error("Error listening to casts: ", error));
+
+    // 5. Customers
+    onSnapshot(customersCollectionRef, (querySnapshot) => {
+        customers = [];
+        querySnapshot.forEach((doc) => {
+            customers.push({ ...doc.data(), id: doc.id });
+        });
+        console.log("Customers loaded: ", customers.length);
+        customersLoaded = true;
+        checkAndRenderAll();
+    }, (error) => console.error("Error listening to customers: ", error));
+    
+    // 6. Slips
+    onSnapshot(slipsCollectionRef, (querySnapshot) => {
+        slips = [];
+        querySnapshot.forEach((doc) => {
+            slips.push({ ...doc.data(), slipId: doc.id }); // (★注意★) slipId フィールド
+        });
+        console.log("Slips loaded: ", slips.length);
+        slipsLoaded = true;
+        checkAndRenderAll();
     }, (error) => {
-        console.error("Error listening to Firestore snapshot:", error);
-        if (error.code === 'permission-denied') {
-            document.body.innerHTML = `<div class="p-8 text-center text-red-600">データベースへのアクセスが拒否されました。Firestoreのセキュリティルール（state/{userId}）が正しく設定されているか確認してください。</div>`;
+        console.error("Error listening to slips: ", error);
+        if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
+             document.body.innerHTML = `<div class="p-8 text-center text-red-600">データベースへのアクセスに失敗しました。Firestoreのセキュリティルール（slipsコレクション）が正しく設定されているか、または必要なインデックスが作成されているか確認してください。</div>`;
         }
     });
 });
@@ -787,13 +838,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     
-    // ===== 初期化処理 =====
-    if (reportsSummaryCards) { 
-        // (★修正★) 初回描画は onSnapshot に任せる
-        // renderSalesChart('daily');
-        // renderReportsSummary();
-        // renderReportsRanking();
-    }
+    // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
     
     // ===== イベントリスナーの設定 =====
 
@@ -803,7 +848,13 @@ document.addEventListener('DOMContentLoaded', () => {
             // (★変更★) すべてのモーダルを閉じる (reports.htmlに存在するもののみ)
             closeModal(newSlipConfirmModal);
             closeModal(slipSelectionModal);
-            // (★変更★) 他のモーダルは reports.html にないので、閉じるロジックを削除
+            // (★変更★) 他のモーダルもHTMLには存在するため、閉じるロジックは残す
+            closeModal(document.getElementById('order-modal'));
+            closeModal(document.getElementById('cancel-slip-modal'));
+            closeModal(document.getElementById('slip-preview-modal'));
+            closeModal(document.getElementById('checkout-modal'));
+            closeModal(document.getElementById('receipt-modal'));
+            closeModal(document.getElementById('menu-editor-modal'));
         });
     });
 
