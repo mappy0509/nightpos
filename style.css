@@ -344,3 +344,23 @@ body {
         margin: 3mm; /* (変更) 余白を狭く */
     }
 }
+
+/* (★新規★) スマホ用ボトムナビゲーション */
+.bottom-nav-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-grow: 1;
+    padding: 0.5rem 0; /* py-2 */
+    color: var(--text-secondary);
+    transition: all 0.2s ease-in-out;
+}
+.bottom-nav-link:hover {
+    background-color: #f8fafc; /* hover:bg-slate-50 */
+    color: var(--text-primary);
+}
+.bottom-nav-link.active {
+    color: #2563eb; /* text-blue-600 */
+    background-color: #f0f9ff; /* bg-blue-50 */
+}
