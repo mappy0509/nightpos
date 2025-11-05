@@ -16,9 +16,12 @@ import {
     getDocs // (★新規★)
 } from './firebase-init.js';
 
-// (★変更★) 参照は firebaseReady イベントで受け取る
-let settingsRef, castsCollectionRef, slipsCollectionRef, invitesCollectionRef;
-let currentStoreId;
+// (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
+/*
+import { 
+    settingsRef, castsCollectionRef, slipsCollectionRef, invitesCollectionRef
+} from './firebase-init.js';
+*/
 
 // ===== グローバル定数・変数 =====
 
@@ -35,6 +38,10 @@ let settings = null;
 let casts = [];
 let slips = []; 
 let currentEditingCastId = null; // (★新規★) 編集モーダル用のID
+
+// (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
+let settingsRef, castsCollectionRef, slipsCollectionRef, invitesCollectionRef;
+let currentStoreId;
 
 // ===== DOM要素 =====
 // (変更) cast-settings.js 専用のDOM要素

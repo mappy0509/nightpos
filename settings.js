@@ -10,12 +10,14 @@ import {
     doc 
 } from './firebase-init.js';
 
-// (★新規★) 新しい参照をインポート (settings と menu のみ)
+// (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
+/*
 import {
     settingsRef,
     menuRef,
     slipsCollectionRef // (★追加★) slips もインポート
 } from './firebase-init.js';
+*/
 
 // ===== グローバル定数・変数 =====
 
@@ -32,6 +34,10 @@ let settings = null;
 let menu = null;
 let slips = []; // (★追加★) 削除判定のために slips が必要
 // (★削除★) casts, customers, slipCounter, currentSlipId は不要
+
+// (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
+let settingsRef, menuRef, slipsCollectionRef;
+
 
 // ===== DOM要素 =====
 // (変更) settings.js 専用のDOM要素のみを取得
@@ -538,8 +544,15 @@ document.addEventListener('firebaseReady', (e) => {
     
     // (★変更★) 必要な参照のみ取得
     const { 
-        settingsRef, menuRef, slipsCollectionRef
+        settingsRef: sRef, 
+        menuRef: mRef, 
+        slipsCollectionRef: slRef
     } = e.detail;
+
+    // (★変更★) グローバル変数に参照をセット
+    settingsRef = sRef;
+    menuRef = mRef;
+    slipsCollectionRef = slRef;
 
     let settingsLoaded = false;
     let menuLoaded = false;

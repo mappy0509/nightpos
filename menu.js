@@ -13,12 +13,14 @@ import {
     collection // (★削除★)
 } from './firebase-init.js';
 
-// (★新規★) 新しい参照をインポート
+// (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
+/*
 import {
     settingsRef, // (★変更★) settings はカテゴリ管理で参照
     menuRef
     // (★削除★) slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef
 } from './firebase-init.js';
+*/
 
 // ===== グローバル定数・変数 =====
 
@@ -37,6 +39,10 @@ let menu = null;
 
 // (★変更★) 現在選択中の編集ID
 let currentEditingMenuId = null; 
+
+// (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
+let settingsRef, menuRef;
+
 
 // ===== DOM要素 =====
 // (★修正★) menu.js (menu.html) に必要なDOMのみに限定
@@ -576,8 +582,13 @@ document.addEventListener('firebaseReady', (e) => {
     
     // (★変更★) menuRef と settingsRef のみリッスン
     const { 
-        settingsRef, menuRef
+        settingsRef: sRef, 
+        menuRef: mRef
     } = e.detail;
+
+    // (★変更★) グローバル変数に参照をセット
+    settingsRef = sRef;
+    menuRef = mRef;
 
     let settingsLoaded = false;
     let menuLoaded = false;
@@ -625,10 +636,10 @@ document.addEventListener('firebaseReady', (e) => {
 
 // --- イベントリスナー ---
 document.addEventListener('DOMContentLoaded', () => {
-
+    
     // (★新規★) サイドバーを描画
     renderSidebar('sidebar-container', 'menu.html');
-    
+
     // ===== DOM要素の取得 =====
     // (★修正★) menu.html に存在するDOMのみ取得
     // navLinks = document.querySelectorAll('.nav-link'); // (★削除★)
