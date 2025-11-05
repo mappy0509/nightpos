@@ -13,56 +13,9 @@
 <body class="text-slate-800">
 
     <div class="flex h-screen bg-slate-50">
-        <aside class="w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable">
-            <div class="h-16 flex items-center justify-center border-b px-4">
-                <h1 class="text-2xl font-bold text-blue-600">Night POS</h1>
-            </div>
-            <nav class="flex-grow pt-6 space-y-2">
-                <a href="index.html" class="nav-link active" data-target="dashboard">
-                    <i class="fa-solid fa-chart-pie fa-fw w-6 text-center"></i>
-                    <span>ダッシュボード</span>
-                </a>
-                <a href="tables.html" class="nav-link" data-target="tables">
-                    <i class="fa-solid fa-border-all fa-fw w-6 text-center"></i>
-                    <span>テーブル管理</span>
-                </a>
-                <a href="all-slips.html" class="nav-link" data-target="all-slips">
-                    <i class="fa-solid fa-file-invoice fa-fw w-6 text-center"></i>
-                    <span>伝票一覧</span>
-                </a>
-                <a href="customers.html" class="nav-link" data-target="customers">
-                    <i class="fa-solid fa-users fa-fw w-6 text-center"></i>
-                    <span>顧客管理</span>
-                </a>
-                <a href="menu.html" class="nav-link" data-target="menu">
-                    <i class="fa-solid fa-book-open fa-fw w-6 text-center"></i>
-                    <span>メニュー管理</span>
-                </a>
-                <a href="reports.html" class="nav-link" data-target="reports">
-                    <i class="fa-solid fa-chart-line fa-fw w-6 text-center"></i>
-                    <span>売上分析</span>
-                </a>
-                <a href="cast-settings.html" class="nav-link" data-target="cast-settings">
-                    <i class="fa-solid fa-users-gear fa-fw w-6 text-center"></i>
-                    <span>キャスト設定</span>
-                </a>
-                <a href="settings.html" class="nav-link" data-target="settings">
-                    <i class="fa-solid fa-gear fa-fw w-6 text-center"></i>
-                    <span>店舗設定</span>
-                </a>
-            </nav>
-            <div class="p-4 border-t">
-                <div class="flex items-center space-x-3">
-                    <img src="https://placehold.co/40x40/e0e7ff/4338ca?text=User" alt="User Avatar" class="w-10 h-10 rounded-full">
-                    <div>
-                        <p class="font-semibold text-sm">山田 太郎</p>
-                        <p class="text-xs text-slate-500">マネージャー</p>
-                    </div>
-                </div>
-                <button class="mt-4 w-full text-left text-sm text-slate-600 hover:text-red-600">
-                    <i class="fa-solid fa-right-from-bracket fa-fw w-6 text-center"></i>
-                    <span>ログアウト</span>
-                </button>
+        <aside id="sidebar-container" class="w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable">
+            <div class="flex-grow flex items-center justify-center">
+                <i class="fa-solid fa-spinner fa-spin text-blue-500"></i>
             </div>
         </aside>
         <main class="flex-1 flex flex-col overflow-hidden non-printable">

@@ -1,3 +1,6 @@
+// (★新規★) サイドバーコンポーネントをインポート
+import { renderSidebar } from './sidebar.js';
+
 // (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
 import { 
     db, 
@@ -37,7 +40,7 @@ let currentEditingMenuId = null;
 
 // ===== DOM要素 =====
 // (★修正★) menu.js (menu.html) に必要なDOMのみに限定
-let navLinks, pageTitle, 
+let /* navLinks, (★削除★) */ pageTitle, 
     menuTabsContainer, 
     menuContentContainer, 
     menuTableHeader, 
@@ -622,10 +625,13 @@ document.addEventListener('firebaseReady', (e) => {
 
 // --- イベントリスナー ---
 document.addEventListener('DOMContentLoaded', () => {
+
+    // (★新規★) サイドバーを描画
+    renderSidebar('sidebar-container', 'menu.html');
     
     // ===== DOM要素の取得 =====
     // (★修正★) menu.html に存在するDOMのみ取得
-    navLinks = document.querySelectorAll('.nav-link');
+    // navLinks = document.querySelectorAll('.nav-link'); // (★削除★)
     pageTitle = document.getElementById('page-title');
     menuTabsContainer = document.getElementById('menu-tabs-container'); 
     menuContentContainer = document.getElementById('menu-content-container');

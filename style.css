@@ -194,7 +194,7 @@ body {
     color: #2563eb; /* text-blue-600 */
 }
 
-/* (新規) disabled 状態のボタンスタイル */
+/* (★変更★) disabled 状態のボタンスタイル (ログイン/登録ボタンも追加) */
 #process-payment-btn:disabled,
 #login-btn:disabled,
 #signup-btn:disabled,

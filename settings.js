@@ -1,3 +1,6 @@
+// (★新規★) サイドバーコンポーネントをインポート
+import { renderSidebar } from './sidebar.js';
+
 // (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
 import { 
     db, 
@@ -601,6 +604,9 @@ document.addEventListener('firebaseReady', (e) => {
 // --- イベントリスナー ---
 document.addEventListener('DOMContentLoaded', () => {
     
+    // (★新規★) サイドバーを描画
+    renderSidebar('sidebar-container', 'settings.html');
+
     // ===== DOM要素の取得 =====
     modalCloseBtns = document.querySelectorAll('.modal-close-btn');
     storeNameInput = document.getElementById('store-name');

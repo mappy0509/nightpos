@@ -1,3 +1,6 @@
+// (★新規★) サイドバーコンポーネントをインポート
+import { renderSidebar } from './sidebar.js';
+
 // (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
 import { 
     db, 
@@ -74,17 +77,6 @@ const closeModal = (modalElement) => {
         modalElement.classList.remove('active');
     }
 };
-
-/**
- * (新規) 設定フォームに現在の値を読み込む
- */
-const loadSettingsToForm = () => {
-    if (!casts || !slips) return; 
-
-    // キャストリストの描画
-    renderCastSettingsList();
-};
-
 
 /**
  * (★変更★) キャスト権限（ロール）設定を保存する
@@ -323,7 +315,9 @@ const deleteCast = async () => {
     
     const isUsed = slips.some(s => s.nominationCastId === cast.id); 
     if (isUsed) {
-        castEditorError.textContent = `このキャストは伝票で使用中のため削除できません。`;
+        // (★変更★) エラー表示をモーダル内または一覧のエラー欄に表示
+        const errorElement = castEditorModal.classList.contains('active') ? castEditorError : castSettingsError;
+        errorElement.textContent = `このキャストは伝票で使用中のため削除できません。`;
         return;
     }
     
@@ -353,7 +347,8 @@ const deleteCast = async () => {
         
     } catch (e) {
         console.error("Error deleting cast: ", e);
-        castEditorError.textContent = "キャストの削除に失敗しました。";
+         const errorElement = castEditorModal.classList.contains('active') ? castEditorError : castSettingsError;
+        errorElement.textContent = "キャストの削除に失敗しました。";
     }
 };
 
@@ -383,9 +378,10 @@ document.addEventListener('firebaseReady', (e) => {
 
     // (★新規★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
+        // (★変更★) cast-settings.js は renderCastSettingsList を呼ぶ
         if (settingsLoaded && castsLoaded && slipsLoaded) {
             console.log("All data loaded. Rendering UI for cast-settings.js");
-            loadSettingsToForm();
+            renderCastSettingsList();
         }
     };
 
@@ -440,6 +436,10 @@ document.addEventListener('firebaseReady', (e) => {
         const script = document.createElement('script');
         script.id = 'qrcode-script';
         script.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+        script.onerror = () => {
+             console.error("Failed to load qrcode.min.js");
+             if(castSettingsError) castSettingsError.textContent = "QRコードライブラリの読み込みに失敗しました。";
+        };
         document.head.appendChild(script);
     }
 });
@@ -448,20 +448,23 @@ document.addEventListener('firebaseReady', (e) => {
 // --- イベントリスナー ---
 document.addEventListener('DOMContentLoaded', () => {
     
+    // (★新規★) サイドバーを描画
+    renderSidebar('sidebar-container', 'cast-settings.html');
+    
     // ===== DOM要素の取得 =====
     modalCloseBtns = document.querySelectorAll('.modal-close-btn');
-    saveRolesBtn = document.getElementById('save-roles-btn'); 
+    saveRolesBtn = document.getElementById('save-cast-settings-btn'); // (★変更★) ID変更
     settingsFeedback = document.getElementById('settings-feedback');
 
     // (★変更★) キャスト
-    openNewCastModalBtn = document.getElementById('open-new-cast-modal-btn');
+    openNewCastModalBtn = document.getElementById('add-cast-btn'); // (★変更★) ID変更
     currentCastsList = document.getElementById('current-casts-list');
     castSettingsError = document.getElementById('cast-settings-error');
     
     // (★新規★) 招待モーダル
-    inviteModal = document.getElementById('invite-modal'); // (★注意★) HTML側でこのIDがまだ無い -> style.css と一緒に追加想定
-    inviteQrCodeContainer = document.getElementById('invite-qr-code'); // (★注意★) HTML側でこのIDがまだ無い
-    inviteLinkInput = document.getElementById('invite-link-input'); // (★注意★) HTML側でこのIDがまだ無い
+    inviteModal = document.getElementById('invite-modal'); // (★新規★)
+    inviteQrCodeContainer = document.getElementById('invite-qr-code'); // (★新規★)
+    inviteLinkInput = document.getElementById('invite-link-input'); // (★新規★)
     
     // (★新規★) 編集モーダル
     castEditorModal = document.getElementById('cast-editor-modal');
@@ -503,12 +506,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- (★新規★) キャスト招待 ---
+    // --- (★変更★) キャスト招待 ---
     if (openNewCastModalBtn) {
         openNewCastModalBtn.addEventListener('click', () => {
-            // (★変更★) HTML側にモーダルが無いため、ダミーの警告を出す
-            // openInviteModal(); 
-            alert("招待モーダル (invite-modal) がHTMLに存在しません。\nstyle.css と一緒にHTMLの変更が必要です。");
+            // (★変更★) QRコードライブラリが読み込まれているかチェック
+            if (typeof QRCode === 'undefined') {
+                castSettingsError.textContent = "QRコードライブラリが読み込み中です。再度お試しください。";
+                return;
+            }
+            openInviteModal(); 
         });
     }
 

@@ -1,16 +1,20 @@
+// (★新規★) サイドバーコンポーネントをインポート
+import { renderSidebar } from './sidebar.js';
+
 // (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
 import { 
     db, 
     auth, 
     onSnapshot, 
     setDoc, 
-    addDoc, // (★新規★)
-    deleteDoc, // (★新規★)
+    addDoc, 
+    deleteDoc, 
     doc,
-    collection // (★新規★)
+    collection 
 } from './firebase-init.js';
 
-// (★新規★) 新しい参照をインポート
+// (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
+/*
 import {
     settingsRef,
     menuRef,
@@ -19,6 +23,7 @@ import {
     customersCollectionRef,
     slipsCollectionRef
 } from './firebase-init.js';
+*/
 
 // ===== グローバル定数・変数 =====
 
@@ -42,9 +47,13 @@ let slipCounter = 0;
 let currentSlipId = null;
 let currentBillingAmount = 0;
 
+// (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
+let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef;
+
+
 // ===== DOM要素 =====
 // (★修正★) tables.js (tables.html) に必要なDOMのみに限定
-let navLinks, pages, pageTitle, tableGrid, 
+let /* navLinks, (★削除★) */ pages, pageTitle, tableGrid, 
     orderModal, checkoutModal, receiptModal,
     slipPreviewModal, modalCloseBtns, openSlipPreviewBtn, processPaymentBtn,
     printSlipBtn, goToCheckoutBtn, reopenSlipBtn, menuEditorModal,
@@ -824,7 +833,7 @@ const createNewSlip = async (tableId, startTimeISO) => {
         const docRef = await addDoc(slipsCollectionRef, newSlip);
         
         // (★変更★) slipCounterRef を更新
-        await setDoc(slipCounterRef, { count: newSlipCounter });
+        await setDoc(slipCounterRef, { count: newSlipNumber });
         
         // (★変更★) ローカルの伝票IDを更新
         currentSlipId = docRef.id;
@@ -1065,9 +1074,22 @@ document.addEventListener('firebaseReady', (e) => {
     
     // (★変更★) 新しい参照を取得
     const { 
-        settingsRef, menuRef, slipCounterRef,
-        castsCollectionRef, customersCollectionRef, slipsCollectionRef
+        settingsRef: sRef, 
+        menuRef: mRef, 
+        slipCounterRef: scRef,
+        castsCollectionRef: cRef, 
+        customersCollectionRef: cuRef, 
+        slipsCollectionRef: slRef
     } = e.detail;
+
+    // (★変更★) グローバル変数に参照をセット
+    settingsRef = sRef;
+    menuRef = mRef;
+    slipCounterRef = scRef;
+    castsCollectionRef = cRef;
+    customersCollectionRef = cuRef;
+    slipsCollectionRef = slRef;
+
 
     // (★新規★) 全データをロードできたか確認するフラグ
     let settingsLoaded = false;
@@ -1170,10 +1192,13 @@ document.addEventListener('firebaseReady', (e) => {
 
 // --- イベントリスナー ---
 document.addEventListener('DOMContentLoaded', () => {
+
+    // (★新規★) サイドバーを描画
+    renderSidebar('sidebar-container', 'tables.html');
     
     // ===== DOM要素の取得 =====
     // (★修正★) tables.html に存在するDOMのみ取得
-    navLinks = document.querySelectorAll('.nav-link');
+    // navLinks = document.querySelectorAll('.nav-link'); // (★削除★)
     pageTitle = document.getElementById('page-title');
     tableGrid = document.getElementById('table-grid'); 
     orderModal = document.getElementById('order-modal');

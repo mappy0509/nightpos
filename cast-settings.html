@@ -10,60 +10,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body class="text-slate-800">
 
     <div class="flex h-screen bg-slate-50">
-        <aside class="w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable">
-            <div class="h-16 flex items-center justify-center border-b px-4">
-                <h1 class="text-2xl font-bold text-blue-600">Night POS</h1>
-            </div>
-            <nav class="flex-grow pt-6 space-y-2">
-                <a href="index.html" class="nav-link active" data-target="dashboard">
-                    <i class="fa-solid fa-chart-pie fa-fw w-6 text-center"></i>
-                    <span>ダッシュボード</span>
-                </a>
-                <a href="tables.html" class="nav-link" data-target="tables">
-                    <i class="fa-solid fa-border-all fa-fw w-6 text-center"></i>
-                    <span>テーブル管理</span>
-                </a>
-                <a href="all-slips.html" class="nav-link" data-target="all-slips">
-                    <i class="fa-solid fa-file-invoice fa-fw w-6 text-center"></i>
-                    <span>伝票一覧</span>
-                </a>
-                <a href="customers.html" class="nav-link" data-target="customers">
-                    <i class="fa-solid fa-users fa-fw w-6 text-center"></i>
-                    <span>顧客管理</span>
-                </a>
-                <a href="menu.html" class="nav-link" data-target="menu">
-                    <i class="fa-solid fa-book-open fa-fw w-6 text-center"></i>
-                    <span>メニュー管理</span>
-                </a>
-                <a href="reports.html" class="nav-link" data-target="reports">
-                    <i class="fa-solid fa-chart-line fa-fw w-6 text-center"></i>
-                    <span>売上分析</span>
-                </a>
-                <a href="cast-settings.html" class="nav-link" data-target="cast-settings">
-                    <i class="fa-solid fa-users-gear fa-fw w-6 text-center"></i>
-                    <span>キャスト設定</span>
-                </a>
-                <a href="settings.html" class="nav-link" data-target="settings">
-                    <i class="fa-solid fa-gear fa-fw w-6 text-center"></i>
-                    <span>店舗設定</span>
-                </a>
-            </nav>
-            <div class="p-4 border-t">
-                <div class="flex items-center space-x-3">
-                    <img src="https://placehold.co/40x40/e0e7ff/4338ca?text=User" alt="User Avatar" class="w-10 h-10 rounded-full">
-                    <div>
-                        <p class="font-semibold text-sm">山田 太郎</p>
-                        <p class="text-xs text-slate-500">マネージャー</p>
-                    </div>
-                </div>
-                <button class="mt-4 w-full text-left text-sm text-slate-600 hover:text-red-600">
-                    <i class="fa-solid fa-right-from-bracket fa-fw w-6 text-center"></i>
-                    <span>ログアウト</span>
-                </button>
+        <aside id="sidebar-container" class="w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable">
+            <div class="flex-grow flex items-center justify-center">
+                <i class="fa-solid fa-spinner fa-spin text-blue-500"></i>
             </div>
         </aside>
         <main class="flex-1 flex flex-col overflow-hidden non-printable">
@@ -94,13 +48,11 @@
                         <div class="lg:col-span-2 space-y-8">
                             <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
                                 <h3 class="text-lg font-semibold mb-5 border-b pb-3">キャストの追加</h3>
-                                <div class="flex space-x-2 mb-4">
-                                    <input type="text" id="new-cast-name-input" placeholder="キャスト名 (例: あい)" class="w-full p-2 border border-slate-300 rounded-lg">
-                                    <button type="button" id="add-cast-btn" class="px-5 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 whitespace-nowrap">
-                                        <i class="fa-solid fa-plus mr-2"></i>追加
-                                    </button>
-                                </div>
-                                <p id="cast-settings-error" class="text-xs text-red-600 mb-4"></p>
+                                <button type="button" id="add-cast-btn" class="w-full p-4 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition duration-200">
+                                    <i class="fa-solid fa-qrcode mr-2"></i>
+                                    新規キャスト招待リンクを発行
+                                </button>
+                                <p id="cast-settings-error" class="text-xs text-red-600 mt-2"></p>
                             </div>
 
                             <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
@@ -129,6 +81,101 @@
             </div>
         </main>
     </div>
+
+    <div id="invite-modal" class="modal-backdrop">
+        <div class="modal-content w-full max-w-lg">
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold">キャスト招待リンク発行</h3>
+                <button type="button" class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <div class="p-6 text-center space-y-4">
+                <p class="text-slate-600">以下のQRコードまたはURLをキャストに送信して、アカウント登録をしてもらってください。<br>
+                <span class="font-bold text-red-600">※このリンクは1時間のみ有効です。</span></p>
+                
+                <div id="invite-qr-code" class="w-full max-w-xs mx-auto bg-slate-100 border rounded-lg flex items-center justify-center min-h-[256px]">
+                    <i class="fa-solid fa-spinner fa-spin text-slate-400"></i>
+                </div>
+                
+                <div>
+                    <label class="text-xs font-semibold text-slate-500 text-left block">招待URL (クリックしてコピー)</label>
+                    <input type="text" id="invite-link-input" readonly 
+                           class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-slate-50 text-sm cursor-pointer"
+                           onclick="this.select(); document.execCommand('copy'); alert('招待URLをコピーしました');">
+                </div>
+            </div>
+
+            <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg">
+                <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="cast-editor-modal" class="modal-backdrop">
+        <div class="modal-content w-full max-w-2xl">
+            <form id="cast-editor-form">
+                <div class="flex justify-between items-center p-5 border-b">
+                    <h3 class="text-xl font-semibold" id="cast-editor-modal-title">キャスト情報編集</h3>
+                    <button type="button" class="modal-close-btn text-slate-400 hover:text-slate-600">
+                        <i class="fa-solid fa-xmark fa-xl"></i>
+                    </button>
+                </div>
+                
+                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
+                    <div>
+                        <label for="cast-display-name" class="text-sm font-semibold text-slate-600">キャスト名 (源氏名)</label>
+                        <input type="text" id="cast-display-name" class="w-full p-2 border border-slate-300 rounded-lg mt-1" required>
+                    </div>
+                    <div>
+                        <label for="cast-real-name" class="text-sm font-semibold text-slate-600">本名</label>
+                        <input type="text" id="cast-real-name" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
+                    </div>
+                    <div>
+                        <label for="cast-email" class="text-sm font-semibold text-slate-600">メールアドレス (ログインID)</label>
+                        <input type="email" id="cast-email" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-slate-100" disabled
+                               title="メールアドレスは変更できません">
+                    </div>
+                    <div>
+                        <label for="cast-auth-uid" class="text-sm font-semibold text-slate-600">認証ID (Auth UID)</label>
+                        <input type="text" id="cast-auth-uid" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-slate-100" disabled
+                               title="認証IDは変更できません">
+                    </div>
+                    <div>
+                        <label for="cast-phone" class="text-sm font-semibold text-slate-600">電話番号</label>
+                        <input type="tel" id="cast-phone" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
+                    </div>
+                    <div>
+                        <label for="cast-hire-date" class="text-sm font-semibold text-slate-600">入店日</label>
+                        <input type="date" id="cast-hire-date" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="cast-address" class="text-sm font-semibold text-slate-600">住所</label>
+                        <input type="text" id="cast-address" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
+                    </div>
+                    <p id="cast-editor-error" class="text-xs text-red-600 md:col-span-2"></p>
+                </div>
+
+                <div class="flex justify-between items-center p-5 border-t bg-slate-50 rounded-b-lg">
+                    <button id="delete-cast-btn" type="button" class="px-4 py-2 rounded-lg bg-red-100 text-red-700 font-semibold hover:bg-red-200 hidden">
+                        <i class="fa-solid fa-trash mr-2"></i>このキャストを削除
+                    </button>
+                    <div class="flex-grow flex justify-end space-x-3">
+                        <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                            キャンセル
+                        </button>
+                        <button id="save-cast-btn" type="submit" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
+                            保存する
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
 
     <script type="module" src="cast-settings.js"></script>
 </body>

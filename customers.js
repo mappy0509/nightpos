@@ -1,3 +1,6 @@
+// (★新規★) サイドバーコンポーネントをインポート
+import { renderSidebar } from './sidebar.js';
+
 // (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
 import { 
     db, 
@@ -10,7 +13,8 @@ import {
     collection 
 } from './firebase-init.js';
 
-// (★新規★) 新しい参照をインポート
+// (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
+/*
 import {
     settingsRef,
     // menuRef, (★不要★)
@@ -19,6 +23,7 @@ import {
     customersCollectionRef,
     slipsCollectionRef
 } from './firebase-init.js';
+*/
 
 
 // ===== グローバル定数・変数 =====
@@ -39,6 +44,10 @@ let slips = [];
 
 // (★新規★) 現在編集中の顧客ID
 let currentEditingCustomerId = null;
+
+// (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
+let settingsRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef;
+
 
 // ===== DOM要素 =====
 // (★新規★) customers.html に必要なDOM
@@ -402,11 +411,18 @@ document.addEventListener('firebaseReady', (e) => {
     
     // (★変更★) 必要な参照のみ取得
     const { 
-        settingsRef,
-        castsCollectionRef, 
-        customersCollectionRef, 
-        slipsCollectionRef
+        settingsRef: sRef,
+        castsCollectionRef: cRef, 
+        customersCollectionRef: cuRef, 
+        slipsCollectionRef: slRef
     } = e.detail;
+
+    // (★変更★) グローバル変数に参照をセット
+    settingsRef = sRef;
+    castsCollectionRef = cRef;
+    customersCollectionRef = cuRef;
+    slipsCollectionRef = slRef;
+
 
     let settingsLoaded = false;
     let castsLoaded = false;
@@ -476,6 +492,9 @@ document.addEventListener('firebaseReady', (e) => {
 // --- イベントリスナー ---
 document.addEventListener('DOMContentLoaded', () => {
     
+    // (★新規★) サイドバーを描画
+    renderSidebar('sidebar-container', 'customers.html');
+
     // ===== DOM要素の取得 =====
     pageTitle = document.getElementById('page-title');
     customerSearchInput = document.getElementById('customer-search-input');
