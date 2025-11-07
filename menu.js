@@ -461,6 +461,10 @@ const updateCategoryFlag = async (categoryId, flagType, isChecked) => {
             
             // (★重要★) settings.js 側が参照するIDも更新する
             if (settings) {
+                // (★修正★) settings.performanceSettings が無い場合に備える
+                if (!settings.performanceSettings) {
+                    settings.performanceSettings = {};
+                }
                 settings.performanceSettings.castPriceCategoryId = isChecked ? categoryId : null;
                 try {
                     await setDoc(settingsRef, settings);
@@ -577,7 +581,7 @@ const getDefaultMenu = () => {
 
 
 // (★変更★) --- Firestore リアルタイムリスナー ---
-// firebaseReady イベントを待ってからリスナーを設定
+// (★変更★) firebaseReady イベントを待ってからリスナーを設定
 document.addEventListener('firebaseReady', (e) => {
     
     // (★変更★) menuRef と settingsRef のみリッスン
@@ -695,6 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (menu) { 
                     menu.currentActiveMenuCategoryId = categoryId;
                     
+                    // (★変更★) DBに保存（try-catchはなくてもonSnapshotが動くが、念のため）
                     try {
                         await setDoc(menuRef, menu);
                     } catch (e) {
@@ -763,6 +768,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (newName === "") {
                     // (変更) onSnapshot が再描画
+                    if(category) e.target.value = category.name; // (★修正★) 空文字の場合は元の名前に戻す
                 } else if (category && category.name !== newName) {
                     updateCategoryName(categoryId, newName); // (★変更★)
                 }
@@ -804,8 +810,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (saveMenuItemBtn) {
-        saveMenuItemBtn.addEventListener('click', (e) => {
+    // (★変更★) メニュー編集モーダル > 保存
+    if (menuEditorForm) { // (★変更★) ボタンでなくフォームのsubmitイベントを監視
+        menuEditorForm.addEventListener('submit', (e) => {
             e.preventDefault(); 
             saveMenuItem(); // (★変更★)
         });

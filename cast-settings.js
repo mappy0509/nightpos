@@ -361,7 +361,7 @@ const deleteCast = async () => {
 
 
 // (★変更★) --- Firestore リアルタイムリスナー ---
-// firebaseReady イベントを待ってからリスナーを設定
+// (★変更★) firebaseReady イベントを待ってからリスナーを設定
 document.addEventListener('firebaseReady', (e) => {
     
     // (★変更★) 必要な参照をグローバル変数にセット

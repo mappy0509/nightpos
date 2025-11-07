@@ -425,7 +425,7 @@ const getDefaultMenu = () => {
 // const updateStateInFirestore = async (newState) => { ... };
 
 // (★変更★) --- Firestore リアルタイムリスナー ---
-// firebaseReady イベントを待ってからリスナーを設定
+// (★変更★) firebaseReady イベントを待ってからリスナーを設定
 document.addEventListener('firebaseReady', (e) => {
     
     // (★変更★) 必要な参照のみ取得
@@ -501,7 +501,7 @@ document.addEventListener('firebaseReady', (e) => {
 
     // (★削除★) 5. Customers
     // (★変更★) customersLoaded を true に固定
-    const customersLoaded = true;
+    // const customersLoaded = true; // (★修正★) customers.js からのコピペミス、不要
     
     // 6. Slips
     onSnapshot(slipsCollectionRef, (querySnapshot) => {
@@ -580,6 +580,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(reportDatePicker) {
         reportDatePicker.addEventListener('change', (e) => {
+            // (★修正★) タイムゾーンの問題を避けるため、UTCとして解釈されないよう new Date() に渡す
             const dateParts = e.target.value.split('-').map(Number);
             currentReportDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
             updateAllReports();

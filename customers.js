@@ -132,10 +132,10 @@ const getCustomerStats = (customerId, customerName) => {
     // (★変更★) 顧客IDまたは顧客名で会計済み伝票をフィルタリング
     const customerSlips = slips.filter(slip => {
         if (slip.status !== 'paid' || !slip.paidTimestamp) return false;
-        // 基本は顧客IDで照合 (未実装のため、現状は名前で照合)
-        // if (slip.customerId === customerId) return true; 
         
-        // フォールバックとして顧客名で照合
+        // (★変更★) IDと名前の両方で照合
+        // (IDは addDoc で自動生成されるため、古いデータには customerId がない想定)
+        if (slip.customerId === customerId) return true; 
         if (slip.name === customerName) return true;
         
         return false;
@@ -296,7 +296,6 @@ const saveCustomer = async () => {
         name: name,
         nominatedCastId: nominatedCastId,
         memo: memo
-        // (★注意★) id は Firestore が自動生成 (編集時は setDoc なので id は関係ない)
     };
 
     try {
@@ -407,6 +406,7 @@ const openCustomerDetailModal = (customerId) => {
 
 
 // (★変更★) --- Firestore リアルタイムリスナー ---
+// (★変更★) firebaseReady イベントを待ってからリスナーを設定
 document.addEventListener('firebaseReady', (e) => {
     
     // (★変更★) 必要な参照のみ取得

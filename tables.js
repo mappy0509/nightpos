@@ -309,7 +309,7 @@ const renderOrderModal = () => {
     });
     
     orderSubtotalEl.textContent = formatCurrency(subtotal);
-
+ 
     menuOrderGrid.innerHTML = ''; 
     
     const allMenuItems = (menu.items || []).sort((a,b) => a.name.localeCompare(b.name)); // (★変更★)
@@ -1069,7 +1069,7 @@ const getDefaultMenu = () => {
 // const updateStateInFirestore = async (newState) => { ... };
 
 // (★変更★) --- Firestore リアルタイムリスナー ---
-// firebaseReady イベントを待ってからリスナーを設定
+// (★変更★) firebaseReady イベントを待ってからリスナーを設定
 document.addEventListener('firebaseReady', (e) => {
     
     // (★変更★) 新しい参照を取得
@@ -1368,9 +1368,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const currentCastId = orderNominationSelect.value === 'null' ? null : orderNominationSelect.value;
             const newCustomer = { 
-                id: getUUID(), 
+                //(★変更★) IDはaddDocに任せる
                 name: newName, 
-                nominatedCastId: currentCastId 
+                nominatedCastId: currentCastId,
+                memo: "" // (★新規★)
             };
             
             // (★変更★)
@@ -1385,11 +1386,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 newCustomerInputGroup.classList.add('hidden');
                 newCustomerError.textContent = '';
-                
-                // (★変更★) onSnapshot が renderCustomerDropdown を更新するのを待つ
-                // renderCustomerDropdown(currentCastId);
-                // orderCustomerNameSelect.value = newName;
-                // updateSlipInfo(); // (★変更★) addDoc の後に実行
                 
             } catch (e) {
                  console.error("Error adding new customer: ", e);
@@ -1429,7 +1425,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const slipRef = doc(slipsCollectionRef, currentSlipId);
                     await setDoc(slipRef, { 
                         status: 'cancelled',
-                        cancelReason: reason
+                        cancelReason: reason,
+                        // (★勤怠機能修正★) ボツ伝にした日時を記録（reports.jsで利用）
+                        paidTimestamp: new Date().toISOString() 
                     }, { merge: true });
                     
                     closeModal(orderModal);
