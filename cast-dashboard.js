@@ -13,7 +13,8 @@ import {
 } from './firebase-init.js';
 
 // (★変更★) 参照は firebaseReady イベントで受け取る
-let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef;
+let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef,
+    attendancesCollectionRef; // (★勤怠機能追加★)
 
 // ===== グローバル定数・変数 =====
 
@@ -31,6 +32,7 @@ let menu = null;
 let casts = [];
 let customers = [];
 let slips = [];
+let attendances = []; // (★勤怠機能追加★)
 let slipCounter = 0; // (このJSでは使わないが、他から流用)
 
 // (★変更★) ログイン中のキャストIDと名前
@@ -58,6 +60,16 @@ let castHeaderName, headerDate,
  */
 const formatCurrency = (amount) => {
     return `¥${amount.toLocaleString()}`;
+};
+
+/**
+ * (★修正★) Dateオブジェクトを 'YYYY-MM-DD' 形式の文字列に変換する
+ * (getLastVisitDate で必要)
+ * @param {Date} date 
+ * @returns {string}
+ */
+const formatDateISO = (date) => {
+    return date.toISOString().split('T')[0];
 };
 
 // =================================================
@@ -140,14 +152,105 @@ const getSlipsForPeriod = (period, baseDate) => {
 
 
 // =================================================
-// (★新規★) キャストダッシュボード専用ロジック (UI改修版)
+// (★修正★) 報酬計算ロジック (cast-pay.js から移植)
+// =================================================
+
+/**
+ * (★新規★) 1枚の伝票から、指定したキャストの報酬を計算する
+ * (※ 本来は settings.performanceSettings に基づく複雑な計算が必要)
+ * @param {object} slip - 伝票データ
+ * @param {string} castId - 対象のキャストID
+ * @returns {number} 報酬額
+ */
+const calculatePayForSlip = (slip, castId) => {
+    if (slip.nominationCastId !== castId) {
+        return 0; // 指名が違う場合は 0
+    }
+    
+    // (★簡易ロジック★)
+    // performanceSettings を使って、どの項目が成績反映かを見る
+    const performanceSettings = settings.performanceSettings;
+    if (!performanceSettings || !performanceSettings.menuItems) {
+        return 0; // 設定がない場合は 0
+    }
+
+    let totalPay = 0;
+
+    slip.items.forEach(item => {
+        const itemSetting = performanceSettings.menuItems[item.id];
+        
+        if (itemSetting) {
+            // 成績設定がある項目
+            if (itemSetting.salesType === 'percentage') {
+                totalPay += item.price * item.qty * (itemSetting.salesValue / 100);
+            } else if (itemSetting.salesType === 'fixed') {
+                totalPay += itemSetting.salesValue * item.qty;
+            }
+        }
+        // else {
+        //     // 成績設定がない項目は 0
+        // }
+    });
+    
+    // (※ サービス料・税・枝などの計算は、ここでは省略)
+
+    return Math.round(totalPay);
+};
+
+// =================================================
+// (★修正★) 顧客リストロジック (cast-customers.js から移植)
+// =================================================
+
+/**
+ * (★新規★) 顧客の最終来店日を計算する
+ * @param {string} customerName 
+ * @returns {string} 最終来店日の説明文字列
+ */
+const getLastVisitDate = (customerName) => {
+    if (!slips || slips.length === 0 || !settings) {
+        return "来店履歴なし";
+    }
+
+    const customerSlips = slips.filter(
+        slip => slip.name === customerName && slip.status === 'paid' && slip.paidTimestamp
+    );
+
+    if (customerSlips.length === 0) {
+        return "来店履歴なし";
+    }
+
+    customerSlips.sort((a, b) => new Date(b.paidTimestamp).getTime() - new Date(a.paidTimestamp).getTime());
+    
+    const lastVisitDate = new Date(customerSlips[0].paidTimestamp);
+    
+    const todayBusinessStart = getBusinessDayStart(new Date());
+    const lastVisitBusinessStart = getBusinessDayStart(lastVisitDate);
+
+    // (★修正★) 営業日ベースで差を計算
+    const diffTime = todayBusinessStart.getTime() - lastVisitBusinessStart.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    
+    const dateStr = lastVisitDate.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
+
+    if (diffDays === 0) {
+        return `最終来店: ${dateStr} (本日)`;
+    } else if (diffDays > 0 && diffDays <= 30) {
+        return `最終来店: ${dateStr} (${diffDays}日前)`;
+    } else {
+        return `最終来店: ${dateStr}`;
+    }
+};
+
+
+// =================================================
+// (★修正★) キャストダッシュボード専用ロジック (UI改修版)
 // =================================================
 
 /**
  * (★変更★) キャストのサマリーを描画する
  */
 const renderCastDashboardSummary = () => {
-    if (!slips || !currentCastId) return; // IDがセットされるまで待つ
+    if (!slips || !currentCastId || !settings) return; // (★修正★) settings も待つ
 
     // 1. 本日のデータ
     const { paidSlips: todayPaidSlips } = getSlipsForPeriod('daily', new Date());
@@ -155,9 +258,8 @@ const renderCastDashboardSummary = () => {
     let todayNoms = 0;
     todayPaidSlips.forEach(slip => {
         if (slip.nominationCastId === currentCastId) {
-            // (★重要★) 将来的に、ここで settings.performanceSettings に基づく
-            // 詳細な売上計算（バック率など）を行う
-            todaySales += (slip.paidAmount || 0); // (★現在は仮★ 伝票の売上をそのまま計上)
+            // (★修正★) 「売上」は伝票の総額 (paidAmount) を計上
+            todaySales += (slip.paidAmount || 0);
             todayNoms += 1;
         }
     });
@@ -166,26 +268,40 @@ const renderCastDashboardSummary = () => {
     const { paidSlips: monthPaidSlips } = getSlipsForPeriod('monthly', new Date());
     let monthSales = 0;
     let monthNoms = 0;
+    let monthPay = 0; // (★修正★) 報酬
+    
     monthPaidSlips.forEach(slip => {
         if (slip.nominationCastId === currentCastId) {
-            // (★重要★) 将来的に、ここで settings.performanceSettings に基づく
-            // 詳細な売上計算（バック率など）を行う
-            monthSales += (slip.paidAmount || 0); // (★現在は仮★ 伝票の売上をそのまま計上)
+            // (★修正★) 「売上」は伝票の総額 (paidAmount) を計上
+            monthSales += (slip.paidAmount || 0);
             monthNoms += 1;
+            
+            // (★修正★) 「報酬」は
+            monthPay += calculatePayForSlip(slip, currentCastId);
         }
     });
     
-    // 3. 報酬・出勤 (★ダミー★)
-    // (※ 将来的にロジックを実装)
-    const monthPay = monthSales * 0.4; // (★仮★ 売上の40%を報酬とする)
-    const workDays = 10; // (★仮★)
+    // 3. 出勤 (★ダミー★)
+    // (※ 将来的にロジックを実装 -> attendances を参照)
+    const businessDayStart = getBusinessDayStart(new Date());
+    const monthStr = formatDateISO(businessDayStart).substring(0, 7); // "YYYY-MM"
+    
+    const workDays = attendances.filter(a => 
+        a.castId === currentCastId &&
+        a.date.startsWith(monthStr) &&
+        (a.status === 'clocked_in' || a.status === 'clocked_out' || a.status === 'late')
+    ).length;
+    
     
     // 4. DOMに反映
     if (summaryCastTodaySales) summaryCastTodaySales.textContent = formatCurrency(todaySales);
     if (summaryCastTodayNoms) summaryCastTodayNoms.innerHTML = `${todayNoms} <span class="text-base">組</span>`;
     if (summaryCastMonthSales) summaryCastMonthSales.textContent = formatCurrency(monthSales);
     if (summaryCastMonthNoms) summaryCastMonthNoms.innerHTML = `${monthNoms} <span class="text-lg">組</span>`;
+    
+    // (★修正★) 報酬をダミーから計算結果に
     if (summaryCastPay) summaryCastPay.textContent = formatCurrency(monthPay);
+    // (★修正★) 出勤日数を勤怠データから反映
     if (summaryCastWorkdays) summaryCastWorkdays.innerHTML = `${workDays} <span class="text-base">日</span>`;
     
     // 5. ヘッダーに名前を表示
@@ -196,14 +312,14 @@ const renderCastDashboardSummary = () => {
  * (★変更★) キャストの指名顧客一覧を描画する
  */
 const renderCastCustomerList = () => {
-    if (!castCustomerList || !customers || !currentCastId) return;
+    if (!castCustomerList || !customers || !currentCastId || !slips || !settings) return; // (★修正★) slips, settings も待つ
     
     // (★変更★) 自分の指名顧客のみフィルタリング
     const myCustomers = customers.filter(
         cust => cust.nominatedCastId === currentCastId
     );
     
-    // (★仮★) 最終来店日をソート (※現状は顧客データに最終来店日がないため、ダミーで名前ソート)
+    // (★仮★) 最終来店日をソート (※ロジックが重いため、一旦名前ソート)
     myCustomers.sort((a,b) => a.name.localeCompare(b.name));
     
     castCustomerList.innerHTML = '';
@@ -215,8 +331,8 @@ const renderCastCustomerList = () => {
     
     // (★変更★) 顧客リストのUI
     myCustomers.slice(0, 5).forEach(cust => { // (★仮★) 上位5件のみ表示
-        // (※ 将来的に slips から最終来店日を計算するロジックが必要)
-        const lastVisit = "最終来店: (ロジック未実装)"; 
+        // (★修正★) 最終来店日を計算
+        const lastVisit = getLastVisitDate(cust.name); 
         
         const itemHTML = `
             <div class="bg-white p-4 rounded-xl shadow border border-slate-200 flex justify-between items-center">
@@ -331,7 +447,8 @@ document.addEventListener('firebaseReady', async (e) => {
         slipCounterRef: scRef,
         castsCollectionRef: cRef, 
         customersCollectionRef: cuRef, 
-        slipsCollectionRef: slRef
+        slipsCollectionRef: slRef,
+        attendancesCollectionRef: aRef // (★勤怠機能追加★)
     } = e.detail;
 
     // (★変更★) グローバル変数にセット
@@ -342,6 +459,7 @@ document.addEventListener('firebaseReady', async (e) => {
     castsCollectionRef = cRef;
     customersCollectionRef = cuRef;
     slipsCollectionRef = slRef;
+    attendancesCollectionRef = aRef; // (★勤怠機能追加★)
     
     // (★新規★) まずキャスト情報を読み込む
     await loadCastInfo();
@@ -352,10 +470,11 @@ document.addEventListener('firebaseReady', async (e) => {
     let customersLoaded = false;
     let slipsLoaded = false;
     let counterLoaded = false;
+    let attendancesLoaded = false; // (★勤怠機能追加★)
 
     // (★新規★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
-        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded) {
+        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && attendancesLoaded) { // (★勤怠機能追加★)
             console.log("All data loaded. Rendering UI for cast-dashboard.js");
             
             // (★変更★) 呼び出す関数を変更
@@ -439,7 +558,23 @@ document.addEventListener('firebaseReady', async (e) => {
         checkAndRenderAll();
     }, (error) => {
         console.error("Error listening to slips: ", error);
-        // (★変更★) キャストアプリでは権限エラーは発生しない想定 (発生時は firebase-init でリダイレクト)
+        slipsLoaded = true; // (★修正★) エラーでも続行
+        checkAndRenderAll();
+    });
+    
+    // 7. Attendances (★勤怠機能追加★)
+    onSnapshot(attendancesCollectionRef, (querySnapshot) => {
+        attendances = [];
+        querySnapshot.forEach((doc) => {
+            attendances.push({ ...doc.data(), id: doc.id }); 
+        });
+        console.log("Attendances loaded: ", attendances.length);
+        attendancesLoaded = true;
+        checkAndRenderAll();
+    }, (error) => {
+        console.error("Error listening to attendances: ", error);
+        attendancesLoaded = true; // (★修正★) エラーでも続行
+        checkAndRenderAll();
     });
 });
 

@@ -139,7 +139,9 @@ const initializeFirebase = () => {
                 const castsCollectionRef = collection(db, "stores", currentStoreId, "casts");
                 const customersCollectionRef = collection(db, "stores", currentStoreId, "customers");
                 const slipsCollectionRef = collection(db, "stores", currentStoreId, "slips");
-                const invitesCollectionRef = collection(db, "stores", currentStoreId, "invites"); // (★新規★)
+                const invitesCollectionRef = collection(db, "stores", currentStoreId, "invites"); 
+                // (★勤怠機能追加★)
+                const attendancesCollectionRef = collection(db, "stores", currentStoreId, "attendances");
 
                 // (★新規★) 5. 認証が完了したことを知らせるカスタムイベント
                 document.dispatchEvent(new CustomEvent('firebaseReady', { 
@@ -158,7 +160,8 @@ const initializeFirebase = () => {
                         castsCollectionRef,
                         customersCollectionRef,
                         slipsCollectionRef,
-                        invitesCollectionRef
+                        invitesCollectionRef,
+                        attendancesCollectionRef // (★勤怠機能追加★)
                     } 
                 }));
 

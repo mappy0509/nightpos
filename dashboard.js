@@ -42,6 +42,7 @@ let menu = null;
 let casts = [];
 let customers = [];
 let slips = [];
+let attendances = []; // (★勤怠機能追加★)
 let slipCounter = 0;
 
 // (★変更★) 現在選択中の伝票ID (ローカル管理)
@@ -52,7 +53,8 @@ let currentBillingAmount = 0;
 let elapsedTimeTimer = null;
 
 // (★変更★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
-let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef;
+let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef,
+    attendancesCollectionRef; // (★勤怠機能追加★)
 
 
 // ===== DOM要素 =====
@@ -88,6 +90,15 @@ let /* navLinks, (★削除★) */ pageTitle, dashboardSlips,
 
 
 // --- 関数 ---
+
+/**
+ * (★勤怠機能追加★) Dateオブジェクトを 'YYYY-MM-DD' 形式の文字列に変換する
+ * @param {Date} date 
+ * @returns {string}
+ */
+const formatDateISO = (date) => {
+    return date.toISOString().split('T')[0];
+};
 
 /**
  * 通貨形式（例: ¥10,000）にフォーマットする
@@ -275,9 +286,12 @@ const getSlipsForPeriod = (period, baseDate) => {
         // 本来はボツにした日時 (cancelledTimestamp) が必要
         if (slip.status !== 'cancelled') return false; 
         
-        // paidTimestamp がないため、集計期間の判定が困難。
-        // ここでは「state.slips全体 (本日分)」のボツ伝をそのまま返す簡易仕様
-        return true; 
+        // (★勤怠機能修正★) 営業日ベースで判定
+        if (slip.startTime) {
+             const cancelledTime = new Date(slip.startTime).getTime();
+             return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
+        }
+        return false;
     });
 
     return { paidSlips, cancelledSlips, range: { start: startDate, end: endDate } };
@@ -293,8 +307,8 @@ const getSlipsForPeriod = (period, baseDate) => {
  * (変更) ダッシュボードサマリーを更新する
  */
 const renderDashboardSummary = () => {
-    // (★変更★) settings を参照
-    if (!settings) return; 
+    // (★変更★) settings, attendances を参照
+    if (!settings || !attendances) return; 
     
     // (★修正★) 「本日」の営業日データを取得
     const { paidSlips } = getSlipsForPeriod('daily', new Date());
@@ -328,12 +342,22 @@ const renderDashboardSummary = () => {
         if (avgEl) avgEl.textContent = formatCurrency(Math.round(avgSales));
     }
     
-    // 4. 出勤キャスト (ダミー)
+    // 4. (★勤怠機能修正★) 出勤キャスト
     if (summaryCastCount) {
         // (★修正★) index.html の構造に合わせてセレクタを修正
         const countEl = summaryCastCount.querySelector('p.text-3xl');
-        // (★変更★) casts を参照
-        if (countEl) countEl.innerHTML = `${casts.length} <span class="text-lg font-medium">名</span>`; // (innerHTMLに変更)
+        
+        // (★勤怠機能修正★) attendances から本日の出勤者数をカウント
+        const businessDayStart = getBusinessDayStart(new Date());
+        const businessDayStr = formatDateISO(businessDayStart);
+        
+        // (★勤怠機能修正★) date が今日で、ステータスが 'clocked_in' または 'late' のキャスト
+        const checkedInCasts = attendances.filter(a => 
+            a.date === businessDayStr && 
+            (a.status === 'clocked_in' || a.status === 'late')
+        ).length;
+        
+        if (countEl) countEl.innerHTML = `${checkedInCasts} <span class="text-lg font-medium">名</span>`; // (innerHTMLに変更)
     }
 };
 
@@ -1363,7 +1387,8 @@ document.addEventListener('firebaseReady', (e) => {
         slipCounterRef: scRef,
         castsCollectionRef: cRef, 
         customersCollectionRef: cuRef, 
-        slipsCollectionRef: slRef
+        slipsCollectionRef: slRef,
+        attendancesCollectionRef: aRef // (★勤怠機能追加★)
     } = e.detail;
 
     // (★変更★) グローバル変数に参照をセット
@@ -1373,6 +1398,7 @@ document.addEventListener('firebaseReady', (e) => {
     castsCollectionRef = cRef;
     customersCollectionRef = cuRef;
     slipsCollectionRef = slRef;
+    attendancesCollectionRef = aRef; // (★勤怠機能追加★)
 
 
     // (★新規★) 全データをロードできたか確認するフラグ
@@ -1382,10 +1408,11 @@ document.addEventListener('firebaseReady', (e) => {
     let customersLoaded = false;
     let slipsLoaded = false;
     let counterLoaded = false;
+    let attendancesLoaded = false; // (★勤怠機能追加★)
 
     // (★新規★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
-        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded) {
+        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && attendancesLoaded) { // (★勤怠機能追加★)
             console.log("All data loaded. Rendering UI.");
             renderDashboardSummary();
             renderCastRanking();
@@ -1471,6 +1498,21 @@ document.addEventListener('firebaseReady', (e) => {
         if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
              document.body.innerHTML = `<div class="p-8 text-center text-red-600">データベースへのアクセスに失敗しました。Firestoreのセキュリティルール（slipsコレクション）が正しく設定されているか、または必要なインデックスが作成されているか確認してください。</div>`;
         }
+    });
+
+    // 7. Attendances (★勤怠機能追加★)
+    onSnapshot(attendancesCollectionRef, (querySnapshot) => {
+        attendances = [];
+        querySnapshot.forEach((doc) => {
+            attendances.push({ ...doc.data(), id: doc.id }); 
+        });
+        console.log("Attendances loaded: ", attendances.length);
+        attendancesLoaded = true;
+        checkAndRenderAll();
+    }, (error) => {
+        console.error("Error listening to attendances: ", error);
+        attendancesLoaded = true; // エラーでも続行
+        checkAndRenderAll();
     });
 });
 

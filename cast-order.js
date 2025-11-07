@@ -13,7 +13,8 @@ import {
 } from './firebase-init.js';
 
 // (★変更★) 参照は firebaseReady イベントで受け取る
-let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef;
+let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef,
+    attendancesCollectionRef; // (★勤怠機能追加★)
 
 // ===== グローバル定数・変数 =====
 
@@ -31,6 +32,7 @@ let menu = null;
 let casts = [];
 let customers = [];
 let slips = [];
+let attendances = []; // (★勤怠機能追加★)
 let slipCounter = 0;
 
 // (★変更★) 現在選択中の伝票ID (ローカル管理)
@@ -40,6 +42,7 @@ let currentBillingAmount = 0;
 // (★変更★) ログイン中のキャストIDと名前
 let currentCastId = null; 
 let currentCastName = "キャスト";
+let isClockedIn = false; // (★勤怠機能追加★)
 
 // ===== DOM要素 =====
 // (★修正★) cast-order.html に必要なDOMのみに限定
@@ -71,6 +74,41 @@ let castHeaderName, pageTitle, tableGrid,
     // (★新規★) 伝票作成時間
     newSlipStartTimeInput, newSlipTimeError,
     logoutButtonHeader; // (★新規★)
+
+
+// --- (★勤怠機能追加★) ヘルパー関数 ---
+
+/**
+ * Dateオブジェクトを 'YYYY-MM-DD' 形式の文字列に変換する
+ * @param {Date} date 
+ * @returns {string}
+ */
+const formatDateISO = (date) => {
+    return date.toISOString().split('T')[0];
+};
+
+/**
+ * 営業日付の開始時刻を取得する (dashboard.js から移植)
+ * @param {Date} date 対象の日付
+ * @returns {Date} 営業開始日時
+ */
+const getBusinessDayStart = (date) => {
+    if (!settings || !settings.dayChangeTime) {
+        const startDate = new Date(date);
+        startDate.setHours(0, 0, 0, 0);
+        return startDate;
+    }
+    
+    const [hours, minutes] = settings.dayChangeTime.split(':').map(Number);
+    const startDate = new Date(date);
+    startDate.setHours(hours, minutes, 0, 0);
+    
+    if (date.getTime() < startDate.getTime()) {
+        startDate.setDate(startDate.getDate() - 1);
+    }
+    
+    return startDate;
+};
 
 
 // --- 関数 ---
@@ -810,7 +848,7 @@ const createNewSlip = async (tableId, startTimeISO) => {
         const docRef = await addDoc(slipsCollectionRef, newSlip);
         
         // (★変更★) slipCounterRef を更新
-        await setDoc(slipCounterRef, { count: newSlipCounter });
+        await setDoc(slipCounterRef, { count: newSlipNumber });
         
         // (★変更★) ローカルの伝票IDを更新
         currentSlipId = docRef.id;
@@ -909,10 +947,16 @@ const renderNewSlipConfirmModal = (tableId) => {
 
 
 /**
- * (変更) テーブルカードクリック時の処理
+ * (★勤怠機能修正★) テーブルカードクリック時の処理
  * @param {string} tableId 
  */
 const handleTableClick = (tableId) => {
+    // (★勤怠機能追加★) 出勤チェック
+    if (!isClockedIn) {
+        alert("出勤打刻がされていません。\n操作を行うには「出勤」ページで出勤打刻をしてください。");
+        return;
+    }
+
     if (!settings) return; // (★変更★)
     const tableData = settings.tables.find(t => t.id === tableId); // (★変更★)
     if (!tableData) return;
@@ -991,7 +1035,7 @@ const getDefaultSettings = () => {
             },
             serviceCharge: { salesType: 'percentage', salesValue: 0 },
             tax: { salesType: 'percentage', salesValue: 0 },
-            sideCustomer: { salesValue: 100, countNomination: true }
+            sideCustomer: { salesType: 100, countNomination: true }
         },
         ranking: { period: 'monthly', type: 'nominations' }
     };
@@ -1015,6 +1059,33 @@ const getDefaultMenu = () => {
         ],
         currentActiveMenuCategoryId: catSetId,
     };
+};
+
+/**
+ * (★勤怠機能追加★) 現在の出勤ステータスを更新する
+ */
+const updateClockedInStatus = () => {
+    if (!settings || !currentCastId || !attendances) {
+        isClockedIn = false;
+        return;
+    }
+    
+    // 1. 今日の営業日を計算
+    const businessDayStart = getBusinessDayStart(new Date());
+    const businessDayStr = formatDateISO(businessDayStart);
+    
+    // 2. 今日の勤怠ドキュメントIDを特定
+    const attendanceId = `${businessDayStr}_${currentCastId}`;
+    
+    // 3. 勤怠データを検索
+    const todaysData = attendances.find(a => a.id === attendanceId);
+    
+    if (todaysData && (todaysData.status === 'clocked_in' || todaysData.status === 'late')) {
+        isClockedIn = true;
+    } else {
+        isClockedIn = false;
+    }
+    console.log(`Cast Clocked In Status (for cast-order.js): ${isClockedIn}`);
 };
 
 /**
@@ -1056,7 +1127,8 @@ document.addEventListener('firebaseReady', async (e) => {
         slipCounterRef: scRef,
         castsCollectionRef: cRef, 
         customersCollectionRef: cuRef, 
-        slipsCollectionRef: slRef
+        slipsCollectionRef: slRef,
+        attendancesCollectionRef: aRef // (★勤怠機能追加★)
     } = e.detail;
 
     // (★変更★) グローバル変数にセット
@@ -1067,6 +1139,7 @@ document.addEventListener('firebaseReady', async (e) => {
     castsCollectionRef = cRef;
     customersCollectionRef = cuRef;
     slipsCollectionRef = slRef;
+    attendancesCollectionRef = aRef; // (★勤怠機能追加★)
     
     // (★新規★) まずキャスト情報を読み込む
     await loadCastInfo();
@@ -1078,14 +1151,16 @@ document.addEventListener('firebaseReady', async (e) => {
     let customersLoaded = false;
     let slipsLoaded = false;
     let counterLoaded = false;
+    let attendancesLoaded = false; // (★勤怠機能追加★)
 
     // (★新規★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
         // (★変更★) cast-order.js は renderTableGrid を呼ぶ
-        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded) {
+        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && attendancesLoaded) { // (★勤怠機能追加★)
             console.log("All data loaded. Rendering UI for cast-order.js");
             renderTableGrid();
             updateModalCommonInfo(); 
+            updateClockedInStatus(); // (★勤怠機能追加★)
         }
     };
 
@@ -1163,6 +1238,22 @@ document.addEventListener('firebaseReady', async (e) => {
         checkAndRenderAll();
     }, (error) => {
         console.error("Error listening to slips: ", error);
+    });
+
+    // 7. Attendances (★勤怠機能追加★)
+    onSnapshot(attendancesCollectionRef, (querySnapshot) => {
+        attendances = [];
+        querySnapshot.forEach((doc) => {
+            attendances.push({ ...doc.data(), id: doc.id }); 
+        });
+        console.log("Attendances loaded: ", attendances.length);
+        attendancesLoaded = true;
+        checkAndRenderAll();
+        updateClockedInStatus(); // (★勤怠機能追加★) 勤怠データ更新時にもステータスを再チェック
+    }, (error) => {
+        console.error("Error listening to attendances: ", error);
+        attendancesLoaded = true; // エラーでも続行
+        checkAndRenderAll();
     });
 });
 
@@ -1265,7 +1356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tableGrid.addEventListener('click', (e) => {
             const card = e.target.closest('.table-card');
             if (card) {
-                handleTableClick(card.dataset.tableId);
+                handleTableClick(card.dataset.tableId); // (★勤怠機能修正★) この関数内でチェック
             }
         });
     }
@@ -1389,7 +1480,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const slipRef = doc(slipsCollectionRef, currentSlipId);
                     await setDoc(slipRef, { 
                         status: 'cancelled',
-                        cancelReason: reason
+                        cancelReason: reason,
+                        // (★勤怠機能修正★) ボツ伝にした日時を記録（reports.jsで利用）
+                        paidTimestamp: new Date().toISOString() 
                     }, { merge: true });
                     
                     closeModal(orderModal);

@@ -17,6 +17,8 @@ const createSidebarHTML = (currentPage) => {
         { href: 'menu.html', icon: 'fa-book-open', text: 'メニュー管理' },
         { href: 'reports.html', icon: 'fa-chart-line', text: '売上分析' },
         { href: 'cast-settings.html', icon: 'fa-users-gear', text: 'キャスト設定' },
+        // (★勤怠機能追加★)
+        { href: 'attendance.html', icon: 'fa-calendar-check', text: '勤怠管理' },
         { href: 'settings.html', icon: 'fa-gear', text: '店舗設定' },
     ];
 
