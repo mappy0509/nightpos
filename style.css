@@ -61,8 +61,7 @@ body {
 }
 /* (変更) checkout ステータスは伝票に紐づくため、テーブルカードの色分けは不要に
 .table-card[data-status="checkout"] {
-    background-color: #fff7ed;
-    border-color: #fed7aa;
+    ...
 }
 */
 
@@ -385,4 +384,66 @@ body {
 /* QRコードが生成されたら (imgタグ)、コンテナのサイズを自動にする */
 #invite-qr-code img {
     min-height: 0;
+}
+
+/* ===== (★新規★) オーダーモーダル カテゴリタブ ===== */
+#order-category-tabs-container {
+    display: flex;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border-primary);
+    background-color: var(--bg-secondary);
+    /* (★新規★) スクロールバーのデザイン (任意) */
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f1f5f9;
+}
+#order-category-tabs-container::-webkit-scrollbar {
+    height: 6px;
+}
+#order-category-tabs-container::-webkit-scrollbar-track {
+    background: #f1f5f9; /* bg-slate-100 */
+}
+#order-category-tabs-container::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1; /* bg-slate-300 */
+    border-radius: 3px;
+}
+
+.order-category-tab {
+    padding: 0.75rem 1rem; /* py-3 px-4 */
+    font-size: 0.875rem; /* text-sm */
+    font-weight: 600; /* font-semibold */
+    color: var(--text-secondary);
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.order-category-tab:hover {
+    color: var(--text-primary);
+    background-color: #f8fafc; /* bg-slate-50 */
+}
+.order-category-tab.active {
+    color: #2563eb; /* text-blue-600 */
+    border-bottom-color: #2563eb; /* border-blue-600 */
+}
+
+/* (★新規★) テーブル移動モーダル */
+#table-transfer-modal .table-card-option {
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border-primary);
+    background-color: #f0fdf4; /* bg-green-50 */
+    text-align: center;
+    font-weight: 600;
+    font-size: 1.125rem; /* text-lg */
+    cursor: pointer;
+}
+#table-transfer-modal .table-card-option:hover {
+    background-color: #dcfce7; /* hover:bg-green-100 */
+    border-color: #86efac; /* border-green-300 */
+}
+#table-transfer-modal .table-card-option:disabled {
+    background-color: #f1f5f9; /* bg-slate-100 */
+    color: #94a3b8; /* text-slate-400 */
+    cursor: not-allowed;
+    opacity: 0.7;
 }

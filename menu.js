@@ -40,6 +40,8 @@ let inventoryItems = []; // (★在庫管理 追加★)
 
 // (★変更★) 現在選択中の編集ID
 let currentEditingMenuId = null; 
+let categorySortable = null; // (★新規★) 並び替えインスタンス
+let itemSortable = null; // (★新規★) 並び替えインスタンス
 
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
 let settingsRef, menuRef, inventoryItemsCollectionRef,
@@ -94,7 +96,8 @@ const renderMenuTabs = () => {
     
     menuTabsContainer.innerHTML = '';
     
-    const categories = menu.categories || []; 
+    // (★変更★) order プロパティでソート
+    const categories = (menu.categories || []).sort((a, b) => (a.order || 0) - (b.order || 0)); 
     
     let activeCategoryId = menu.currentActiveMenuCategoryId;
 
@@ -111,8 +114,10 @@ const renderMenuTabs = () => {
         const isActive = (category.id === activeCategoryId);
         const activeClass = isActive ? 'active' : '';
         
+        // (★変更★) data-id 属性を追加 (並び替え用)
         const tabHTML = `
-            <button class="menu-tab ${activeClass}" data-category-id="${category.id}">
+            <button class="menu-tab ${activeClass}" data-category-id="${category.id}" data-id="${category.id}">
+                <i class="fa-solid fa-grip-vertical text-slate-400 cursor-move category-drag-handle mr-2" style="display: none;"></i>
                 <span>${category.name}</span>
                 <span class="menu-tab-edit-btn" data-category-id="${category.id}">
                     <i class="fa-solid fa-pen fa-xs"></i>
@@ -122,6 +127,7 @@ const renderMenuTabs = () => {
         menuTabsContainer.innerHTML += tabHTML;
     });
 
+    // (★変更★) タブの描画が終わってから、メニューリストを描画
     renderMenuList();
 };
 
@@ -142,17 +148,20 @@ const renderMenuList = () => {
 
     const isSetCategory = activeCategory.isSetCategory;
     // (★在庫管理 変更★) ヘッダーに「在庫連動」を追加
+    // (★並び替え 変更★) ドラッグハンドル用の <th> を追加
     menuTableHeader.innerHTML = `
-        <th class="p-3">項目名</th>
+        <th class="p-3 w-8"></th> <th class="p-3">項目名</th>
         ${isSetCategory ? `<th class="p-3">時間</th>` : ''}
         <th class="p-3">料金 (税抜)</th>
-        <th class="p-3">在庫連動</th> <th class="p-3 text-right">操作</th>
+        <th class="p-3">在庫連動</th> 
+        <th class="p-3 text-right">操作</th>
     `;
-    const colSpan = isSetCategory ? 5 : 4; // (★在庫管理 変更★)
+    const colSpan = isSetCategory ? 6 : 5; // (★並び替え 変更★)
 
+    // (★並び替え 変更★) order プロパティでソート
     const items = (menu.items || [])
         .filter(item => item.categoryId === activeCategoryId)
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
 
     menuTableBody.innerHTML = '';
     if (items.length === 0) {
@@ -170,12 +179,17 @@ const renderMenuList = () => {
             }
         }
 
+        // (★並び替え 変更★) data-id 属性とドラッグハンドル <td> を追加
         const tr = `
-            <tr class="border-b">
+            <tr class="border-b" data-id="${item.id}">
+                <td class="item-drag-handle cursor-move p-3 text-center">
+                    <i class="fa-solid fa-grip-vertical text-slate-400"></i>
+                </td>
                 <td class="p-3 font-medium">${item.name}</td>
                 ${isSetCategory ? `<td class="p-3">${item.duration || '-'} 分</td>` : ''}
                 <td class="p-3">${formatCurrency(item.price)}</td>
-                <td class="p-3 text-xs text-slate-600">${inventoryText}</td> <td class="p-3 text-right space-x-2">
+                <td class="p-3 text-xs text-slate-600">${inventoryText}</td> 
+                <td class="p-3 text-right space-x-2">
                     <button class="edit-menu-btn text-blue-600 hover:text-blue-800" data-menu-id="${item.id}">
                         <i class="fa-solid fa-pen"></i>
                     </button>
@@ -200,9 +214,9 @@ const openMenuEditorModal = (mode = 'new', menuId = null) => {
     menuEditorForm.reset();
     menuEditorError.textContent = '';
     
-    // カテゴリプルダウン
+    // カテゴリプルダウン (★並び替え 変更★) order でソート
     menuCategorySelect.innerHTML = '';
-    (menu.categories || []).forEach(category => {
+    (menu.categories || []).sort((a, b) => (a.order || 0) - (b.order || 0)).forEach(category => {
         menuCategorySelect.innerHTML += `<option value="${category.id}">${category.name}</option>`;
     });
 
@@ -313,18 +327,24 @@ const saveMenuItem = async () => {
         duration: duration,
         inventoryItemId: inventoryItemId !== 'none' ? inventoryItemId : null,
         inventoryConsumption: inventoryConsumption
+        // (★並び替え 変更★) order はここで追加/更新
     };
     
     // (★変更★) menu オブジェクトを直接変更
     if (currentEditingMenuId) {
         const index = (menu.items || []).findIndex(item => item.id === currentEditingMenuId);
         if (index !== -1) {
-            // (★在庫管理 変更★) 既存のデータをマージするのではなく、新しいデータで上書き
+            // (★並び替え 変更★) 既存の order を維持
+            newItemData.order = menu.items[index].order || 0;
             menu.items[index] = newItemData;
         } else {
              console.error('Save error: Item to edit not found');
         }
     } else {
+        // (★並び替え 変更★) 新規作成時に order を設定 (カテゴリ内の最後尾)
+        const itemsInCategory = (menu.items || []).filter(i => i.categoryId === categoryId);
+        newItemData.order = itemsInCategory.length; 
+        
         if (!menu.items) {
             menu.items = [];
         }
@@ -391,7 +411,8 @@ const renderCategoryList = () => {
     if (!currentCategoriesList || !menu) return;
     
     currentCategoriesList.innerHTML = '';
-    const categories = menu.categories || [];
+    // (★並び替え 変更★) order でソート
+    const categories = (menu.categories || []).sort((a, b) => (a.order || 0) - (b.order || 0));
     
     if (categories.length === 0) {
         currentCategoriesList.innerHTML = '<p class="text-sm text-slate-500">カテゴリがありません。</p>';
@@ -403,10 +424,12 @@ const renderCategoryList = () => {
         const castPriceCategoryId = settings?.performanceSettings?.castPriceCategoryId;
         const isProtected = (category.id === castPriceCategoryId); 
         
+        // (★並び替え 変更★) data-id 属性とドラッグハンドルを追加
         const itemHTML = `
-            <div class="flex justify-between items-center bg-slate-50 p-3 rounded-lg border">
+            <div class="flex justify-between items-center bg-slate-50 p-3 rounded-lg border" data-id="${category.id}">
                 <div class="flex-1 flex items-center space-x-3">
-                    <input type-="text" value="${category.name}" 
+                    <i class="fa-solid fa-grip-vertical text-slate-400 cursor-move category-drag-handle"></i>
+                    <input type="text" value="${category.name}" 
                            class="w-1/3 p-2 border border-slate-300 rounded-lg category-name-input" 
                            data-category-id="${category.id}">
                     <label class="text-sm flex items-center space-x-1">
@@ -459,7 +482,8 @@ const addCategory = async () => {
         id: getUUID(),
         name: newName,
         isSetCategory: false,
-        isCastCategory: false
+        isCastCategory: false,
+        order: (menu.categories || []).length // (★並び替え 変更★) order を追加
     };
     
     if (!menu.categories) {
@@ -625,19 +649,19 @@ const getDefaultMenu = () => {
     
     return {
         categories: [
-            { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false },
-            { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false },
-            { id: catBottleId, name: 'ボトル', isSetCategory: false, isCastCategory: false },
-            { id: catFoodId, name: 'フード', isSetCategory: false, isCastCategory: false },
-            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true }, 
-            { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false },
+            { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false, order: 0 },
+            { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false, order: 1 },
+            { id: catBottleId, name: 'ボトル', isSetCategory: false, isCastCategory: false, order: 2 },
+            { id: catFoodId, name: 'フード', isSetCategory: false, isCastCategory: false, order: 3 },
+            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true, order: 4 }, 
+            { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false, order: 5 },
         ],
         items: [
-            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, inventoryItemId: null, inventoryConsumption: null },
-            { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60, inventoryItemId: null, inventoryConsumption: null },
-            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, inventoryItemId: null, inventoryConsumption: null },
-            { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null, inventoryItemId: null, inventoryConsumption: null },
-            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, inventoryItemId: null, inventoryConsumption: null, order: 0 },
+            { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60, inventoryItemId: null, inventoryConsumption: null, order: 1 },
+            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, inventoryItemId: null, inventoryConsumption: null, order: 0 },
+            { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null, inventoryItemId: null, inventoryConsumption: null, order: 0 },
+            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null, inventoryItemId: null, inventoryConsumption: null, order: 0 },
         ],
         currentActiveMenuCategoryId: catSetId,
     };
@@ -657,6 +681,98 @@ const renderStoreSelector = () => {
     storeSelector.innerHTML = `<option value="${currentStoreId}">${currentStoreName}</option>`;
     storeSelector.value = currentStoreId;
     storeSelector.disabled = true;
+};
+
+// (★新規★) 並び替え機能を初期化する
+const initSortable = () => {
+    if (typeof Sortable === 'undefined') {
+        console.error("Sortable.js is not loaded.");
+        return;
+    }
+
+    // 1. カテゴリタブの並び替え
+    if (menuTabsContainer) {
+        categorySortable = new Sortable(menuTabsContainer, {
+            animation: 150,
+            handle: '.menu-tab', // (★変更★) カテゴリはタブ全体をドラッグ
+            onEnd: async (evt) => {
+                if (!menu || !menu.categories) return;
+                
+                // DOMから新しいIDの順序を取得
+                const newOrderIds = Array.from(evt.target.children).map(child => child.dataset.id);
+                
+                // menu.categories 配列を並び替え
+                menu.categories.forEach(cat => {
+                    const newIndex = newOrderIds.indexOf(cat.id);
+                    cat.order = newIndex !== -1 ? newIndex : 0;
+                });
+
+                // Firestoreに保存
+                try {
+                    await setDoc(menuRef, menu);
+                } catch (e) {
+                    console.error("Error saving category order: ", e);
+                }
+            }
+        });
+    }
+
+    // 2. メニュー項目の並び替え
+    if (menuTableBody) {
+        itemSortable = new Sortable(menuTableBody, {
+            animation: 150,
+            handle: '.item-drag-handle', // 掴むハンドルを指定
+            onEnd: async (evt) => {
+                if (!menu || !menu.items || !currentActiveMenuCategoryId) return;
+
+                // DOMから新しいIDの順序を取得
+                const newOrderIds = Array.from(evt.target.children).map(child => child.dataset.id);
+                
+                // 現在表示中のカテゴリのアイテムのみを対象に order を更新
+                let orderCounter = 0;
+                newOrderIds.forEach(id => {
+                    const item = menu.items.find(i => i.id === id);
+                    if (item && item.categoryId === currentActiveMenuCategoryId) {
+                        item.order = orderCounter++;
+                    }
+                });
+
+                // Firestoreに保存
+                try {
+                    await setDoc(menuRef, menu);
+                } catch (e) {
+                    console.error("Error saving menu item order: ", e);
+                }
+            }
+        });
+    }
+    
+    // 3. カテゴリ管理モーダルの並び替え
+    if (currentCategoriesList) {
+        itemSortable = new Sortable(currentCategoriesList, {
+            animation: 150,
+            handle: '.category-drag-handle', // 掴むハンドルを指定
+            onEnd: async (evt) => {
+                if (!menu || !menu.categories) return;
+
+                // DOMから新しいIDの順序を取得
+                const newOrderIds = Array.from(evt.target.children).map(child => child.dataset.id);
+                
+                // menu.categories 配列を並び替え
+                menu.categories.forEach(cat => {
+                    const newIndex = newOrderIds.indexOf(cat.id);
+                    cat.order = newIndex !== -1 ? newIndex : 0;
+                });
+
+                // Firestoreに保存
+                try {
+                    await setDoc(menuRef, menu);
+                } catch (e) {
+                    console.error("Error saving category order in modal: ", e);
+                }
+            }
+        });
+    }
 };
 
 
@@ -688,6 +804,7 @@ document.addEventListener('firebaseReady', (e) => {
             console.log("Menu, Settings, Inventory data loaded. Rendering UI for menu.js");
             renderMenuTabs();
             renderStoreSelector(); // (★動的表示 追加★)
+            initSortable(); // (★新規★) 並び替えを初期化
             // (★削除★) 伝票モーダルがないため updateModalCommonInfo は不要
         }
     };
@@ -957,7 +1074,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (deleteBtn) {
                 const menuId = deleteBtn.dataset.menuId;
                 
-                if (confirm(`「${deleteBtn.closest('tr').querySelector('td').textContent}」を削除しますか？\nこの操作は取り消せません。`)) {
+                if (confirm(`「${deleteBtn.closest('tr').querySelector('td:nth-child(2)').textContent}」を削除しますか？\nこの操作は取り消せません。`)) { // (★変更★) ハンドル列追加のため 2番目
                     deleteMenuItem(menuId); // (★変更★)
                 }
                 return;

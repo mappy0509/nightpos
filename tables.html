@@ -156,17 +156,24 @@
                         </div>
                 </div>
 
-                <div class="w-full md:w-2/5 p-6 bg-slate-50 flex flex-col overflow-y-auto">
-                    <h4 class="font-semibold mb-4">オーダー追加</h4>
-                    <div class="grid grid-cols-3 gap-3" id="menu-order-grid">
+                <div class="w-full md:w-2/5 bg-slate-50 flex flex-col overflow-y-auto">
+                    <div id="order-category-tabs-container" class="flex-shrink-0">
                         </div>
+                    <div class="p-6 flex-grow overflow-y-auto">
+                        <h4 class="font-semibold mb-4">オーダー追加</h4>
+                        <div class="grid grid-cols-3 gap-3" id="menu-order-grid">
+                            </div>
+                    </div>
                 </div>
             </div>
 
             <div class="flex justify-between items-center p-5 border-t bg-white">
-                <div>
+                <div class="flex space-x-2">
+                    <button id="open-transfer-modal-btn" class="px-4 py-2 rounded-lg bg-yellow-100 text-yellow-700 font-semibold hover:bg-yellow-200">
+                        <i class="fa-solid fa-right-left mr-2"></i>転卓
+                    </button>
                     <button id="open-cancel-slip-modal-btn" class="px-4 py-2 rounded-lg bg-red-100 text-red-700 font-semibold hover:bg-red-200">
-                        <i class="fa-solid fa-trash-can mr-2"></i>この伝票をボツにする
+                        <i class="fa-solid fa-trash-can mr-2"></i>ボツ伝
                     </button>
                 </div>
                 <div class="flex items-center space-x-3">
@@ -212,6 +219,31 @@
         </div>
     </div>
 
+    <div id="table-transfer-modal" class="modal-backdrop">
+        <div class="modal-content w-full max-w-2xl">
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold" id="table-transfer-modal-title">テーブル移動 (転卓)</h3>
+                <button class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <div class="p-6">
+                <p class="mb-4 font-medium">伝票 No.<span id="transfer-slip-number"></span> をどのテーブルに移動しますか？ (空席のみ表示)</p>
+                
+                <div class="grid grid-cols-4 md:grid-cols-6 gap-4 max-h-60 overflow-y-auto pr-2" id="transfer-table-grid">
+                    </div>
+                <p id="transfer-error" class="text-xs text-red-600 mt-2"></p>
+            </div>
+
+            <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg">
+                <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                    キャンセル
+                </button>
+            </div>
+        </div>
+    </div>
+
 
     <div id="slip-preview-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-lg"> <div class="flex justify-between items-center p-5 border-b non-printable">
@@ -248,7 +280,7 @@
                         <span class="text-slate-600">サービス料 (<span id="slip-service-rate">0</span>%)</span>
                         <span id="slip-service-charge">¥0</span>
                     </div>
-                    <div class="flex justify-between">
+                    <div class_=("flex justify-between")>
                         <span class="text-slate-600">消費税 (<span id="slip-tax-rate">0</span>%)</span>
                         <span id="slip-tax">¥0</span>
                     </div>
@@ -262,7 +294,7 @@
                     </div>
                 </div>
                 
-                <div class="text-center text-xs text-slate-500 mt-6">
+                <div class("text-center text-xs text-slate-500 mt-6">
                     <p>※ この伝票は仮伝票です。</p>
                     <p>お会計はスタッフをお呼びください。</p>
                 </div>

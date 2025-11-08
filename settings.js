@@ -46,6 +46,10 @@ let modalCloseBtns, // (★注意★) settings.html にモーダルは無いた�
     storeNameInput, storeAddressInput, storeTelInput,
     taxRateInput, serviceRateInput,
     dayChangeTimeInput,
+    
+    // (★新規★) 端数処理
+    settingRoundingType, settingRoundingUnit,
+    
     saveSettingsBtn, settingsFeedback,
     
     // テーブル設定
@@ -120,6 +124,11 @@ const loadSettingsToForm = () => {
     // 営業日付
     if (dayChangeTimeInput) dayChangeTimeInput.value = settings.dayChangeTime; 
     
+    // (★新規★) 端数処理
+    const rounding = settings.rounding || { type: 'none', unit: 1 };
+    if (settingRoundingType) settingRoundingType.value = rounding.type;
+    if (settingRoundingUnit) settingRoundingUnit.value = rounding.unit;
+
     // 各リストの描画
     renderTableSettingsList();
     renderTagSettingsList(); 
@@ -240,6 +249,12 @@ const saveSettingsFromForm = async () => {
         return;
     }
     
+    // (★新規★) --- 端数処理 ---
+    const newRounding = {
+        type: settingRoundingType.value,
+        unit: parseInt(settingRoundingUnit.value) || 1
+    };
+
     // --- 成績反映設定 ---
     const newPerformanceSettings = {
         ...settings.performanceSettings, // (★変更★) castPriceCategoryId などを維持
@@ -279,6 +294,7 @@ const saveSettingsFromForm = async () => {
     settings.storeInfo = newStoreInfo;
     settings.rates = newRates;
     settings.dayChangeTime = newDayChangeTime;
+    settings.rounding = newRounding; // (★新規★)
     settings.performanceSettings = newPerformanceSettings;
     
     // (★変更★) Firestoreに保存
@@ -528,6 +544,7 @@ const getDefaultSettings = () => {
             zip: "160-0021" 
         },
         rates: { tax: 0.10, service: 0.20 },
+        rounding: { type: 'none', unit: 1 }, // (★新規★)
         dayChangeTime: "05:00",
         performanceSettings: {
             castPriceCategoryId: null, // (★変更★) menu.js側で設定される
@@ -650,6 +667,11 @@ document.addEventListener('DOMContentLoaded', () => {
     taxRateInput = document.getElementById('tax-rate');
     serviceRateInput = document.getElementById('service-rate');
     dayChangeTimeInput = document.getElementById('day-change-time'); 
+    
+    // (★新規★) 端数処理
+    settingRoundingType = document.getElementById('setting-rounding-type');
+    settingRoundingUnit = document.getElementById('setting-rounding-unit');
+    
     saveSettingsBtn = document.getElementById('save-settings-btn');
     settingsFeedback = document.getElementById('settings-feedback');
 

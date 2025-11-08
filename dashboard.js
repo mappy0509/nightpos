@@ -38,6 +38,7 @@ let slipCounter = 0;
 // (★変更★) 現在選択中の伝票ID (ローカル管理)
 let currentSlipId = null;
 let currentBillingAmount = 0;
+let currentOrderModalCategoryId = null; // (★新規★) オーダーモーダルで選択中のカテゴリID
 
 // (★新規★) 経過時間更新用のタイマーID
 let elapsedTimeTimer = null;
@@ -62,7 +63,9 @@ let /* navLinks, (★削除★) */ pageTitle, dashboardSlips,
     cancelSlipReasonInput, cancelSlipError, confirmCancelSlipBtn, slipSelectionModal,
     slipSelectionModalTitle, slipSelectionList, createNewSlipBtn, newSlipConfirmModal,
     newSlipConfirmTitle, newSlipConfirmMessage, confirmCreateSlipBtn, orderModalTitle,
-    orderItemsList, menuOrderGrid, orderSubtotalEl, orderCustomerNameSelect,
+    orderItemsList, 
+    orderCategoryTabsContainer, // (★新規★) オーダーモーダル・カテゴリタブ
+    menuOrderGrid, orderSubtotalEl, orderCustomerNameSelect,
     orderNominationSelect, newCustomerInputGroup, newCustomerNameInput,
     saveNewCustomerBtn, newCustomerError, checkoutModalTitle, checkoutItemsList,
     checkoutSubtotalEl, checkoutServiceChargeEl, checkoutTaxEl, checkoutPaidAmountEl,
@@ -79,7 +82,11 @@ let /* navLinks, (★削除★) */ pageTitle, dashboardSlips,
     discountAmountInput, discountTypeSelect,
     // (★新規★) 伝票作成時間
     newSlipStartTimeInput, newSlipTimeError,
-    storeSelector; // (★動的表示 追加★)
+    storeSelector, // (★動的表示 追加★)
+    
+    // (★新規★) 転卓モーダル
+    tableTransferModal, openTransferModalBtn, transferSlipNumber, 
+    transferTableGrid, transferError;
 
 
 // --- 関数 ---
@@ -126,6 +133,10 @@ const formatDateTimeLocal = (date) => {
 const calculateSlipTotal = (slip) => {
     // (★変更★) settings を参照
     if (!settings) return 0; 
+    
+    // (★新規★) 端数処理
+    const rounding = settings.rounding || { type: 'none', unit: 1 };
+    
     if (slip.status === 'cancelled') {
         return 0;
     }
@@ -133,11 +144,29 @@ const calculateSlipTotal = (slip) => {
     slip.items.forEach(item => {
         subtotal += item.price * item.qty;
     });
+    
+    // (★新規★) サービス料・税金計算前に小計を端数処理 (例: 10円単位に切り上げ)
+    if (rounding.type === 'round_up_subtotal') {
+        subtotal = Math.ceil(subtotal / rounding.unit) * rounding.unit;
+    } else if (rounding.type === 'round_down_subtotal') {
+        subtotal = Math.floor(subtotal / rounding.unit) * rounding.unit;
+    }
+
     const serviceCharge = subtotal * settings.rates.service;
     const subtotalWithService = subtotal + serviceCharge;
     const tax = subtotalWithService * settings.rates.tax;
-    const total = subtotalWithService + tax;
-    return Math.round(total);
+    let total = subtotalWithService + tax;
+    
+    // (★新規★) 最終合計金額の端数処理
+    if (rounding.type === 'round_up_total') {
+        total = Math.ceil(total / rounding.unit) * rounding.unit;
+    } else if (rounding.type === 'round_down_total') {
+        total = Math.floor(total / rounding.unit) * rounding.unit;
+    } else {
+        total = Math.round(total);
+    }
+    
+    return total;
 };
 
 
@@ -536,16 +565,59 @@ const renderOrderModal = () => {
     });
     
     orderSubtotalEl.textContent = formatCurrency(subtotal);
+    
+    // (★新規★) オーダーモーダルのカテゴリタブを描画
+    if (!menu.categories || menu.categories.length === 0) {
+        if(orderCategoryTabsContainer) orderCategoryTabsContainer.innerHTML = '';
+        if(menuOrderGrid) menuOrderGrid.innerHTML = '<p class="text-slate-500 text-sm col-span-3">メニューカテゴリが登録されていません。</p>';
+        return;
+    }
+    
+    // (★新規★) 選択中のカテゴリIDがなければ、先頭のカテゴリを選択
+    if (!currentOrderModalCategoryId || !menu.categories.some(c => c.id === currentOrderModalCategoryId)) {
+        currentOrderModalCategoryId = menu.categories[0].id;
+    }
+    
+    renderOrderCategoryTabs();
+    
+    // (★変更★) 選択中カテゴリの商品のみ描画
+    renderOrderMenuGrid();
+};
+
+/**
+ * (★新規★) オーダーモーダルのカテゴリタブを描画する
+ */
+const renderOrderCategoryTabs = () => {
+    if (!orderCategoryTabsContainer || !menu || !menu.categories) return;
+    
+    orderCategoryTabsContainer.innerHTML = '';
+    menu.categories.forEach(category => {
+        const tabHTML = `
+            <button class="order-category-tab ${category.id === currentOrderModalCategoryId ? 'active' : ''}" 
+                    data-category-id="${category.id}">
+                ${category.name}
+            </button>
+        `;
+        orderCategoryTabsContainer.innerHTML += tabHTML;
+    });
+};
+
+/**
+ * (★新規★) オーダーモーダルのメニューグリッド部分のみを描画する
+ */
+const renderOrderMenuGrid = () => {
+    if (!menuOrderGrid || !menu || !menu.items || !currentOrderModalCategoryId) return;
 
     menuOrderGrid.innerHTML = ''; 
     
-    // (★変更★) menu.items を参照
-    const allMenuItems = (menu.items || []).sort((a,b) => a.name.localeCompare(b.name));
+    const filteredItems = (menu.items || [])
+        .filter(item => item.categoryId === currentOrderModalCategoryId)
+        .sort((a,b) => a.name.localeCompare(b.name));
     
-    if (allMenuItems.length === 0) {
-        menuOrderGrid.innerHTML = '<p class="text-slate-500 text-sm col-span-3">メニューが登録されていません。<br>「メニュー管理」ページから追加してください。</p>';
+    if (filteredItems.length === 0) {
+        menuOrderGrid.innerHTML = '<p class="text-slate-500 text-sm col-span-3">このカテゴリにはメニューが登録されていません。</p>';
     } else {
-        allMenuItems.forEach(item => {
+        filteredItems.forEach(item => {
             menuOrderGrid.innerHTML += `
                 <button class="menu-order-btn p-3 bg-white rounded-lg shadow border text-left hover:bg-slate-100" data-item-id="${item.id}" data-item-name="${item.name}" data-item-price="${item.price}">
                     <p class="font-semibold text-sm">${item.name}</p>
@@ -555,6 +627,17 @@ const renderOrderModal = () => {
         });
     }
 };
+
+/**
+ * (★新規★) オーダーモーダルのカテゴリを切り替える
+ * @param {string} categoryId 
+ */
+const switchOrderCategory = (categoryId) => {
+    currentOrderModalCategoryId = categoryId;
+    renderOrderCategoryTabs(); // タブの active 状態を更新
+    renderOrderMenuGrid(); // メニューグリッドを再描画
+};
+
 
 /**
  * (新規) 伝票タグを描画する
@@ -820,14 +903,21 @@ const renderSlipPreviewModal = async () => {
         `;
     });
     
-    const serviceCharge = subtotal * settings.rates.service; // (★変更★)
-    const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * settings.rates.tax; // (★変更★)
-    const total = Math.round(subtotalWithService + tax);
+    // (★変更★) 割引前の合計を計算 (端数処理も考慮)
+    const total = calculateSlipTotal(slipData);
+    
     const paidAmount = slipData.paidAmount || 0;
     const billingAmount = total - paidAmount;
+    
+    // (★変更★) calculateSlipTotal で端数処理が行われるため、
+    // (★変更★) 個別の serviceCharge や tax の計算は表示上困難になる。
+    // (★変更★) ここでは簡略化し、小計と合計のみ表示する（もしくは別途計算）
+    const simpleSubtotal = slipData.items.reduce((acc, item) => acc + (item.price * item.qty), 0);
+    const serviceCharge = simpleSubtotal * settings.rates.service;
+    const subtotalWithService = simpleSubtotal + serviceCharge;
+    const tax = subtotalWithService * settings.rates.tax;
 
-    slipSubtotalEl.textContent = formatCurrency(subtotal);
+    slipSubtotalEl.textContent = formatCurrency(simpleSubtotal);
     slipServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
     slipTaxEl.textContent = formatCurrency(Math.round(tax));
     slipPaidAmountEl.parentElement.style.display = paidAmount > 0 ? 'flex' : 'none';
@@ -837,7 +927,7 @@ const renderSlipPreviewModal = async () => {
 
 
 /**
- * (★修正★) 会計モーダルを描画する (割引計算ロジック追加)
+ * (★修正★) 会計モーダルを描画する (割引計算ロジック追加 + 端数処理)
  */
 const renderCheckoutModal = () => {
     if (!settings) return; // (★変更★)
@@ -858,10 +948,9 @@ const renderCheckoutModal = () => {
         `;
     });
     
-    const serviceCharge = subtotal * settings.rates.service; // (★変更★)
-    const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * settings.rates.tax; // (★変更★)
-    const total = Math.round(subtotalWithService + tax);
+    // (★変更★) 割引前の合計を calculateSlipTotal で計算
+    const total = calculateSlipTotal(slipData);
+    
     const paidAmount = slipData.paidAmount || 0;
     const preDiscountTotal = total - paidAmount; 
 
@@ -875,7 +964,16 @@ const renderCheckoutModal = () => {
     } else if (discountType === 'percent') {
         finalBillingAmount = preDiscountTotal * (1 - (discountAmount / 100));
     }
-    finalBillingAmount = Math.round(finalBillingAmount); // 最終金額を丸める
+    
+    // (★変更★) 割引後にも端数処理を適用
+    const rounding = settings.rounding || { type: 'none', unit: 1 };
+    if (rounding.type === 'round_up_total') {
+        finalBillingAmount = Math.ceil(finalBillingAmount / rounding.unit) * rounding.unit;
+    } else if (rounding.type === 'round_down_total') {
+        finalBillingAmount = Math.floor(finalBillingAmount / rounding.unit) * rounding.unit;
+    } else {
+        finalBillingAmount = Math.round(finalBillingAmount); // 割引計算での端数は丸める
+    }
 
     // 0円未満にはしない
     if (finalBillingAmount < 0) {
@@ -884,6 +982,10 @@ const renderCheckoutModal = () => {
 
     // (★変更★) ローカル変数で保持
     currentBillingAmount = finalBillingAmount; 
+    
+    // (★変更★) 個別表示用の簡易計算
+    const serviceCharge = subtotal * settings.rates.service;
+    const tax = (subtotal + serviceCharge) * settings.rates.tax;
 
     checkoutSubtotalEl.textContent = formatCurrency(subtotal);
     checkoutServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
@@ -902,7 +1004,7 @@ const renderCheckoutModal = () => {
 };
 
 /**
- * (★修正★) 会計モーダルの支払い状況を計算・更新する (割引再計算)
+ * (★修正★) 会計モーダルの支払い状況を計算・更新する (割引再計算 + 端数処理)
  */
 const updatePaymentStatus = () => {
     if (!settings) return; // (★変更★)
@@ -911,15 +1013,9 @@ const updatePaymentStatus = () => {
     const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
     if (!slipData) return;
 
-    let subtotal = 0;
-    slipData.items.forEach(item => {
-        subtotal += item.price * item.qty;
-    });
+    // (★変更★) 割引前の合計を calculateSlipTotal で計算
+    const total = calculateSlipTotal(slipData);
     
-    const serviceCharge = subtotal * settings.rates.service; // (★変更★)
-    const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * settings.rates.tax; // (★変更★)
-    const total = Math.round(subtotalWithService + tax);
     const paidAmount = slipData.paidAmount || 0;
     const preDiscountTotal = total - paidAmount; 
 
@@ -932,7 +1028,16 @@ const updatePaymentStatus = () => {
     } else if (discountType === 'percent') {
         finalBillingAmount = preDiscountTotal * (1 - (discountAmount / 100));
     }
-    finalBillingAmount = Math.round(finalBillingAmount);
+
+    // (★変更★) 割引後にも端数処理を適用
+    const rounding = settings.rounding || { type: 'none', unit: 1 };
+    if (rounding.type === 'round_up_total') {
+        finalBillingAmount = Math.ceil(finalBillingAmount / rounding.unit) * rounding.unit;
+    } else if (rounding.type === 'round_down_total') {
+        finalBillingAmount = Math.floor(finalBillingAmount / rounding.unit) * rounding.unit;
+    } else {
+        finalBillingAmount = Math.round(finalBillingAmount);
+    }
 
     if (finalBillingAmount < 0) {
         finalBillingAmount = 0;
@@ -1082,6 +1187,8 @@ const createNewSlip = async (tableId, startTimeISO) => {
 
         // (★変更★) onSnapshot が renderDashboardSlips 等を更新
         
+        // (★新規★) オーダーモーダルのカテゴリをリセット
+        currentOrderModalCategoryId = null;
         renderOrderModal();
         openModal(orderModal);
 
@@ -1258,6 +1365,8 @@ const handleSlipClick = (slipId) => {
     discountAmountInput.value = discount.value;
     discountTypeSelect.value = discount.type;
     
+    // (★新規★) オーダーモーダルのカテゴリをリセット
+    currentOrderModalCategoryId = null;
     renderOrderModal();
     openModal(orderModal);
 };
@@ -1294,6 +1403,21 @@ const renderCastRanking = () => {
         if (!settings.ranking) settings.ranking = { period: 'monthly', type: 'nominations' };
     }
     const { period, type } = settings.ranking;
+    
+    // (★バグ修正★) どのボタンがアクティブかを settings.ranking.type に基づいて設定
+    if (rankingPeriodSelect) {
+        rankingPeriodSelect.value = period;
+    }
+    if (rankingTypeBtns) {
+        rankingTypeBtns.forEach(btn => {
+            if (btn.dataset.type === type) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+    // (★バグ修正 完了★)
     
     const baseDate = new Date();
     
@@ -1423,6 +1547,8 @@ const getDefaultSettings = () => {
             zip: "160-0021" // (★追加★)
         },
         rates: { tax: 0.10, service: 0.20 },
+        // (★新規★) 端数処理設定
+        rounding: { type: 'none', unit: 1 }, // 'none', 'round_up_total', 'round_down_total', 'round_up_subtotal'
         dayChangeTime: "05:00",
         performanceSettings: {
             // (★注意★) m14 は getDefaultMenu で生成されるIDと合わせる必要あり
@@ -1490,6 +1616,64 @@ const renderStoreSelector = () => {
     // (★将来的な拡張★) 
     // 複数店舗をサポートする場合、ここで `stores` コレクションから
     // ユーザーがアクセス可能な店舗一覧を取得し、<option> を動的生成する
+};
+
+
+// (★新規★) 転卓モーダルを描画する
+const openTableTransferModal = () => {
+    if (!settings || !slips || !transferTableGrid) return;
+    
+    const slipData = slips.find(s => s.slipId === currentSlipId);
+    if (!slipData) return;
+    
+    transferSlipNumber.textContent = slipData.slipNumber;
+    transferTableGrid.innerHTML = '';
+    transferError.textContent = '';
+    
+    // 現在アクティブな伝票があるテーブルIDのリスト
+    const activeTableIds = slips
+        .filter(s => (s.status === 'active' || s.status === 'checkout') && s.slipId !== currentSlipId) // (★修正★) 自分自身は除外
+        .map(s => s.tableId);
+        
+    // 全テーブルからアクティブなテーブルを除外 (＝空席)
+    const availableTables = settings.tables.filter(t => !activeTableIds.includes(t.id));
+    
+    if (availableTables.length === 0) {
+        transferTableGrid.innerHTML = '<p class="text-slate-500 col-span-full">現在、移動可能な空席テーブルはありません。</p>';
+    } else {
+        availableTables.forEach(table => {
+            const isCurrentTable = (table.id === slipData.tableId);
+            transferTableGrid.innerHTML += `
+                <button class="table-card-option" 
+                        data-table-id="${table.id}" 
+                        ${isCurrentTable ? 'disabled' : ''}
+                        title="${isCurrentTable ? '現在のテーブルです' : ''}">
+                    ${table.id}
+                </button>
+            `;
+        });
+    }
+    
+    openModal(tableTransferModal);
+};
+
+// (★新規★) 転卓を実行する
+const handleTableTransfer = async (newTableId) => {
+    if (!currentSlipId || !slipsCollectionRef) return;
+    
+    const slipRef = doc(slipsCollectionRef, currentSlipId);
+    
+    try {
+        await setDoc(slipRef, { tableId: newTableId }, { merge: true });
+        
+        closeModal(tableTransferModal);
+        closeModal(orderModal);
+        // onSnapshot が自動でダッシュボードとテーブル一覧を更新
+        
+    } catch (e) {
+        console.error("Error transferring table: ", e);
+        if (transferError) transferError.textContent = "テーブルの移動に失敗しました。";
+    }
 };
 
 
@@ -1709,6 +1893,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     orderModalTitle = document.getElementById('order-modal-title');
     orderItemsList = document.getElementById('order-items-list');
+    orderCategoryTabsContainer = document.getElementById('order-category-tabs-container'); // (★新規★)
     menuOrderGrid = document.getElementById('menu-order-grid');
     orderSubtotalEl = document.getElementById('order-subtotal');
     orderCustomerNameSelect = document.getElementById('order-customer-name-select');
@@ -1766,6 +1951,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // (★動的表示 追加★)
     storeSelector = document.getElementById('store-selector');
 
+    // (★新規★) 転卓モーダル
+    tableTransferModal = document.getElementById('table-transfer-modal');
+    openTransferModalBtn = document.getElementById('open-transfer-modal-btn');
+    transferSlipNumber = document.getElementById('transfer-slip-number');
+    transferTableGrid = document.getElementById('transfer-table-grid');
+    transferError = document.getElementById('transfer-error');
+
 
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
     
@@ -1794,6 +1986,7 @@ document.addEventListener('DOMContentLoaded', () => {
             closeModal(newSlipConfirmModal);
             closeModal(cancelSlipModal);
             closeModal(menuEditorModal);
+            closeModal(tableTransferModal); // (★新規★) 転卓モーダル
             
             // (★追加★) 割引をリセット
             if(discountAmountInput) discountAmountInput.value = '';
@@ -1885,6 +2078,26 @@ document.addEventListener('DOMContentLoaded', () => {
             await renderSlipPreviewModal(); // (★変更★)
             closeModal(orderModal);
             openModal(slipPreviewModal);
+        });
+    }
+
+    // (★新規★) 転卓モーダルを開く
+    if (openTransferModalBtn) {
+        openTransferModalBtn.addEventListener('click', () => {
+            openTableTransferModal();
+        });
+    }
+
+    // (★新規★) 転卓モーダル内のテーブル選択
+    if (transferTableGrid) {
+        transferTableGrid.addEventListener('click', (e) => {
+            const tableBtn = e.target.closest('.table-card-option');
+            if (tableBtn && !tableBtn.disabled) {
+                const newTableId = tableBtn.dataset.tableId;
+                if (confirm(`伝票をテーブル ${newTableId} に移動しますか？`)) {
+                    handleTableTransfer(newTableId);
+                }
+            }
         });
     }
 
@@ -2064,8 +2277,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     }, { merge: true });
                     
                     // (★変更★) 即時反映のためローカルでも active クラスを付け替える
-                    rankingTypeBtns.forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
+                    // (★バグ修正★) このロジックは onSnapshot 側 (renderCastRanking) に移動
+                    // rankingTypeBtns.forEach(b => b.classList.remove('active'));
+                    // btn.classList.add('active');
                     // (★変更★) onSnapshotが renderCastRanking を呼び出す
                     
                 } catch (e) {
@@ -2111,6 +2325,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // (★新規★) オーダーモーダルのカテゴリタブ イベント委任
+    if (orderCategoryTabsContainer) {
+        orderCategoryTabsContainer.addEventListener('click', (e) => {
+            const tab = e.target.closest('.order-category-tab');
+            if (tab && !tab.classList.contains('active')) {
+                switchOrderCategory(tab.dataset.categoryId);
+            }
+        });
+    }
+
     // (新規) 注文メニューのイベント委任
     if (menuOrderGrid) {
         menuOrderGrid.addEventListener('click', (e) => {

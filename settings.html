@@ -81,6 +81,32 @@
                                 </div>
 
                                 <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">会計 端数処理設定</h3>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div>
+                                            <label for="setting-rounding-type" class="text-sm font-semibold text-slate-600">処理方法</label>
+                                            <select id="setting-rounding-type" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white">
+                                                <option value="none">端数処理をしない (1円単位)</option>
+                                                <option value="round_up_total">会計合計を切り上げ</option>
+                                                <option value="round_down_total">会計合計を切り捨て</option>
+                                                </select>
+                                        </div>
+                                        <div>
+                                            <label for="setting-rounding-unit" class="text-sm font-semibold text-slate-600">処理単位</label>
+                                            <select id="setting-rounding-unit" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white">
+                                                <option value="1">1円単位</option>
+                                                <option value="10">10円単位</option>
+                                                <option value="100">100円単位</option>
+                                                <option value="1000">1000円単位</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <p class="text-xs text-slate-500 mt-3">
+                                        例:「会計合計を切り上げ」 + 「10円単位」 = 請求額 10,001円 が 10,010円 になります。<br>
+                                        「会計合計を切り捨て」 + 「100円単位」 = 請求額 10,199円 が 10,100円 になります。
+                                    </p>
+                                </div>
+                                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
                                     <h3 class="text-lg font-semibold mb-5 border-b pb-3">キャスト成績反映設定</h3>
                                     
                                     <div class="mb-6">
