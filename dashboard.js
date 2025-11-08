@@ -10,21 +10,10 @@ import {
     addDoc, 
     deleteDoc, 
     doc,
-    collection 
+    collection,
+    getDoc, // (★在庫管理 追加★)
+    serverTimestamp // (★在庫管理 追加★)
 } from './firebase-init.js';
-
-// (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
-/*
-import {
-    settingsRef,
-    menuRef,
-    slipCounterRef,
-    castsCollectionRef,
-    customersCollectionRef,
-    slipsCollectionRef
-} from './firebase-init.js';
-*/
-
 
 // ===== グローバル定数・変数 =====
 
@@ -43,6 +32,7 @@ let casts = [];
 let customers = [];
 let slips = [];
 let attendances = []; // (★勤怠機能追加★)
+let inventoryItems = []; // (★在庫管理 追加★)
 let slipCounter = 0;
 
 // (★変更★) 現在選択中の伝票ID (ローカル管理)
@@ -54,7 +44,9 @@ let elapsedTimeTimer = null;
 
 // (★変更★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
 let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef,
-    attendancesCollectionRef; // (★勤怠機能追加★)
+    attendancesCollectionRef, // (★勤怠機能追加★)
+    inventoryItemsCollectionRef, // (★在庫管理 追加★)
+    currentStoreId; // (★動的表示 追加★)
 
 
 // ===== DOM要素 =====
@@ -86,7 +78,8 @@ let /* navLinks, (★削除★) */ pageTitle, dashboardSlips,
     // (★新規★) 割引機能
     discountAmountInput, discountTypeSelect,
     // (★新規★) 伝票作成時間
-    newSlipStartTimeInput, newSlipTimeError;
+    newSlipStartTimeInput, newSlipTimeError,
+    storeSelector; // (★動的表示 追加★)
 
 
 // --- 関数 ---
@@ -1098,6 +1091,71 @@ const createNewSlip = async (tableId, startTimeISO) => {
 };
 
 /**
+ * (★在庫管理 変更★) 在庫を減算する
+ * @param {object} slipData 
+ */
+const reduceStock = async (slipData) => {
+    if (!menu || !menu.items || !inventoryItems || !inventoryItemsCollectionRef) {
+        console.warn("Cannot reduce stock: menu or inventory data missing.");
+        return;
+    }
+
+    const updates = new Map();
+
+    // 1. 伝票内のアイテムをループ
+    for (const slipItem of slipData.items) {
+        // 2. メニュー定義を検索
+        const menuItem = menu.items.find(m => m.id === slipItem.id);
+        
+        // 3. メニューが在庫に紐付いているか確認
+        if (menuItem && menuItem.inventoryItemId && menuItem.inventoryConsumption > 0) {
+            const inventoryId = menuItem.inventoryItemId;
+            const consumption = menuItem.inventoryConsumption * slipItem.qty;
+            
+            // 4. Map に減算量を加算 (同じ在庫品目が複数メニューで使われる場合)
+            const currentUpdate = updates.get(inventoryId) || 0;
+            updates.set(inventoryId, currentUpdate + consumption);
+        }
+    }
+    
+    if (updates.size === 0) {
+        console.log("No inventory items to update for this slip.");
+        return; // 在庫更新対象なし
+    }
+
+    // 5. Firestore の在庫品目を更新
+    const updatePromises = [];
+    for (const [inventoryId, totalConsumption] of updates.entries()) {
+        
+        const itemDocRef = doc(inventoryItemsCollectionRef, inventoryId);
+        
+        const localItem = inventoryItems.find(i => i.id === inventoryId);
+        const currentStock = localItem ? (localItem.currentStock || 0) : 0;
+        const newStock = currentStock - totalConsumption;
+
+        console.log(`Reducing stock for ${inventoryId}: ${currentStock} -> ${newStock}`);
+
+        updatePromises.push(
+            setDoc(itemDocRef, {
+                currentStock: newStock,
+                updatedAt: serverTimestamp()
+            }, { merge: true })
+        );
+    }
+    
+    try {
+        await Promise.all(updatePromises);
+        console.log("Stock levels updated successfully.");
+    } catch (error) {
+        console.error("Error updating stock levels: ", error);
+        // (★在庫管理 追加★)
+        // エラーが発生した場合、会計は続行するがアラートを出す
+        alert(`会計処理中にエラーが発生しました: ${error.message}\n在庫が正しく減算されていない可能性があります。`);
+    }
+};
+
+
+/**
  * (★変更★) 伝票選択モーダルを描画する
  * @param {string} tableId 
  */
@@ -1227,32 +1285,71 @@ const handlePaidSlipClick = (slipId) => {
 
 
 /**
- * (★修正★) キャストランキングを描画する
+ * (★ランキングロジック変更★) キャストランキングを描画する (dashboard.jsでのみ使用)
  */
 const renderCastRanking = () => {
     // (★変更★) settings がないと ranking の設定が読めない
     if (!settings || !settings.ranking) {
-        // デフォルトを設定（ただし保存はしない）
         if (!settings) settings = {};
         if (!settings.ranking) settings.ranking = { period: 'monthly', type: 'nominations' };
     }
     const { period, type } = settings.ranking;
     
-    // (★修正★) 基準日（本日）で期間フィルタリング
-    const { paidSlips } = getSlipsForPeriod(period, new Date());
+    const baseDate = new Date();
+    
+    // (★ランキングロジック変更★)
+    let slipsToAggregate = [];
+    const { paidSlips } = getSlipsForPeriod(period, baseDate);
+
+    if (period === 'daily') {
+        // --- (★変更★) 日間の場合 ---
+        const todayBusinessStart = getBusinessDayStart(baseDate);
+        const todayBusinessEnd = getBusinessDayEnd(todayBusinessStart);
+        
+        // 2. 本日の「未会計」伝票 (active, checkout) を取得
+        const activeSlipsToday = (slips || []).filter(slip => {
+            if (slip.status !== 'active' && slip.status !== 'checkout') return false;
+            if (!slip.startTime) return false;
+            try {
+                const startTimeMs = new Date(slip.startTime).getTime();
+                return startTimeMs >= todayBusinessStart.getTime() && startTimeMs <= todayBusinessEnd.getTime();
+            } catch (e) {
+                return false;
+            }
+        });
+        
+        // 3. 本日の「会計済み」伝票と「未会計」伝票を合算する
+        slipsToAggregate = [...paidSlips, ...activeSlipsToday];
+        
+    } else {
+        // --- (従来通り) 週次・月次の場合 ---
+        slipsToAggregate = paidSlips;
+    }
+    // (★ランキングロジック変更 終了★)
+
 
     if (!castRankingList) return;
     
-    // (★修正★) 集計ロジック
     const rankingMap = new Map();
 
-    paidSlips.forEach(slip => {
+    // (★ランキングロジック変更★) slipsToAggregate をループ
+    slipsToAggregate.forEach(slip => {
         const castId = slip.nominationCastId;
         if (!castId) return; // フリーは除外
 
         const current = rankingMap.get(castId) || { id: castId, name: getCastNameById(castId), sales: 0, nominations: 0 };
         
-        current.sales += slip.paidAmount || 0; 
+        // (★ランキングロジック変更★) 売上の集計方法を変更
+        let slipSales = 0;
+        if (slip.status === 'paid') {
+            // 会計済み伝票は paidAmount (割引後)
+            slipSales = slip.paidAmount || 0;
+        } else {
+            // 未会計伝票は calculateSlipTotal (割引前)
+            slipSales = calculateSlipTotal(slip);
+        }
+        
+        current.sales += slipSales; 
         current.nominations += 1;
         
         rankingMap.set(castId, current);
@@ -1361,11 +1458,11 @@ const getDefaultMenu = () => {
             { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false },
         ],
         items: [
-            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60 },
-            { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60 },
-            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null },
-            { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null },
-            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null }, // (★ID変更★)
+            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null, inventoryItemId: null, inventoryConsumption: null },
         ],
         currentActiveMenuCategoryId: catSetId,
     };
@@ -1374,6 +1471,26 @@ const getDefaultMenu = () => {
 
 // (★削除★) Firestore への state 保存関数（各関数内で直接実行）
 // const updateStateInFirestore = async (newState) => { ... };
+
+// (★動的表示 追加★)
+/**
+ * (★新規★) ヘッダーのストアセレクターを描画する
+ */
+const renderStoreSelector = () => {
+    if (!storeSelector || !settings || !currentStoreId) return;
+
+    const currentStoreName = settings.storeInfo.name || "店舗";
+    
+    // (★変更★) 現在は複数店舗の切り替えをサポートしていないため、
+    // (★変更★) 現在の店舗名のみを表示し、ドロップダウンを無効化する
+    storeSelector.innerHTML = `<option value="${currentStoreId}">${currentStoreName}</option>`;
+    storeSelector.value = currentStoreId;
+    storeSelector.disabled = true;
+    
+    // (★将来的な拡張★) 
+    // 複数店舗をサポートする場合、ここで `stores` コレクションから
+    // ユーザーがアクセス可能な店舗一覧を取得し、<option> を動的生成する
+};
 
 
 // (★変更★) --- Firestore リアルタイムリスナー ---
@@ -1388,7 +1505,9 @@ document.addEventListener('firebaseReady', (e) => {
         castsCollectionRef: cRef, 
         customersCollectionRef: cuRef, 
         slipsCollectionRef: slRef,
-        attendancesCollectionRef: aRef // (★勤怠機能追加★)
+        attendancesCollectionRef: aRef, // (★勤怠機能追加★)
+        inventoryItemsCollectionRef: iRef, // (★在庫管理 追加★)
+        currentStoreId: csId // (★動的表示 追加★)
     } = e.detail;
 
     // (★変更★) グローバル変数に参照をセット
@@ -1399,6 +1518,8 @@ document.addEventListener('firebaseReady', (e) => {
     customersCollectionRef = cuRef;
     slipsCollectionRef = slRef;
     attendancesCollectionRef = aRef; // (★勤怠機能追加★)
+    inventoryItemsCollectionRef = iRef; // (★在庫管理 追加★)
+    currentStoreId = csId; // (★動的表示 追加★)
 
 
     // (★新規★) 全データをロードできたか確認するフラグ
@@ -1409,15 +1530,17 @@ document.addEventListener('firebaseReady', (e) => {
     let slipsLoaded = false;
     let counterLoaded = false;
     let attendancesLoaded = false; // (★勤怠機能追加★)
+    let inventoryLoaded = false; // (★在庫管理 追加★)
 
     // (★新規★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
-        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && attendancesLoaded) { // (★勤怠機能追加★)
+        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && attendancesLoaded && inventoryLoaded) { // (★在庫管理 変更★)
             console.log("All data loaded. Rendering UI.");
             renderDashboardSummary();
             renderCastRanking();
             renderDashboardSlips();
             updateModalCommonInfo(); 
+            renderStoreSelector(); // (★動的表示 追加★)
         }
     };
 
@@ -1512,6 +1635,21 @@ document.addEventListener('firebaseReady', (e) => {
     }, (error) => {
         console.error("Error listening to attendances: ", error);
         attendancesLoaded = true; // エラーでも続行
+        checkAndRenderAll();
+    });
+    
+    // 8. (★在庫管理 追加★) Inventory Items
+    onSnapshot(inventoryItemsCollectionRef, (querySnapshot) => {
+        inventoryItems = [];
+        querySnapshot.forEach((doc) => {
+            inventoryItems.push({ ...doc.data(), id: doc.id });
+        });
+        console.log("Inventory items loaded (for stock reduction): ", inventoryItems.length);
+        inventoryLoaded = true;
+        checkAndRenderAll();
+    }, (error) => {
+        console.error("Error listening to inventory items: ", error);
+        inventoryLoaded = true; // エラーでも続行
         checkAndRenderAll();
     });
 });
@@ -1624,6 +1762,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // (★新規★) 割引
     discountAmountInput = document.getElementById('discount-amount');
     discountTypeSelect = document.getElementById('discount-type');
+    
+    // (★動的表示 追加★)
+    storeSelector = document.getElementById('store-selector');
 
 
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
@@ -1841,6 +1982,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // (★変更★) 伝票ドキュメントを直接更新
             try {
+                // (★在庫管理 追加★) 在庫減算処理を実行
+                await reduceStock(slip);
+
                 const slipRef = doc(slipsCollectionRef, currentSlipId);
                 await setDoc(slipRef, updatedSlipData, { merge: true });
 
@@ -1850,6 +1994,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             } catch (e) {
                 console.error("Error processing payment: ", e);
+                // (★在庫管理 追加★)
+                // もし在庫減算でエラーが起きても、会計処理は進めるがエラーを出す
+                alert(`会計処理中にエラーが発生しました: ${e.message}\n在庫が正しく減算されていない可能性があります。`);
             }
         });
     }
@@ -1868,6 +2015,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     paidTimestamp: null,
                     discount: { type: 'yen', value: 0 }
                 };
+                
+                // (★在庫管理 追加★)
+                alert("伝票を復活させました。\n(注意: 消費した在庫は自動で戻りません。在庫管理ページから手動で調整してください。)");
 
                 // (★変更★) 伝票ドキュメントを直接更新
                 try {

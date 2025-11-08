@@ -36,7 +36,8 @@ let slips = []; // (★追加★) 削除判定のために slips が必要
 // (★削除★) casts, customers, slipCounter, currentSlipId は不要
 
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
-let settingsRef, menuRef, slipsCollectionRef;
+let settingsRef, menuRef, slipsCollectionRef,
+    currentStoreId; // (★動的表示 追加★)
 
 
 // ===== DOM要素 =====
@@ -60,7 +61,9 @@ let modalCloseBtns, // (★注意★) settings.html にモーダルは無いた�
     settingScSalesValue, settingScSalesType,
     settingTaxSalesValue, settingTaxSalesType,
     settingSideSalesValue,
-    settingSideCountNomination;
+    settingSideCountNomination,
+    
+    storeSelector; // (★動的表示 追加★)
 
 // (★削除★) 伝票関連モーダルDOM (newSlipConfirmModal, slipSelectionModal, etc...) をすべて削除
 
@@ -491,6 +494,22 @@ const deleteTagSetting = async (tagId) => {
 // (★削除★) キャスト設定セクション (cast-settings.js に移動)
 // (★削除★) 伝票作成関連のロジック (createNewSlip, renderSlipSelectionModal, renderNewSlipConfirmModal)
 
+// (★動的表示 追加★)
+/**
+ * (★新規★) ヘッダーのストアセレクターを描画する
+ */
+const renderStoreSelector = () => {
+    if (!storeSelector || !settings || !currentStoreId) return;
+
+    const currentStoreName = settings.storeInfo.name || "店舗";
+    
+    // (★変更★) 現在は複数店舗の切り替えをサポートしていないため、
+    // (★変更★) 現在の店舗名のみを表示し、ドロップダウンを無効化する
+    storeSelector.innerHTML = `<option value="${currentStoreId}">${currentStoreName}</option>`;
+    storeSelector.value = currentStoreId;
+    storeSelector.disabled = true;
+};
+
 
 // (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
 const getDefaultSettings = () => {
@@ -546,13 +565,15 @@ document.addEventListener('firebaseReady', (e) => {
     const { 
         settingsRef: sRef, 
         menuRef: mRef, 
-        slipsCollectionRef: slRef
+        slipsCollectionRef: slRef,
+        currentStoreId: csId // (★動的表示 追加★)
     } = e.detail;
 
     // (★変更★) グローバル変数に参照をセット
     settingsRef = sRef;
     menuRef = mRef;
     slipsCollectionRef = slRef;
+    currentStoreId = csId; // (★動的表示 追加★)
 
     let settingsLoaded = false;
     let menuLoaded = false;
@@ -563,6 +584,7 @@ document.addEventListener('firebaseReady', (e) => {
         if (settingsLoaded && menuLoaded && slipsLoaded) {
             console.log("All data loaded. Rendering UI for settings.js");
             loadSettingsToForm();
+            renderStoreSelector(); // (★動的表示 追加★)
             // (★削除★) updateModalCommonInfo();
         }
     };
@@ -654,6 +676,8 @@ document.addEventListener('DOMContentLoaded', () => {
     settingTaxSalesType = document.getElementById('setting-tax-sales-type');
     settingSideSalesValue = document.getElementById('setting-side-sales-value');
     settingSideCountNomination = document.getElementById('setting-side-count-nomination');
+    
+    storeSelector = document.getElementById('store-selector'); // (★動的表示 追加★)
 
     // (★削除★) 伝票関連モーダルDOM
     // ...
@@ -665,8 +689,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // (★変更★) モーダルを閉じるボタン (HTMLにはもう存在しないが、念のため残す)
     if (modalCloseBtns) {
         modalCloseBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                closeModal(); // (★変更★)
+            btn.addEventListener('click', (e) => { // (★動的表示 変更★)
+                const modal = e.target.closest('.modal-backdrop'); // (★動的表示 変更★)
+                if (modal) {
+                    closeModal(modal);
+                }
             });
         });
     }

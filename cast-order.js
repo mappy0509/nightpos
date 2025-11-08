@@ -9,12 +9,14 @@ import {
     doc,
     collection,
     getDoc, // (★新規★)
-    signOut // (★新規★)
+    signOut, // (★新規★)
+    serverTimestamp // (★在庫管理 追加★)
 } from './firebase-init.js';
 
 // (★変更★) 参照は firebaseReady イベントで受け取る
 let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef,
-    attendancesCollectionRef; // (★勤怠機能追加★)
+    attendancesCollectionRef, // (★勤怠機能追加★)
+    inventoryItemsCollectionRef; // (★在庫管理 追加★)
 
 // ===== グローバル定数・変数 =====
 
@@ -33,6 +35,7 @@ let casts = [];
 let customers = [];
 let slips = [];
 let attendances = []; // (★勤怠機能追加★)
+let inventoryItems = []; // (★在庫管理 追加★)
 let slipCounter = 0;
 
 // (★変更★) 現在選択中の伝票ID (ローカル管理)
@@ -866,6 +869,69 @@ const createNewSlip = async (tableId, startTimeISO) => {
 };
 
 /**
+ * (★在庫管理 変更★) 在庫を減算する
+ * @param {object} slipData 
+ */
+const reduceStock = async (slipData) => {
+    if (!menu || !menu.items || !inventoryItems || !inventoryItemsCollectionRef) {
+        console.warn("Cannot reduce stock: menu or inventory data missing.");
+        return;
+    }
+
+    const updates = new Map();
+
+    // 1. 伝票内のアイテムをループ
+    for (const slipItem of slipData.items) {
+        // 2. メニュー定義を検索
+        const menuItem = menu.items.find(m => m.id === slipItem.id);
+        
+        // 3. メニューが在庫に紐付いているか確認
+        if (menuItem && menuItem.inventoryItemId && menuItem.inventoryConsumption > 0) {
+            const inventoryId = menuItem.inventoryItemId;
+            const consumption = menuItem.inventoryConsumption * slipItem.qty;
+            
+            // 4. Map に減算量を加算 (同じ在庫品目が複数メニューで使われる場合)
+            const currentUpdate = updates.get(inventoryId) || 0;
+            updates.set(inventoryId, currentUpdate + consumption);
+        }
+    }
+    
+    if (updates.size === 0) {
+        console.log("No inventory items to update for this slip.");
+        return; // 在庫更新対象なし
+    }
+
+    // 5. Firestore の在庫品目を更新
+    const updatePromises = [];
+    for (const [inventoryId, totalConsumption] of updates.entries()) {
+        
+        const itemDocRef = doc(inventoryItemsCollectionRef, inventoryId);
+        
+        const localItem = inventoryItems.find(i => i.id === inventoryId);
+        const currentStock = localItem ? (localItem.currentStock || 0) : 0;
+        const newStock = currentStock - totalConsumption;
+
+        console.log(`Reducing stock for ${inventoryId}: ${currentStock} -> ${newStock}`);
+
+        updatePromises.push(
+            setDoc(itemDocRef, {
+                currentStock: newStock,
+                updatedAt: serverTimestamp()
+            }, { merge: true })
+        );
+    }
+    
+    try {
+        await Promise.all(updatePromises);
+        console.log("Stock levels updated successfully.");
+    } catch (error) {
+        console.error("Error updating stock levels: ", error);
+        alert(`会計処理中にエラーが発生しました: ${error.message}\n在庫が正しく減算されていない可能性があります。`);
+    }
+};
+
+
+/**
  * (★変更★) 伝票選択モーダルを描画する
  * @param {string} tableId 
  */
@@ -1053,9 +1119,9 @@ const getDefaultMenu = () => {
             { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true }, 
         ],
         items: [
-            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60 },
-            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null },
-            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null },
+            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null, inventoryItemId: null, inventoryConsumption: null },
         ],
         currentActiveMenuCategoryId: catSetId,
     };
@@ -1128,7 +1194,8 @@ document.addEventListener('firebaseReady', async (e) => {
         castsCollectionRef: cRef, 
         customersCollectionRef: cuRef, 
         slipsCollectionRef: slRef,
-        attendancesCollectionRef: aRef // (★勤怠機能追加★)
+        attendancesCollectionRef: aRef, // (★勤怠機能追加★)
+        inventoryItemsCollectionRef: iRef // (★在庫管理 追加★)
     } = e.detail;
 
     // (★変更★) グローバル変数にセット
@@ -1140,6 +1207,7 @@ document.addEventListener('firebaseReady', async (e) => {
     customersCollectionRef = cuRef;
     slipsCollectionRef = slRef;
     attendancesCollectionRef = aRef; // (★勤怠機能追加★)
+    inventoryItemsCollectionRef = iRef; // (★在庫管理 追加★)
     
     // (★新規★) まずキャスト情報を読み込む
     await loadCastInfo();
@@ -1152,11 +1220,12 @@ document.addEventListener('firebaseReady', async (e) => {
     let slipsLoaded = false;
     let counterLoaded = false;
     let attendancesLoaded = false; // (★勤怠機能追加★)
+    let inventoryLoaded = false; // (★在庫管理 追加★)
 
     // (★新規★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
         // (★変更★) cast-order.js は renderTableGrid を呼ぶ
-        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && attendancesLoaded) { // (★勤怠機能追加★)
+        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && attendancesLoaded && inventoryLoaded) { // (★在庫管理 変更★)
             console.log("All data loaded. Rendering UI for cast-order.js");
             renderTableGrid();
             updateModalCommonInfo(); 
@@ -1253,6 +1322,21 @@ document.addEventListener('firebaseReady', async (e) => {
     }, (error) => {
         console.error("Error listening to attendances: ", error);
         attendancesLoaded = true; // エラーでも続行
+        checkAndRenderAll();
+    });
+    
+    // 8. (★在庫管理 追加★) Inventory Items
+    onSnapshot(inventoryItemsCollectionRef, (querySnapshot) => {
+        inventoryItems = [];
+        querySnapshot.forEach((doc) => {
+            inventoryItems.push({ ...doc.data(), id: doc.id });
+        });
+        console.log("Inventory items loaded (for stock reduction): ", inventoryItems.length);
+        inventoryLoaded = true;
+        checkAndRenderAll();
+    }, (error) => {
+        console.error("Error listening to inventory items: ", error);
+        inventoryLoaded = true; // エラーでも続行
         checkAndRenderAll();
     });
 });
@@ -1551,6 +1635,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // (★変更★)
             try {
+                // (★在庫管理 追加★) 在庫減算処理を実行
+                await reduceStock(slip);
+
                 const slipRef = doc(slipsCollectionRef, currentSlipId);
                 await setDoc(slipRef, updatedSlipData, { merge: true });
 
@@ -1559,6 +1646,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 openModal(receiptModal);
             } catch (e) {
                  console.error("Error processing payment: ", e);
+                 // (★在庫管理 追加★)
+                 alert(`会計処理中にエラーが発生しました: ${e.message}\n在庫が正しく減算されていない可能性があります。`);
             }
         });
     }
@@ -1576,6 +1665,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     paidTimestamp: null,
                     discount: { type: 'yen', value: 0 }
                 };
+
+                // (★在庫管理 追加★)
+                alert("伝票を復活させました。\n(注意: 消費した在庫は自動で戻りません。在庫管理ページから手動で調整してください。)");
 
                 // (★変更★)
                 try {

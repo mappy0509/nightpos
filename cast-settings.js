@@ -60,7 +60,9 @@ let modalCloseBtns,
     castDisplayNameInput, castRealNameInput, castEmailInput,
     castAuthUidInput, castPhoneInput, castAddressInput,
     castHireDateInput, castEditorError,
-    saveCastBtn, deleteCastBtn;
+    saveCastBtn, deleteCastBtn,
+    
+    storeSelector; // (★動的表示 追加★)
 
 
 // --- 関数 ---
@@ -359,6 +361,22 @@ const deleteCast = async () => {
     }
 };
 
+// (★動的表示 追加★)
+/**
+ * (★新規★) ヘッダーのストアセレクターを描画する
+ */
+const renderStoreSelector = () => {
+    if (!storeSelector || !settings || !currentStoreId) return;
+
+    const currentStoreName = settings.storeInfo.name || "店舗";
+    
+    // (★変更★) 現在は複数店舗の切り替えをサポートしていないため、
+    // (★変更★) 現在の店舗名のみを表示し、ドロップダウンを無効化する
+    storeSelector.innerHTML = `<option value="${currentStoreId}">${currentStoreName}</option>`;
+    storeSelector.value = currentStoreId;
+    storeSelector.disabled = true;
+};
+
 
 // (★変更★) --- Firestore リアルタイムリスナー ---
 // (★変更★) firebaseReady イベントを待ってからリスナーを設定
@@ -389,6 +407,7 @@ document.addEventListener('firebaseReady', (e) => {
         if (settingsLoaded && castsLoaded && slipsLoaded) {
             console.log("All data loaded. Rendering UI for cast-settings.js");
             renderCastSettingsList();
+            renderStoreSelector(); // (★動的表示 追加★)
         }
     };
 
@@ -398,7 +417,7 @@ document.addEventListener('firebaseReady', (e) => {
             settings = docSnap.data();
         } else {
             console.warn("No settings document found.");
-            settings = {}; // フォールバック
+            settings = { storeInfo: { name: "店舗" } }; // (★動的表示 変更★) フォールバック
         }
         settingsLoaded = true;
         checkAndRenderAll();
@@ -487,6 +506,8 @@ document.addEventListener('DOMContentLoaded', () => {
     castEditorError = document.getElementById('cast-editor-error');
     saveCastBtn = document.getElementById('save-cast-btn');
     deleteCastBtn = document.getElementById('delete-cast-btn');
+    
+    storeSelector = document.getElementById('store-selector'); // (★動的表示 追加★)
 
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
     

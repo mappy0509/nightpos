@@ -48,7 +48,8 @@ let slips = [];
 // let currentBillingAmount = 0; 
 
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
-let settingsRef, menuRef, castsCollectionRef, slipsCollectionRef;
+let settingsRef, menuRef, castsCollectionRef, slipsCollectionRef,
+    currentStoreId; // (★動的表示 追加★)
 
 
 // ===== DOM要素 =====
@@ -58,7 +59,8 @@ let modalCloseBtns, // (★削除★) モーダルが無いため、本当は不
     reportsPeriodTabs, reportsChartCanvas, reportsRankingList, exportJpgBtn,
     reportContentArea,
     // (★新規★) 日付選択
-    reportDatePicker;
+    reportDatePicker,
+    storeSelector; // (★動的表示 追加★)
     
 // (★削除★) 他のHTMLからコピーされたモーダル用のDOMをすべて削除
 // newSlipConfirmModal, slipSelectionModal, etc...
@@ -405,8 +407,10 @@ const getDefaultSettings = () => {
     return {
         // (★簡易版★ reports.js が必要なデータのみ)
         storeInfo: {
-            name: "Night POS", address: "東京都新宿区歌舞伎町1-1-1",
-            tel: "03-0000-0000", zip: "160-0021"
+            name: "Night POS",
+            address: "東京都新宿区歌舞伎町1-1-1",
+            tel: "03-0000-0000",
+            zip: "160-0021" 
         },
         rates: { tax: 0.10, service: 0.20 },
         dayChangeTime: "05:00",
@@ -424,6 +428,22 @@ const getDefaultMenu = () => {
 // (★削除★) Firestore への state 保存関数
 // const updateStateInFirestore = async (newState) => { ... };
 
+// (★動的表示 追加★)
+/**
+ * (★新規★) ヘッダーのストアセレクターを描画する
+ */
+const renderStoreSelector = () => {
+    if (!storeSelector || !settings || !currentStoreId) return;
+
+    const currentStoreName = settings.storeInfo.name || "店舗";
+    
+    // (★変更★) 現在は複数店舗の切り替えをサポートしていないため、
+    // (★変更★) 現在の店舗名のみを表示し、ドロップダウンを無効化する
+    storeSelector.innerHTML = `<option value="${currentStoreId}">${currentStoreName}</option>`;
+    storeSelector.value = currentStoreId;
+    storeSelector.disabled = true;
+};
+
 // (★変更★) --- Firestore リアルタイムリスナー ---
 // (★変更★) firebaseReady イベントを待ってからリスナーを設定
 document.addEventListener('firebaseReady', (e) => {
@@ -433,7 +453,8 @@ document.addEventListener('firebaseReady', (e) => {
         settingsRef: sRef, 
         menuRef: mRef,
         castsCollectionRef: cRef, 
-        slipsCollectionRef: slRef
+        slipsCollectionRef: slRef,
+        currentStoreId: csId // (★動的表示 追加★)
     } = e.detail;
 
     // (★変更★) グローバル変数に参照をセット
@@ -441,6 +462,7 @@ document.addEventListener('firebaseReady', (e) => {
     menuRef = mRef;
     castsCollectionRef = cRef;
     slipsCollectionRef = slRef;
+    currentStoreId = csId; // (★動的表示 追加★)
 
     let settingsLoaded = false;
     let menuLoaded = false;
@@ -454,6 +476,7 @@ document.addEventListener('firebaseReady', (e) => {
         if (settingsLoaded && menuLoaded && castsLoaded && slipsLoaded) {
             console.log("All data loaded. Rendering UI for reports.js");
             updateAllReports();
+            renderStoreSelector(); // (★動的表示 追加★)
             // (★削除★) updateModalCommonInfo(); 
         }
     };
@@ -549,6 +572,8 @@ document.addEventListener('DOMContentLoaded', () => {
         reportDatePicker.value = currentReportDate.toISOString().split('T')[0];
     }
     
+    storeSelector = document.getElementById('store-selector'); // (★動的表示 追加★)
+    
     // (★削除★) 伝票関連モーダルのDOM取得を削除
     
     // ===== 初期化処理 =====
@@ -559,8 +584,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // (★変更★) モーダルを閉じるボタン (HTMLにはもう存在しないが、念のため残す)
     if (modalCloseBtns) {
         modalCloseBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                closeModal(); // (★変更★)
+            btn.addEventListener('click', (e) => { // (★動的表示 変更★)
+                const modal = e.target.closest('.modal-backdrop'); // (★動的表示 変更★)
+                if (modal) {
+                    closeModal(modal);
+                }
             });
         });
     }

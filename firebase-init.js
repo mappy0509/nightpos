@@ -24,7 +24,8 @@ import {
     query, // (★新規★)
     where, // (★新規★)
     getDoc, // (★新規★)
-    getDocs // (★新規★)
+    getDocs, // (★新規★)
+    serverTimestamp // (★エラー修正★)
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
 // Your web app's Firebase configuration (お客様から提供された設定)
@@ -115,7 +116,7 @@ const initializeFirebase = () => {
                 // (★新規★) 2. ロールに応じて admin か cast かを判定
                 let currentCastDocId = null; // Firestoreの /stores/{storeId}/casts/{docId}
                 if (currentUserRole === 'cast') {
-                    // (★新規★) 3. キャストの場合、Auth UID を使って casts コレクションから自分のドキュメントIDを取得
+                    // (★新規★) 3. キャストの場合、Auth UID を使って casts コ_レクションから自分のドキュメントIDを取得
                     const castsQuery = query(collection(db, "stores", currentStoreId, "casts"), where("authUid", "==", user.uid));
                     const querySnapshot = await getDocs(castsQuery);
                     
@@ -140,8 +141,9 @@ const initializeFirebase = () => {
                 const customersCollectionRef = collection(db, "stores", currentStoreId, "customers");
                 const slipsCollectionRef = collection(db, "stores", currentStoreId, "slips");
                 const invitesCollectionRef = collection(db, "stores", currentStoreId, "invites"); 
-                // (★勤怠機能追加★)
                 const attendancesCollectionRef = collection(db, "stores", currentStoreId, "attendances");
+                // (★在庫管理 追加★)
+                const inventoryItemsCollectionRef = collection(db, "stores", currentStoreId, "inventoryItems");
 
                 // (★新規★) 5. 認証が完了したことを知らせるカスタムイベント
                 document.dispatchEvent(new CustomEvent('firebaseReady', { 
@@ -161,7 +163,8 @@ const initializeFirebase = () => {
                         customersCollectionRef,
                         slipsCollectionRef,
                         invitesCollectionRef,
-                        attendancesCollectionRef // (★勤怠機能追加★)
+                        attendancesCollectionRef,
+                        inventoryItemsCollectionRef // (★在庫管理 追加★)
                     } 
                 }));
 
@@ -211,5 +214,6 @@ export {
     query,
     where,
     getDoc,
-    getDocs
+    getDocs,
+    serverTimestamp // (★エラー修正★)
 };

@@ -1,5 +1,6 @@
 // (★新規★) 共通サイドバーコンポーネント
-import { auth, signOut } from './firebase-init.js';
+// (★変更★) db, getDoc, doc をインポート
+import { auth, signOut, db, getDoc, doc } from './firebase-init.js';
 
 /**
  * サイドバーのHTMLを生成する
@@ -15,9 +16,9 @@ const createSidebarHTML = (currentPage) => {
         { href: 'all-slips.html', icon: 'fa-file-invoice', text: '伝票一覧' },
         { href: 'customers.html', icon: 'fa-users', text: '顧客管理' },
         { href: 'menu.html', icon: 'fa-book-open', text: 'メニュー管理' },
+        { href: 'inventory.html', icon: 'fa-boxes-stacked', text: '在庫管理' },
         { href: 'reports.html', icon: 'fa-chart-line', text: '売上分析' },
         { href: 'cast-settings.html', icon: 'fa-users-gear', text: 'キャスト設定' },
-        // (★勤怠機能追加★)
         { href: 'attendance.html', icon: 'fa-calendar-check', text: '勤怠管理' },
         { href: 'settings.html', icon: 'fa-gear', text: '店舗設定' },
     ];
@@ -42,8 +43,8 @@ const createSidebarHTML = (currentPage) => {
             <div class="flex items-center space-x-3">
                 <img src="https://placehold.co/40x40/e0e7ff/4338ca?text=User" alt="User Avatar" class="w-10 h-10 rounded-full">
                 <div>
-                    <p class="font-semibold text-sm">山田 太郎</p>
-                    <p class="text-xs text-slate-500">マネージャー</p>
+                    <p class="font-semibold text-sm" id="sidebar-user-name">（読み込み中...）</p>
+                    <p class="text-xs text-slate-500" id="sidebar-user-role">（...）</p>
                 </div>
             </div>
             <button id="sidebar-logout-btn" class="mt-4 w-full text-left text-sm text-slate-600 hover:text-red-600">
@@ -83,4 +84,44 @@ export const renderSidebar = (containerId, currentPage) => {
             }
         });
     }
+
+    // (★動的表示 追加★)
+    // 認証情報が読み込まれたら、ユーザー名を更新する
+    // (※ firebase-init.js が先に読み込まれ、イベントが発火する前提)
+    document.addEventListener('firebaseReady', async (e) => {
+        const { auth, db, currentUserRole, currentCastId, castsCollectionRef } = e.detail;
+        
+        const userNameEl = document.getElementById('sidebar-user-name');
+        const userRoleEl = document.getElementById('sidebar-user-role');
+
+        if (!userNameEl || !userRoleEl) return;
+
+        try {
+            if (currentUserRole === 'admin') {
+                userRoleEl.textContent = '管理者';
+                // 管理者の名前は Auth の Email を使う (登録時に名前を入力しないため)
+                if (auth.currentUser) {
+                    userNameEl.textContent = auth.currentUser.email;
+                } else {
+                    userNameEl.textContent = '管理者ユーザー';
+                }
+            } else if (currentUserRole === 'cast' && currentCastId && castsCollectionRef) {
+                userRoleEl.textContent = 'キャスト';
+                // Castsコレクションから名前を取得
+                const castRef = doc(castsCollectionRef, currentCastId);
+                const castSnap = await getDoc(castRef);
+                if (castSnap.exists()) {
+                    userNameEl.textContent = castSnap.data().name || auth.currentUser.email;
+                } else {
+                    userNameEl.textContent = auth.currentUser.email || 'キャスト';
+                }
+            } else {
+                userNameEl.textContent = 'ゲスト';
+                userRoleEl.textContent = '不明';
+            }
+        } catch (error) {
+            console.error("Error fetching user name for sidebar: ", error);
+            userNameEl.textContent = (auth.currentUser && auth.currentUser.email) ? auth.currentUser.email : 'エラー';
+        }
+    });
 };

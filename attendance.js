@@ -38,7 +38,8 @@ let pageTitle,
     editClockInTime, editClockOutTime,
     editMemoInput, attendanceEditError, saveAttendanceBtn,
     
-    modalCloseBtns;
+    modalCloseBtns,
+    storeSelector; // (★動的表示 追加★)
 
 
 // --- (★新規★) ヘルパー関数 ---
@@ -344,6 +345,22 @@ const saveAttendance = async () => {
     }
 };
 
+// (★動的表示 追加★)
+/**
+ * (★新規★) ヘッダーのストアセレクターを描画する
+ */
+const renderStoreSelector = () => {
+    if (!storeSelector || !settings || !currentStoreId) return;
+
+    const currentStoreName = settings.storeInfo.name || "店舗";
+    
+    // (★変更★) 現在は複数店舗の切り替えをサポートしていないため、
+    // (★変更★) 現在の店舗名のみを表示し、ドロップダウンを無効化する
+    storeSelector.innerHTML = `<option value="${currentStoreId}">${currentStoreName}</option>`;
+    storeSelector.value = currentStoreId;
+    storeSelector.disabled = true;
+};
+
 
 // (★新規★) --- Firestore リアルタイムリスナー ---
 document.addEventListener('firebaseReady', (e) => {
@@ -369,6 +386,7 @@ document.addEventListener('firebaseReady', (e) => {
         if (settingsLoaded && castsLoaded && attendancesLoaded) {
             console.log("All data loaded. Rendering UI for attendance.js");
             renderAttendanceList();
+            renderStoreSelector(); // (★動的表示 追加★)
         }
     };
 
@@ -379,7 +397,7 @@ document.addEventListener('firebaseReady', (e) => {
         } else {
             console.warn("No settings document found.");
             // デフォルト設定
-            settings = { dayChangeTime: "05:00" };
+            settings = { dayChangeTime: "05:00", storeInfo: { name: "店舗" } }; // (★動的表示 変更★)
         }
         settingsLoaded = true;
         checkAndRenderAll();
@@ -448,6 +466,8 @@ document.addEventListener('DOMContentLoaded', () => {
     saveAttendanceBtn = document.getElementById('save-attendance-btn');
     
     modalCloseBtns = document.querySelectorAll('.modal-close-btn');
+    
+    storeSelector = document.getElementById('store-selector'); // (★動的表示 追加★)
 
     // ===== 初期化処理 =====
     if (attendanceDatePicker) {

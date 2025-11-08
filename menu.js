@@ -35,13 +35,15 @@ const getUUID = () => {
 // (★変更★) state を分割して管理
 let settings = null; // (★追加★) カテゴリ管理（isCastCategoryなど）のため
 let menu = null;
+let inventoryItems = []; // (★在庫管理 追加★)
 // (★削除★) casts, customers, slips, slipCounter は不要
 
 // (★変更★) 現在選択中の編集ID
 let currentEditingMenuId = null; 
 
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
-let settingsRef, menuRef;
+let settingsRef, menuRef, inventoryItemsCollectionRef,
+    currentStoreId; // (★動的表示 追加★)
 
 
 // ===== DOM要素 =====
@@ -59,7 +61,13 @@ let /* navLinks, (★削除★) */ pageTitle,
     
     // (★新規★) カテゴリ管理モーダル
     categoryEditorModal, openCategoryModalBtn, currentCategoriesList,
-    newCategoryNameInput, addCategoryBtn, categoryAddError;
+    newCategoryNameInput, addCategoryBtn, categoryAddError,
+    
+    // (★在庫管理 追加★)
+    menuInventoryItemSelect, menuConsumptionGroup, 
+    menuInventoryConsumptionInput, menuConsumptionUnit,
+    
+    storeSelector; // (★動的表示 追加★)
 
 // (★削除★) 伝票・注文・会計関連のDOM変数をすべて削除
 
@@ -118,7 +126,7 @@ const renderMenuTabs = () => {
 };
 
 /**
- * (★変更★) 指定されたカテゴリのメニューリストを描画する
+ * (★在庫管理 変更★) 指定されたカテゴリのメニューリストを描画する
  */
 const renderMenuList = () => {
     if (!menu) return;
@@ -133,13 +141,14 @@ const renderMenuList = () => {
     }
 
     const isSetCategory = activeCategory.isSetCategory;
+    // (★在庫管理 変更★) ヘッダーに「在庫連動」を追加
     menuTableHeader.innerHTML = `
         <th class="p-3">項目名</th>
         ${isSetCategory ? `<th class="p-3">時間</th>` : ''}
         <th class="p-3">料金 (税抜)</th>
-        <th class="p-3 text-right">操作</th>
+        <th class="p-3">在庫連動</th> <th class="p-3 text-right">操作</th>
     `;
-    const colSpan = isSetCategory ? 4 : 3;
+    const colSpan = isSetCategory ? 5 : 4; // (★在庫管理 変更★)
 
     const items = (menu.items || [])
         .filter(item => item.categoryId === activeCategoryId)
@@ -152,12 +161,21 @@ const renderMenuList = () => {
     }
     
     items.forEach(item => {
+        // (★在庫管理 追加★) 在庫品目名を取得
+        let inventoryText = '---';
+        if (item.inventoryItemId && inventoryItems) {
+            const linkedItem = inventoryItems.find(i => i.id === item.inventoryItemId);
+            if (linkedItem) {
+                inventoryText = `${linkedItem.name} (${item.inventoryConsumption || 1} ${linkedItem.unit})`;
+            }
+        }
+
         const tr = `
             <tr class="border-b">
                 <td class="p-3 font-medium">${item.name}</td>
                 ${isSetCategory ? `<td class="p-3">${item.duration || '-'} 分</td>` : ''}
                 <td class="p-3">${formatCurrency(item.price)}</td>
-                <td class="p-3 text-right space-x-2">
+                <td class="p-3 text-xs text-slate-600">${inventoryText}</td> <td class="p-3 text-right space-x-2">
                     <button class="edit-menu-btn text-blue-600 hover:text-blue-800" data-menu-id="${item.id}">
                         <i class="fa-solid fa-pen"></i>
                     </button>
@@ -173,18 +191,25 @@ const renderMenuList = () => {
 
 
 /**
- * (★変更★) メニュー編集モーダルを開く
+ * (★在庫管理 変更★) メニュー編集モーダルを開く
  * @param {string} mode 'new' または 'edit'
  * @param {string|null} menuId 編集対象のメニューID
  */
 const openMenuEditorModal = (mode = 'new', menuId = null) => {
-    if (!menu) return; 
+    if (!menu || !inventoryItems) return; 
     menuEditorForm.reset();
     menuEditorError.textContent = '';
     
+    // カテゴリプルダウン
     menuCategorySelect.innerHTML = '';
     (menu.categories || []).forEach(category => {
         menuCategorySelect.innerHTML += `<option value="${category.id}">${category.name}</option>`;
+    });
+
+    // (★在庫管理 追加★) 在庫品目プルダウン
+    menuInventoryItemSelect.innerHTML = '<option value="none">--- 在庫と連動しない ---</option>';
+    inventoryItems.sort((a,b) => a.name.localeCompare(b.name)).forEach(item => {
+        menuInventoryItemSelect.innerHTML += `<option value="${item.id}" data-unit="${item.unit || '個'}">${item.name} (単位: ${item.unit || '個'})</option>`;
     });
 
     currentEditingMenuId = null; 
@@ -198,11 +223,27 @@ const openMenuEditorModal = (mode = 'new', menuId = null) => {
             menuDurationInput.value = '';
         }
     };
+    
+    // (★在庫管理 追加★)
+    const toggleConsumptionField = (selectedInventoryId) => {
+        if (selectedInventoryId === 'none') {
+            menuConsumptionGroup.classList.add('hidden');
+        } else {
+            const selectedOption = menuInventoryItemSelect.querySelector(`option[value="${selectedInventoryId}"]`);
+            menuConsumptionUnit.textContent = selectedOption.dataset.unit || '個';
+            menuConsumptionGroup.classList.remove('hidden');
+        }
+    };
 
     if (mode === 'new') {
         menuEditorModalTitle.textContent = '新規メニュー追加';
         menuCategorySelect.value = menu.currentActiveMenuCategoryId;
         toggleDurationField(menu.currentActiveMenuCategoryId);
+        
+        // (★在庫管理 追加★)
+        menuInventoryItemSelect.value = 'none';
+        toggleConsumptionField('none');
+        menuInventoryConsumptionInput.value = 1;
 
     } else if (mode === 'edit' && menuId) {
         menuEditorModalTitle.textContent = 'メニュー編集';
@@ -218,6 +259,13 @@ const openMenuEditorModal = (mode = 'new', menuId = null) => {
             if (itemToEdit.duration) {
                 menuDurationInput.value = itemToEdit.duration;
             }
+            
+            // (★在庫管理 追加★)
+            const inventoryId = itemToEdit.inventoryItemId || 'none';
+            menuInventoryItemSelect.value = inventoryId;
+            toggleConsumptionField(inventoryId);
+            menuInventoryConsumptionInput.value = itemToEdit.inventoryConsumption || 1;
+
         } else {
             console.error('Edit error: Menu item not found');
             return;
@@ -228,7 +276,7 @@ const openMenuEditorModal = (mode = 'new', menuId = null) => {
 };
 
 /**
- * (★変更★) メニューアイテムを保存（新規作成または更新）する
+ * (★在庫管理 変更★) メニューアイテムを保存（新規作成または更新）する
  */
 const saveMenuItem = async () => {
     if (!menu) return; 
@@ -245,18 +293,33 @@ const saveMenuItem = async () => {
     const category = (menu.categories || []).find(c => c.id === categoryId);
     const duration = (category && category.isSetCategory) ? (parseInt(menuDurationInput.value) || null) : null;
 
+    // (★在庫管理 追加★)
+    const inventoryItemId = menuInventoryItemSelect.value;
+    let inventoryConsumption = null;
+    if (inventoryItemId !== 'none') {
+        inventoryConsumption = parseFloat(menuInventoryConsumptionInput.value);
+        if (isNaN(inventoryConsumption) || inventoryConsumption <= 0) {
+            menuEditorError.textContent = "消費量には0より大きい数値を入力してください。";
+            return;
+        }
+    }
+
+    // (★在庫管理 変更★)
     const newItemData = {
         id: currentEditingMenuId || getUUID(), 
         categoryId: categoryId, 
         name: name,
         price: price,
-        duration: duration 
+        duration: duration,
+        inventoryItemId: inventoryItemId !== 'none' ? inventoryItemId : null,
+        inventoryConsumption: inventoryConsumption
     };
     
     // (★変更★) menu オブジェクトを直接変更
     if (currentEditingMenuId) {
         const index = (menu.items || []).findIndex(item => item.id === currentEditingMenuId);
         if (index !== -1) {
+            // (★在庫管理 変更★) 既存のデータをマージするのではなく、新しいデータで上書き
             menu.items[index] = newItemData;
         } else {
              console.error('Save error: Item to edit not found');
@@ -545,6 +608,7 @@ const closeModal = (modalElement) => {
 const getDefaultSettings = () => {
     return {
         // (★簡易版★ menu.js は settings を参照するだけなので)
+        storeInfo: { name: "店舗" }, // (★動的表示 追加★)
         performanceSettings: {
             castPriceCategoryId: null
         }
@@ -569,14 +633,30 @@ const getDefaultMenu = () => {
             { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false },
         ],
         items: [
-            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60 },
-            { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60 },
-            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null },
-            { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null },
-            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null }, // (★ID変更★)
+            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null, inventoryItemId: null, inventoryConsumption: null },
         ],
         currentActiveMenuCategoryId: catSetId,
     };
+};
+
+// (★動的表示 追加★)
+/**
+ * (★新規★) ヘッダーのストアセレクターを描画する
+ */
+const renderStoreSelector = () => {
+    if (!storeSelector || !settings || !currentStoreId) return;
+
+    const currentStoreName = settings.storeInfo.name || "店舗";
+    
+    // (★変更★) 現在は複数店舗の切り替えをサポートしていないため、
+    // (★変更★) 現在の店舗名のみを表示し、ドロップダウンを無効化する
+    storeSelector.innerHTML = `<option value="${currentStoreId}">${currentStoreName}</option>`;
+    storeSelector.value = currentStoreId;
+    storeSelector.disabled = true;
 };
 
 
@@ -584,24 +664,30 @@ const getDefaultMenu = () => {
 // (★変更★) firebaseReady イベントを待ってからリスナーを設定
 document.addEventListener('firebaseReady', (e) => {
     
-    // (★変更★) menuRef と settingsRef のみリッスン
+    // (★在庫管理 変更★)
     const { 
         settingsRef: sRef, 
-        menuRef: mRef
+        menuRef: mRef,
+        inventoryItemsCollectionRef: iRef, // (★在庫管理 追加★)
+        currentStoreId: csId // (★動的表示 追加★)
     } = e.detail;
 
     // (★変更★) グローバル変数に参照をセット
     settingsRef = sRef;
     menuRef = mRef;
+    inventoryItemsCollectionRef = iRef; // (★在庫管理 追加★)
+    currentStoreId = csId; // (★動的表示 追加★)
 
     let settingsLoaded = false;
     let menuLoaded = false;
+    let inventoryLoaded = false; // (★在庫管理 追加★)
 
     const checkAndRenderAll = () => {
-        // (★変更★) menu.js は renderMenuTabs を呼ぶ
-        if (settingsLoaded && menuLoaded) {
-            console.log("Menu and Settings data loaded. Rendering UI for menu.js");
+        // (★在庫管理 変更★) 在庫リストも待つ
+        if (settingsLoaded && menuLoaded && inventoryLoaded) {
+            console.log("Menu, Settings, Inventory data loaded. Rendering UI for menu.js");
             renderMenuTabs();
+            renderStoreSelector(); // (★動的表示 追加★)
             // (★削除★) 伝票モーダルがないため updateModalCommonInfo は不要
         }
     };
@@ -633,6 +719,21 @@ document.addEventListener('firebaseReady', (e) => {
         menuLoaded = true;
         checkAndRenderAll();
     }, (error) => console.error("Error listening to menu: ", error));
+
+    // 3. (★在庫管理 追加★) Inventory Items (プルダウン用)
+    onSnapshot(inventoryItemsCollectionRef, (querySnapshot) => {
+        inventoryItems = [];
+        querySnapshot.forEach((doc) => {
+            inventoryItems.push({ ...doc.data(), id: doc.id });
+        });
+        console.log("Inventory items loaded (for menu modal): ", inventoryItems.length);
+        inventoryLoaded = true;
+        checkAndRenderAll();
+    }, (error) => {
+        console.error("Error listening to inventory items: ", error);
+        inventoryLoaded = true; // エラーでも続行
+        checkAndRenderAll();
+    });
 
     // (★削除★) slipCounter, casts, customers, slips のリスナーを削除
 });
@@ -675,6 +776,14 @@ document.addEventListener('DOMContentLoaded', () => {
     addCategoryBtn = document.getElementById('add-category-btn');
     categoryAddError = document.getElementById('category-add-error');
     
+    // (★在庫管理 追加★)
+    menuInventoryItemSelect = document.getElementById('menu-inventory-item');
+    menuConsumptionGroup = document.getElementById('menu-consumption-group');
+    menuInventoryConsumptionInput = document.getElementById('menu-inventory-consumption');
+    menuConsumptionUnit = document.getElementById('menu-consumption-unit');
+    
+    storeSelector = document.getElementById('store-selector'); // (★動的表示 追加★)
+    
     // (★削除★) 伝票関連のDOM取得をすべて削除
 
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
@@ -713,10 +822,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // モーダルを閉じるボタン
     modalCloseBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => { // (★動的表示 変更★)
             // (★変更★) menu.html に存在するモーダルのみ閉じる
-            closeModal(categoryEditorModal);
-            closeModal(menuEditorModal);
+            const modal = e.target.closest('.modal-backdrop'); // (★動的表示 変更★)
+            if (modal) {
+                closeModal(modal);
+            }
         });
     });
     
@@ -806,6 +917,20 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 menuDurationGroup.classList.add('hidden');
                 menuDurationInput.value = '';
+            }
+        });
+    }
+
+    // (★在庫管理 追加★) メニュー編集モーダル > 在庫品目変更
+    if (menuInventoryItemSelect) {
+        menuInventoryItemSelect.addEventListener('change', (e) => {
+            const selectedInventoryId = e.target.value;
+            if (selectedInventoryId === 'none') {
+                menuConsumptionGroup.classList.add('hidden');
+            } else {
+                const selectedOption = e.target.querySelector(`option[value="${selectedInventoryId}"]`);
+                menuConsumptionUnit.textContent = selectedOption.dataset.unit || '個';
+                menuConsumptionGroup.classList.remove('hidden');
             }
         });
     }

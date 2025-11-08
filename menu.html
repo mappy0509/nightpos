@@ -121,7 +121,7 @@
                     </button>
                 </div>
                 
-                <div class="p-6 space-y-4">
+                <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                     <div>
                         <label for="menu-category" class="text-sm font-semibold text-slate-600">カテゴリ</label>
                         <select id="menu-category" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -138,6 +138,23 @@
                     <div>
                         <label for="menu-price" class="text-sm font-semibold text-slate-600">料金 (税抜)</label>
                         <input type="number" id="menu-price" placeholder="例: 10000" class="w-full p-2 border border-slate-300 rounded-lg mt-1" required>
+                    </div>
+                    
+                    <div class="pt-4 border-t">
+                        <label for="menu-inventory-item" class="text-sm font-semibold text-slate-600">
+                            <i class="fa-solid fa-boxes-stacked mr-1"></i> 在庫連動 (任意)
+                        </label>
+                        <select id="menu-inventory-item" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="none">--- 在庫と連動しない ---</option>
+                            </select>
+                    </div>
+                    <div id="menu-consumption-group" class="hidden">
+                        <label for="menu-inventory-consumption" class="text-sm font-semibold text-slate-600">1オーダーあたりの消費量</label>
+                        <div class="flex items-center">
+                            <input type="number" id="menu-inventory-consumption" placeholder="1" class="w-full p-2 border border-slate-300 rounded-lg mt-1" value="1" min="0" step="any">
+                            <span id="menu-consumption-unit" class="ml-2 font-medium text-slate-600">本</span>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1">例: "キャストドリンク" 1杯で "焼酎 (ml)" を 50 消費</p>
                     </div>
                     <p id="menu-editor-error" class="text-xs text-red-600"></p>
                 </div>

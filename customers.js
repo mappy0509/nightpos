@@ -46,7 +46,8 @@ let slips = [];
 let currentEditingCustomerId = null;
 
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
-let settingsRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef;
+let settingsRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef,
+    currentStoreId; // (★動的表示 追加★)
 
 
 // ===== DOM要素 =====
@@ -67,7 +68,8 @@ let pageTitle,
     detailVisitCount, detailTotalSpend, detailCustomerMemo,
     detailSlipHistory, detailSlipLoading,
     
-    modalCloseBtns;
+    modalCloseBtns,
+    storeSelector; // (★動的表示 追加★)
 
 
 // --- 関数 ---
@@ -403,6 +405,21 @@ const openCustomerDetailModal = (customerId) => {
     openModal(customerDetailModal);
 };
 
+// (★動的表示 追加★)
+/**
+ * (★新規★) ヘッダーのストアセレクターを描画する
+ */
+const renderStoreSelector = () => {
+    if (!storeSelector || !settings || !currentStoreId) return;
+
+    const currentStoreName = settings.storeInfo.name || "店舗";
+    
+    // (★変更★) 現在は複数店舗の切り替えをサポートしていないため、
+    // (★変更★) 現在の店舗名のみを表示し、ドロップダウンを無効化する
+    storeSelector.innerHTML = `<option value="${currentStoreId}">${currentStoreName}</option>`;
+    storeSelector.value = currentStoreId;
+    storeSelector.disabled = true;
+};
 
 
 // (★変更★) --- Firestore リアルタイムリスナー ---
@@ -414,7 +431,8 @@ document.addEventListener('firebaseReady', (e) => {
         settingsRef: sRef,
         castsCollectionRef: cRef, 
         customersCollectionRef: cuRef, 
-        slipsCollectionRef: slRef
+        slipsCollectionRef: slRef,
+        currentStoreId: csId // (★動的表示 追加★)
     } = e.detail;
 
     // (★変更★) グローバル変数に参照をセット
@@ -422,6 +440,7 @@ document.addEventListener('firebaseReady', (e) => {
     castsCollectionRef = cRef;
     customersCollectionRef = cuRef;
     slipsCollectionRef = slRef;
+    currentStoreId = csId; // (★動的表示 追加★)
 
 
     let settingsLoaded = false;
@@ -435,6 +454,7 @@ document.addEventListener('firebaseReady', (e) => {
         if (settingsLoaded && castsLoaded && customersLoaded && slipsLoaded) {
             console.log("All data loaded. Rendering UI for customers.js");
             renderCustomerList();
+            renderStoreSelector(); // (★動的表示 追加★)
         }
     };
 
@@ -524,6 +544,8 @@ document.addEventListener('DOMContentLoaded', () => {
     detailSlipLoading = document.getElementById('detail-slip-loading');
     
     modalCloseBtns = document.querySelectorAll('.modal-close-btn');
+    
+    storeSelector = document.getElementById('store-selector'); // (★動的表示 追加★)
 
     
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
