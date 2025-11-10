@@ -234,10 +234,11 @@ const getActiveSlipCount = (tableId) => {
 };
 
 /**
-* (共通) テーブルカードのHTMLを生成する
-* @param {object} table テーブルデータ
-* @returns {string} HTML文字列
-*/
+ * (★新規★) バグ修正: tables.js から `createTableCardHTML` 関数をコピー
+ * (共通) テーブルカードのHTMLを生成する
+ * @param {object} table テーブルデータ
+ * @returns {string} HTML文字列
+ */
 const createTableCardHTML = (table) => {
     let statusColor, statusText;
     const activeSlips = getActiveSlipCount(table.id);

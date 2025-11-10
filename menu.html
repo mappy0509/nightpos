@@ -17,55 +17,63 @@
 <body class="text-slate-800">
 
     <div class="flex h-screen bg-slate-50">
-        <aside id="sidebar-container" class="w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable">
+        <aside id="sidebar-container" class="w-72 lg:w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable fixed inset-y-0 left-0 z-40 transform -translate-x-full lg:static lg:translate-x-0 transition-transform duration-300 ease-in-out">
             <div class="flex-grow flex items-center justify-center">
                 <i class="fa-solid fa-spinner fa-spin text-blue-500"></i>
             </div>
         </aside>
-        <main class="flex-1 flex flex-col overflow-hidden non-printable">
-            <header class="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm">
-                <div>
-                    <h2 id="page-title" class="text-xl font-semibold text-slate-700">メニュー管理</h2>
-                </div>
-                <div class="flex items-center space-x-4">
+
+        <main class="flex-1 flex flex-col overflow-hidden non-printable admin-main">
+            <header class="h-16 bg-white border-b flex items-center justify-between px-4 lg:px-6 shadow-sm">
+                
+                <button id="sidebar-toggle-btn" class="lg:hidden text-slate-600 hover:text-slate-800">
+                    <i class="fa-solid fa-bars fa-lg"></i>
+                </button>
+
+                <h2 id="page-title" class="text-xl font-semibold text-slate-700 hidden lg:block">メニュー管理</h2>
+                <h2 class="text-xl font-semibold text-slate-700 lg:hidden absolute left-1/2 -translate-x-1/2">
+                    メニュー
+                </h2>
+
+                <div class="hidden lg:flex items-center space-x-4">
                     <div class="relative">
                         <i class="fa-solid fa-store absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
                         <select id="store-selector" class="pl-10 pr-4 py-2 text-sm font-medium border border-slate-300 rounded-lg bg-white hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <option value="store1">新宿本店</option>
-                            <option value="store2">渋谷店</option>
-                            <option value="store3">池袋店</option>
                         </select>
                     </div>
                     <button class="text-slate-500 hover:text-blue-600">
                         <i class="fa-regular fa-bell fa-lg"></i>
                     </button>
                 </div>
+                
+                <div class="lg:hidden w-8"></div>
             </header>
 
-            <div class="flex-1 overflow-y-auto p-6 lg:p-8">
+            <div class="flex-1 overflow-y-auto p-4 lg:p-8">
                 
                 <div id="menu">
-                    <div class="mb-4 flex justify-between items-center">
+                    <div class="mb-4 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
                         <h3 class="text-xl font-semibold">メニュー・料金設定</h3>
                         <div class="flex space-x-3">
-                            <button id="open-category-modal-btn" class="bg-white text-slate-700 px-4 py-2 rounded-lg font-semibold border border-slate-300 hover:bg-slate-100 transition duration-200">
+                            <button id="open-category-modal-btn" class="bg-white text-slate-700 px-4 py-2 rounded-lg font-semibold border border-slate-300 hover:bg-slate-100 transition duration-200 text-sm">
                                 <i class="fa-solid fa-tags mr-2"></i>カテゴリ管理
                             </button>
-                            <button id="open-new-menu-modal-btn" class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition duration-200">
+                            <button id="open-new-menu-modal-btn" class="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition duration-200 text-sm">
                                 <i class="fa-solid fa-plus mr-2"></i>新規メニュー追加
                             </button>
                         </div>
                     </div>
                     
                     <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
-                        <div class="border-b border-slate-200">
-                            <nav class="flex -mb-px px-6 overflow-x-auto" id="menu-tabs-container">
+                        <div class="border-b border-slate-200 responsive-tabs-container">
+                            <nav class="flex -mb-px px-6" id="menu-tabs-container">
                                 </nav>
                         </div>
                         
-                        <div class="p-6" id="menu-content-container">
+                        <div class="p-4 lg:p-6 overflow-x-auto" id="menu-content-container">
                             <div id="menu-tab-content" class="menu-tab-content active">
-                                <table class="w-full text-left text-sm">
+                                <table class="w-full text-left text-sm min-w-[700px]">
                                     <thead>
                                         <tr class="border-b bg-slate-50 text-slate-600" id="menu-table-header">
                                             </tr>
@@ -80,7 +88,7 @@
 
                 </div>
         </main>
-        </div>
+    </div>
 
     <div id="category-editor-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-2xl">
@@ -93,7 +101,7 @@
             
             <div class="p-6">
                 <h4 class="font-semibold mb-3">カテゴリの追加</h4>
-                <div class="flex space-x-2 mb-4">
+                <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4 gap-2">
                     <input type="text" id="new-category-name-input" placeholder="新しいカテゴリ名 (例: シャンパン)" class="w-full p-2 border border-slate-300 rounded-lg">
                     <button type="button" id="add-category-btn" class="px-5 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 whitespace-nowrap">
                         <i class="fa-solid fa-plus mr-2"></i>追加
@@ -102,7 +110,7 @@
                 <p id="category-add-error" class="text-xs text-red-600 mb-4"></p>
 
                 <h4 class="font-semibold mb-3 pt-4 border-t">既存のカテゴリ</h4>
-                <div class="space-y-3 max-h-80 overflow-y-auto pr-2" id="current-categories-list">
+                <div class="space-y-3 max-h-80 overflow-y-auto overflow-x-auto pr-2" id="current-categories-list">
                     </div>
             </div>
 

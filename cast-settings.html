@@ -15,38 +15,46 @@
 <body class="text-slate-800">
 
     <div class="flex h-screen bg-slate-50">
-        <aside id="sidebar-container" class="w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable">
+        <aside id="sidebar-container" class="w-72 lg:w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable fixed inset-y-0 left-0 z-40 transform -translate-x-full lg:static lg:translate-x-0 transition-transform duration-300 ease-in-out">
             <div class="flex-grow flex items-center justify-center">
                 <i class="fa-solid fa-spinner fa-spin text-blue-500"></i>
             </div>
         </aside>
-        <main class="flex-1 flex flex-col overflow-hidden non-printable">
-            <header class="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm">
-                <div>
-                    <h2 id="page-title" class="text-xl font-semibold text-slate-700">キャスト設定</h2>
-                </div>
-                <div class="flex items-center space-x-4">
+
+        <main class="flex-1 flex flex-col overflow-hidden non-printable admin-main">
+            <header class="h-16 bg-white border-b flex items-center justify-between px-4 lg:px-6 shadow-sm">
+                
+                <button id="sidebar-toggle-btn" class="lg:hidden text-slate-600 hover:text-slate-800">
+                    <i class="fa-solid fa-bars fa-lg"></i>
+                </button>
+
+                <h2 id="page-title" class="text-xl font-semibold text-slate-700 hidden lg:block">キャスト設定</h2>
+                <h2 class="text-xl font-semibold text-slate-700 lg:hidden absolute left-1/2 -translate-x-1/2">
+                    キャスト
+                </h2>
+
+                <div class="hidden lg:flex items-center space-x-4">
                     <div class="relative">
                         <i class="fa-solid fa-store absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
                         <select id="store-selector" class="pl-10 pr-4 py-2 text-sm font-medium border border-slate-300 rounded-lg bg-white hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <option value="store1">新宿本店</option>
-                            <option value="store2">渋谷店</option>
-                            <option value="store3">池袋店</option>
                         </select>
                     </div>
                     <button class="text-slate-500 hover:text-blue-600">
                         <i class="fa-regular fa-bell fa-lg"></i>
                     </button>
                 </div>
+                
+                <div class="lg:hidden w-8"></div>
             </header>
 
-            <div class="flex-1 overflow-y-auto p-6 lg:p-8">
+            <div class="flex-1 overflow-y-auto p-4 lg:p-8">
                 
                 <div id="cast-settings" data-page class="active">
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
                         
                         <div class="lg:col-span-2 space-y-8">
-                            <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                            <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
                                 <h3 class="text-lg font-semibold mb-5 border-b pb-3">キャストの追加</h3>
                                 <button type="button" id="add-cast-btn" class="w-full p-4 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition duration-200">
                                     <i class="fa-solid fa-qrcode mr-2"></i>
@@ -55,7 +63,7 @@
                                 <p id="cast-settings-error" class="text-xs text-red-600 mt-2"></p>
                             </div>
 
-                            <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                            <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
                                 <h3 class="text-lg font-semibold mb-5 border-b pb-3">キャスト一覧・権限設定</h3>
                                 <div class="space-y-3" id="current-casts-list">
                                     </div>
@@ -63,7 +71,7 @@
                         </div>
                         
                         <div class="lg:col-span-1">
-                            <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200 sticky top-8">
+                            <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200 sticky top-4 lg:top-8">
                                 <h3 class="text-lg font-semibold mb-4">保存</h3>
                                 <p class="text-sm text-slate-500 mb-4">
                                     キャストの権限などを変更した場合は、保存ボタンを押してください。
@@ -95,7 +103,7 @@
                 <p class="text-slate-600">以下のQRコードまたはURLをキャストに送信して、アカウント登録をしてもらってください。<br>
                 <span class="font-bold text-red-600">※このリンクは1時間のみ有効です。</span></p>
                 
-                <div id="invite-qr-code" class="w-full max-w-xs mx-auto bg-slate-100 border rounded-lg flex items-center justify-center min-h-[256px]">
+                <div id="invite-qr-code" class="w-full max-w-[256px] mx-auto bg-slate-100 border rounded-lg flex items-center justify-center min-h-[256px]">
                     <i class="fa-solid fa-spinner fa-spin text-slate-400"></i>
                 </div>
                 
@@ -175,7 +183,6 @@
             </form>
         </div>
     </div>
-
 
     <script type="module" src="cast-settings.js"></script>
 </body>

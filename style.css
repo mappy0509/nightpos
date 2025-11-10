@@ -9,6 +9,12 @@ body {
     --border-primary: #e2e8f0; /* border-slate-200 */
 }
 
+/* (★レスポンシブ対応★) スマホ時にスクロールさせない */
+body.sidebar-mobile-open {
+    overflow: hidden;
+}
+
+
 /* ===== サイドナビゲーション ===== */
 .nav-link {
     display: flex;
@@ -31,6 +37,52 @@ body {
 .nav-link.active i {
     color: #4338ca; /* text-indigo-700 (v2) / text-blue-600 (v3) */
 }
+
+/* (★レスポンシブ対応★) サイドバー本体のスマホ/PC切り替え */
+#sidebar-container {
+    /* (★追加★) デフォルトはスマホ用のスタイル (画面外に隠す) */
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease-in-out;
+    /* (★追加★) スマホでは横幅を広げる */
+    width: 280px; /* w-72 */
+}
+
+/* (★レスポンシブ対応★) lg (1024px) 以上でPC用スタイルを適用 */
+@media (min-width: 1024px) {
+    #sidebar-container {
+        position: static; /* PCでは static に戻す */
+        transform: translateX(0);
+        width: 256px; /* w-64 (元のサイズ) */
+    }
+    
+    /* (★追加★) PCではメインコンテンツのマージンを空ける */
+    main.admin-main {
+        margin-left: 0; /* JSで開閉する場合は操作するが、今回は固定 */
+    }
+}
+
+/* (★レスポンシブ対応★) オーバーレイ */
+/* (★バグ修正★) .sidebar-overlay を #sidebar-overlay に変更 */
+#sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 30;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+}
+/* (★バグ修正★) .sidebar-overlay を #sidebar-overlay に変更 */
+body.sidebar-mobile-open #sidebar-overlay {
+    opacity: 1;
+    visibility: visible;
+}
+
 
 /* ===== メインコンテンツエリア ===== */
 [data-page] {
@@ -156,7 +208,23 @@ body {
     border-radius: 0.75rem; /* rounded-xl */
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
     animation: modalContentSlideIn 0.3s ease-out;
+    /* (★レスポンシブ対応★) スマホでモーダルがはみ出ないように */
+    width: 100%;
+    margin-top: auto;
+    margin-bottom: auto;
 }
+
+/* (★レスポンシブ対応★) 画面幅が大きいときだけ max-w を適用 */
+@media (min-width: 640px) { /* sm breakpoint */
+    .modal-content.max-w-md { max-width: 28rem; }
+    .modal-content.max-w-lg { max-width: 32rem; }
+    .modal-content.max-w-xl { max-width: 36rem; }
+    .modal-content.max-w-2xl { max-width: 42rem; }
+    .modal-content.max-w-3xl { max-width: 48rem; }
+    .modal-content.max-w-4xl { max-width: 56rem; }
+    .modal-content.max-w-5xl { max-width: 64rem; }
+}
+
 
 @keyframes modalBackdropFadeIn {
     from { opacity: 0; }
@@ -216,6 +284,7 @@ body {
     border-bottom: 3px solid transparent;
     font-weight: 600;
     color: #475569; /* text-slate-600 */
+    white-space: nowrap; /* (★レスポンシブ対応★) 折り返さない */
 }
 .ranking-type-btn:hover {
     color: #1e293b; /* text-slate-800 */
@@ -224,6 +293,26 @@ body {
     border-bottom-color: #2563eb; /* border-blue-600 */
     color: #2563eb; /* text-blue-600 */
 }
+
+/* (★レスポンシブ対応★) スマホでタブがはみ出る場合の調整 */
+.responsive-tabs-container {
+    display: flex;
+    overflow-x: auto;
+    /* (★新規★) スクロールバーのデザイン (任意) */
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f1f5f9;
+}
+.responsive-tabs-container::-webkit-scrollbar {
+    height: 6px;
+}
+.responsive-tabs-container::-webkit-scrollbar-track {
+    background: #f1f5f9; /* bg-slate-100 */
+}
+.responsive-tabs-container::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1; /* bg-slate-300 */
+    border-radius: 3px;
+}
+
 
 /* (★新規★) 伝票カードの経過時間 */
 .elapsed-time {
@@ -446,4 +535,17 @@ body {
     color: #94a3b8; /* text-slate-400 */
     cursor: not-allowed;
     opacity: 0.7;
+}
+
+/* (★レスポンシブ対応★) clamp 関数の代わりにメディアクエリでフォントサイズを調整 */
+/* 例: ダッシュボードのサマリー */
+.summary-value {
+    font-size: 1.875rem; /* 30px (デフォルト) */
+    line-height: 2.25rem;
+}
+@media (min-width: 640px) {
+    .summary-value {
+        font-size: 2.25rem; /* 36px (sm以上) */
+        line-height: 2.5rem;
+    }
 }

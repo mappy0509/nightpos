@@ -32,9 +32,13 @@ const createSidebarHTML = (currentPage) => {
     `).join('');
 
     // サイドバー全体のHTML
+    // (★レスポンシブ対応★) ロゴ部分のflexコンテナを変更
     return `
-        <div class="h-16 flex items-center justify-center border-b px-4">
+        <div class="h-16 flex items-center justify-between border-b px-4">
             <h1 class="text-2xl font-bold text-blue-600">Night POS</h1>
+            <button id="sidebar-close-btn" class="lg:hidden text-slate-500 hover:text-slate-800">
+                <i class="fa-solid fa-xmark fa-xl"></i>
+            </button>
         </div>
         <nav class="flex-grow pt-6 space-y-2">
             ${navLinksHTML}
@@ -56,6 +60,34 @@ const createSidebarHTML = (currentPage) => {
 };
 
 /**
+ * (★レスポンシブ対応★) サイドバーの表示/非表示を切り替える
+ * @param {boolean} [forceClose] - trueなら強制的に閉じる、指定なしならトグル
+ */
+const toggleSidebar = (forceClose = null) => {
+    const sidebar = document.getElementById('sidebar-container');
+    const overlay = document.getElementById('sidebar-overlay');
+    const body = document.body;
+    
+    // (★バグ修正★) オーバーレイが見つからなくても早期リターンしない
+    if (!sidebar || !body) return;
+
+    const isOpen = body.classList.contains('sidebar-mobile-open');
+    
+    if (forceClose === true || (forceClose === null && isOpen)) {
+        // 閉じる
+        body.classList.remove('sidebar-mobile-open');
+        sidebar.classList.add('-translate-x-full'); 
+        // (★バグ修正★) CSS側で opacity と visibility を制御するため、JSでのクラス操作を削除
+    } else if (forceClose === false || (forceClose === null && !isOpen)) {
+        // 開く
+        body.classList.add('sidebar-mobile-open');
+        sidebar.classList.remove('-translate-x-full'); 
+        // (★バグ修正★) CSS側で opacity と visibility を制御するため、JSでのクラス操作を削除
+    }
+};
+
+
+/**
  * サイドバーを指定されたコンテナに描画し、イベントリスナーを設定する
  * @param {string} containerId - サイドバーを挿入する要素のID (例: 'sidebar-container')
  * @param {string} currentPage - 'index.html' などのファイル名
@@ -69,6 +101,48 @@ export const renderSidebar = (containerId, currentPage) => {
 
     // HTMLを挿入
     container.innerHTML = createSidebarHTML(currentPage);
+    
+    // (★レスポンシブ対応★) 
+    // 1. オーバーレイを body (または .flex) に追加
+    const mainFlexContainer = container.closest('.flex.h-screen');
+    if (mainFlexContainer && !document.getElementById('sidebar-overlay')) {
+        const overlay = document.createElement('div');
+        overlay.id = 'sidebar-overlay'; // (★バグ修正★) IDを設定
+        // (★バグ修正★) className の設定を削除 (style.css の #sidebar-overlay を参照させる)
+        mainFlexContainer.appendChild(overlay);
+
+        // オーバーレイクリックで閉じる
+        overlay.addEventListener('click', () => toggleSidebar(true));
+    }
+
+    // (★レスポンシブ対応★) 
+    // 2. ヘッダーのトグルボタンを取得 (これは各HTMLに記述が必要)
+    //    (HTML側で <header> 内に <button id="sidebar-toggle-btn" ...> が追加される想定)
+    const toggleBtn = document.getElementById('sidebar-toggle-btn');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => toggleSidebar(false));
+    }
+
+    // (★レスポンシブ対応★) 
+    // 3. サイドバー内部の閉じるボタン
+    const closeBtn = document.getElementById('sidebar-close-btn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => toggleSidebar(true));
+    }
+
+    // (★レスポンシブ対応★) 
+    // 4. ナビリンククリックで閉じる (スマホ時のみ)
+    container.querySelectorAll('.nav-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            // (★修正★) ページ遷移を伴うため、すぐに閉じるとちらつく可能性。
+            // (★修正★) 基本的にページ遷移で閉じるので不要かもしれないが、
+            // (★修正★) 将来的にSPA化した場合のために残す
+            if (window.innerWidth < 1024) { // lg breakpoint
+                // リンク遷移を妨げないように、クリックイベントのデフォルト動作を止めない
+            }
+        });
+    });
+
 
     // ログアウトボタンにイベントリスナーを設定
     const logoutBtn = document.getElementById('sidebar-logout-btn');

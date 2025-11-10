@@ -13,37 +13,46 @@
 <body class="text-slate-800">
 
     <div class="flex h-screen bg-slate-50">
-        <aside id="sidebar-container" class="w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable">
+        <aside id="sidebar-container" class="w-72 lg:w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable fixed inset-y-0 left-0 z-40 transform -translate-x-full lg:static lg:translate-x-0 transition-transform duration-300 ease-in-out">
             <div class="flex-grow flex items-center justify-center">
                 <i class="fa-solid fa-spinner fa-spin text-blue-500"></i>
             </div>
         </aside>
-        <main class="flex-1 flex flex-col overflow-hidden non-printable">
-            <header class="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm">
-                <div>
-                    <h2 id="page-title" class="text-xl font-semibold text-slate-700">店舗設定</h2> </div>
-                <div class="flex items-center space-x-4">
+
+        <main class="flex-1 flex flex-col overflow-hidden non-printable admin-main">
+            <header class="h-16 bg-white border-b flex items-center justify-between px-4 lg:px-6 shadow-sm">
+                
+                <button id="sidebar-toggle-btn" class="lg:hidden text-slate-600 hover:text-slate-800">
+                    <i class="fa-solid fa-bars fa-lg"></i>
+                </button>
+
+                <h2 id="page-title" class="text-xl font-semibold text-slate-700 hidden lg:block">店舗設定</h2>
+                <h2 class="text-xl font-semibold text-slate-700 lg:hidden absolute left-1/2 -translate-x-1/2">
+                    店舗設定
+                </h2>
+
+                <div class="hidden lg:flex items-center space-x-4">
                     <div class="relative">
                         <i class="fa-solid fa-store absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
                         <select id="store-selector" class="pl-10 pr-4 py-2 text-sm font-medium border border-slate-300 rounded-lg bg-white hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <option value="store1">新宿本店</option>
-                            <option value="store2">渋谷店</option>
-                            <option value="store3">池袋店</option>
                         </select>
                     </div>
                     <button class="text-slate-500 hover:text-blue-600">
                         <i class="fa-regular fa-bell fa-lg"></i>
                     </button>
                 </div>
+                
+                <div class="lg:hidden w-8"></div>
             </header>
 
-            <div class="flex-1 overflow-y-auto p-6 lg:p-8">
+            <div class="flex-1 overflow-y-auto p-4 lg:p-8">
                 
                 <div id="settings" data-page class="active"> <form id="settings-form">
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
                             
-                            <div class="lg:col-span-2 space-y-8">
-                                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                            <div class="lg:col-span-2 space-y-4 lg:space-y-8">
+                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
                                     <h3 class="text-lg font-semibold mb-5 border-b pb-3">店舗情報</h3>
                                     <div class="space-y-4">
                                         <div>
@@ -61,9 +70,9 @@
                                     </div>
                                 </div>
                                 
-                                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
                                     <h3 class="text-lg font-semibold mb-5 border-b pb-3">税率・サービス料</h3>
-                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
                                         <div>
                                             <label for="tax-rate" class="text-sm font-semibold text-slate-600">消費税 (%)</label>
                                             <input type="number" id="tax-rate" placeholder="10" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
@@ -80,9 +89,9 @@
                                     </div>
                                 </div>
 
-                                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
                                     <h3 class="text-lg font-semibold mb-5 border-b pb-3">会計 端数処理設定</h3>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
                                         <div>
                                             <label for="setting-rounding-type" class="text-sm font-semibold text-slate-600">処理方法</label>
                                             <select id="setting-rounding-type" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white">
@@ -106,12 +115,12 @@
                                         「会計合計を切り捨て」 + 「100円単位」 = 請求額 10,199円 が 10,100円 になります。
                                     </p>
                                 </div>
-                                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
                                     <h3 class="text-lg font-semibold mb-5 border-b pb-3">キャスト成績反映設定</h3>
                                     
                                     <div class="mb-6">
                                         <h4 class="font-semibold text-slate-700 mb-3">キャスト料金項目の設定</h4>
-                                        <p class="text-sm text-slate-500 mb-3">「メニュー管理」で "キャスト料金" カテゴリに登録された項目が対象です。</p>
+                                        <p class="text-sm text-slate-500 mb-3">「メニュー管理」の「カテゴリ管理」で「キャスト料金(成績反映)」にチェックを入れ、このページで「保存」を押してください。</p>
                                         <div id="performance-cast-items-container" class="space-y-4">
                                             </div>
                                     </div>
@@ -167,10 +176,10 @@
                                 </div>
 
 
-                                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
                                     <h3 class="text-lg font-semibold mb-5 border-b pb-3">テーブル設定</h3>
                                     
-                                    <div class="flex space-x-2 mb-4">
+                                    <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4 gap-2">
                                         <input type="text" id="new-table-id-input" placeholder="テーブル名 (例: V5, C3, V1A)" class="w-full p-2 border border-slate-300 rounded-lg">
                                         <button type="button" id="add-table-btn" class="px-5 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 whitespace-nowrap">
                                             <i class="fa-solid fa-plus mr-2"></i>追加
@@ -182,10 +191,10 @@
                                         </div>
                                 </div>
 
-                                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
                                     <h3 class="text-lg font-semibold mb-5 border-b pb-3">伝票タグ設定</h3>
                                     
-                                    <div class="flex space-x-2 mb-4">
+                                    <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4 gap-2">
                                         <input type="text" id="new-tag-name-input" placeholder="タグ名 (例: VIP, 団体)" class="w-full p-2 border border-slate-300 rounded-lg">
                                         <button type="button" id="add-tag-btn" class="px-5 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 whitespace-nowrap">
                                             <i class="fa-solid fa-plus mr-2"></i>追加
@@ -200,7 +209,7 @@
                             </div>
                             
                             <div class="lg:col-span-1">
-                                <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200 sticky top-8">
+                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200 sticky top-4 lg:top-8">
                                     <h3 class="text-lg font-semibold mb-4">保存</h3>
                                     <p class="text-sm text-slate-500 mb-4">
                                         店舗情報、税率、テーブル設定などを変更した場合は、保存ボタンを押してください。
@@ -219,7 +228,7 @@
                 
                 </div>
         </main>
-        </div>
+    </div>
 
     <script type="module" src="settings.js"></script>
 </body>
