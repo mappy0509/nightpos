@@ -11,8 +11,10 @@
 // Gemini SDKからクライアントをインポート
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "https://cdn.jsdelivr.net/npm/@google/generative-ai/+esm";
 
-// (★重要★) ここにGoogle AI Studioで取得したAPIキーを貼り付けてください
-const API_KEY = "ここにAPIキーを入力しましょう"; // 例: "AIzaSyBTPq8GNOLAkUmfZelpYJtM4hZD4Dw_iS0"
+// (★重要★) 
+// (★修正★) Google AI Studio ( https://aistudio.google.com/ ) で取得した
+// (★修正★) APIキーを以下の "YOUR_API_KEY_HERE" と置き換えてください。
+const API_KEY = "YOUR_API_KEY_HERE"; 
 
 // --- 初期設定 ---
 let genAI;
@@ -45,23 +47,27 @@ const safetySettings = [
  */
 const initializeAI = () => {
     if (isInitialized) return;
-    if (!API_KEY || API_KEY === "YOUR_API_KEY") {
+    
+    // (★修正★) APIキーがダミーのままでないかチェック
+    if (!API_KEY || API_KEY === "YOUR_API_KEY_HERE" || API_KEY === "ここにAPIキーを入力しましょう") {
         console.error("APIキーが ai-service.js に設定されていません。");
-        return;
+        // (★修正★) エラーメッセージをスローして、呼び出し元で検知できるようにする
+        throw new Error("APIキーが ai-service.js に設定されていません。");
     }
+    
     try {
         genAI = new GoogleGenerativeAI(API_KEY);
         
         // 高速モデル (Flash) の設定
         flashModel = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash", // Flashは 1.5 のままでOK
+            model: "gemini-1.5-flash-latest", // (★修正★) 支払い設定が完了したため、 -latest を使用
             safetySettings,
             // systemInstruction: "あなたはキャバクラの優秀なボーイ（ウェイター）です。簡潔に、しかし丁寧に応答してください。"
         });
         
         // (★修正★) 高性能モデル (Pro) の設定
         proModel = genAI.getGenerativeModel({ 
-            model: "gemini-pro", // "1.5" を削除
+            model: "gemini-1.5-pro-latest", // (★修正★) 支払い設定が完了したため、 -latest を使用
             safetySettings,
             // systemInstruction: "あなたは優秀な経営コンサルタントです。ナイトレジャー業界のデータに基づいて、具体的で実行可能なアドバイスをください。"
         });
@@ -70,6 +76,8 @@ const initializeAI = () => {
         console.log("AI Service Initialized.");
     } catch (error) {
         console.error("AI Service Initialization Failed: ", error);
+        // (★修正★) 初期化失敗時もエラーをスロー
+        throw new Error(`AI Service Initialization Failed: ${error.message}`);
     }
 };
 
@@ -80,8 +88,15 @@ const initializeAI = () => {
  * @returns {Promise<string>} AIからの応答テキスト
  */
 const generateText = async (modelType, prompt) => {
-    if (!isInitialized) initializeAI();
-    if (!isInitialized) return "AIの初期化に失敗しました。APIキーを確認してください。";
+    // (★修正★) 初期化処理を try-catch で囲む
+    try {
+        if (!isInitialized) initializeAI();
+    } catch (initError) {
+        console.error(initError);
+        return initError.message; // "APIキーが設定されていません。" などのエラーを返す
+    }
+    
+    if (!isInitialized) return "AIの初期化に失敗しました。";
 
     const model = (modelType === 'pro') ? proModel : flashModel;
 
@@ -91,9 +106,18 @@ const generateText = async (modelType, prompt) => {
         return response.text();
     } catch (error) {
         console.error(`Error generating ${modelType} content:`, error);
-        if (error.message.includes('API key not valid')) {
-            return "AI APIキーが無効です。";
+        
+        // (★修正★) より具体的なエラーハンドリング
+        if (error.message.includes('API key not valid') || error.message.includes('API_KEY_INVALID')) {
+            return "AI APIキーが無効です。ai-service.js を確認してください。";
         }
+        if (error.message.includes('quota')) {
+            return "AI APIの利用上限に達しました。";
+        }
+        if (error.message.includes('Safety rating')) {
+            return "AIの安全設定により応答がブロックされました。";
+        }
+        
         return "AIの応答中にエラーが発生しました。";
     }
 };
@@ -139,12 +163,17 @@ export const getUpsellSuggestion = async (slipData, customer, customerSlips) => 
 提案 (例: 「〇〇もいかがですか？」) または "null"
 `;
 
-    const suggestion = await generateText('flash', prompt);
-    
-    if (suggestion.toLowerCase().includes('null') || suggestion.trim() === "") {
-        return null;
+    try {
+        const suggestion = await generateText('flash', prompt);
+        
+        if (suggestion.toLowerCase().includes('null') || suggestion.trim() === "" || suggestion.includes('APIキー')) {
+            return null;
+        }
+        return suggestion.trim();
+    } catch (e) {
+        console.error(e);
+        return null; // エラー時は何も表示しない
     }
-    return suggestion.trim();
 };
 
 
@@ -170,8 +199,17 @@ export const getCustomerFollowUpAdvice = async (customer, stats) => {
 # 指示
 (例: 「そろそろ追いLINEをしましょう」「感謝の連絡を」「次回の誕生日イベントを告知」など)
 `;
-
-    return await generateText('flash', prompt);
+    // (★修正★) エラー時も考慮
+    try {
+        const advice = await generateText('flash', prompt);
+        if (advice.includes('APIキー') || advice.includes('エラー')) {
+            return "AIアドバイスの取得に失敗しました。";
+        }
+        return advice;
+    } catch (e) {
+        console.error(e);
+        return "AIアドバイスの取得中にエラーが発生しました。";
+    }
 };
 
 
