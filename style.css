@@ -40,13 +40,14 @@ body.sidebar-mobile-open {
 
 /* (★レスポンシブ対応★) サイドバー本体のスマホ/PC切り替え */
 #sidebar-container {
-    /* (★追加★) デフォルトはスマホ用のスタイル (画面外に隠す) */
+    /* (★追加★) デフォルトはスマホ用のスタイル */
     position: fixed;
     top: 0;
     left: 0;
     bottom: 0;
     z-index: 40;
-    transform: translateX(-100%);
+    /* (★修正★) HTML側のTailwindクラス(-translate-x-full)で初期非表示を制御するため、この行を削除 */
+    /* transform: translateX(-100%); */
     transition: transform 0.3s ease-in-out;
     /* (★追加★) スマホでは横幅を広げる */
     width: 280px; /* w-72 */
