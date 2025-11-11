@@ -12,6 +12,9 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@google/generative-ai/+esm"></script>
+
 </head>
 <body class="text-slate-800">
 
@@ -67,7 +70,12 @@
                             </div>
                         </div>
                         <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                            <input type="date" class="p-2 border border-slate-300 rounded-lg text-sm">
+                            <input type="date" id="report-date-picker" class="p-2 border border-slate-300 rounded-lg text-sm">
+                            
+                            <button id="ai-analyze-btn" class="px-4 py-2 rounded-lg bg-white text-blue-600 font-semibold border border-blue-300 hover:bg-blue-50 transition duration-200">
+                                <i class="fa-solid fa-lightbulb-on mr-2"></i>AIで分析
+                            </button>
+                            
                             <button id="export-jpg-btn" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition duration-200">
                                 <i class="fa-solid fa-download mr-2"></i>JPEGで保存
                             </button>
@@ -129,6 +137,37 @@
         </main>
     </div>
 
+    <div id="ai-report-modal" class="modal-backdrop">
+        <div class="modal-content w-full max-w-3xl">
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold">
+                    <i class="fa-solid fa-lightbulb-on text-blue-500 mr-2"></i>
+                    AI 売上分析レポート
+                </h3>
+                <button type="button" class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <div class="p-6 max-h-[70vh] overflow-y-auto">
+                <div id="ai-report-content" class="prose prose-lg max-w-none">
+                    <p class="text-slate-500 text-center py-8">
+                        <i class="fa-solid fa-spinner fa-spin fa-2x"></i><br>
+                        AIが売上データを分析中です... (Gemini Pro)
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg">
+                <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module" src="ai-service.js"></script>
     <script type="module" src="reports.js"></script>
 </body>
 </html>

@@ -13,6 +13,9 @@ import {
     serverTimestamp // (★在庫管理 追加★)
 } from './firebase-init.js';
 
+// (★新規★) AIサービスから関数をインポート
+import { getUpsellSuggestion } from './ai-service.js';
+
 // (★変更★) 参照は firebaseReady イベントで受け取る
 let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef,
     attendancesCollectionRef, // (★勤怠機能追加★)
@@ -83,7 +86,10 @@ let castHeaderName, pageTitle, tableGrid,
     
     // (★新規★) 転卓モーダル
     tableTransferModal, openTransferModalBtn, transferSlipNumber, 
-    transferTableGrid, transferError;
+    transferTableGrid, transferError,
+
+    // (★新規★) AIサジェスト
+    aiSuggestionBox, aiSuggestionText;
 
 
 // --- (★勤怠機能追加★) ヘルパー関数 ---
@@ -299,13 +305,17 @@ const renderTableGrid = () => {
 };
 
 /**
- * (★修正★) 伝票モーダル（注文入力）を描画する
+ * (★AI対応★) 伝票モーダル（注文入力）を描画する
  */
 const renderOrderModal = () => {
     if (!settings || !menu) return; // (★変更★)
     const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
     if (!slipData) return;
     
+    // (★AI対応★) AIサジェストボックスを隠す
+    if (aiSuggestionBox) aiSuggestionBox.classList.add('hidden');
+    if (aiSuggestionText) aiSuggestionText.textContent = '...';
+
     orderModalTitle.textContent = `テーブル ${slipData.tableId} (No.${slipData.slipNumber} - ${slipData.name})`;
 
     orderNominationSelect.innerHTML = '<option value="null">フリー</option>';
@@ -537,7 +547,7 @@ const updateSlipInfo = async () => {
 
 
 /**
- * 注文リストにアイテムを追加する
+ * (★AI対応★) 注文リストにアイテムを追加する
  * @param {string} id 商品ID
  * @param {string} name 商品名
  * @param {number} price 価格
@@ -563,7 +573,38 @@ const addOrderItem = async (id, name, price) => {
     }
     
     renderOrderModal();
+    
+    // (★AI対応★) AIサジェストを実行
+    runUpsellSuggestion(slipData);
 };
+
+/**
+ * (★AI対応★) アップセルサジェストを実行してUIに表示
+ * @param {object} slipData - 現在の伝票データ
+ */
+const runUpsellSuggestion = async (slipData) => {
+    if (!aiSuggestionBox || !aiSuggestionText) return;
+
+    aiSuggestionBox.classList.remove('hidden');
+    aiSuggestionText.textContent = "AIが提案を考えています...";
+
+    // 顧客情報と過去の伝票情報を取得
+    const customer = customers.find(c => c.name === slipData.name);
+    const customerSlips = customer 
+        ? slips.filter(s => s.status === 'paid' && s.name === customer.name)
+        : [];
+
+    const suggestion = await getUpsellSuggestion(slipData, customer, customerSlips);
+
+    if (suggestion) {
+        aiSuggestionText.textContent = suggestion;
+        aiSuggestionBox.classList.remove('hidden');
+    } else {
+        aiSuggestionText.textContent = "...";
+        aiSuggestionBox.classList.add('hidden');
+    }
+};
+
 
 /**
  * (新規) 注文リストからアイテムを削除する
@@ -910,12 +951,16 @@ const openModal = (modalElement) => {
 };
 
 /**
- * モーダルを閉じる
+ * (★AI対応★) モーダルを閉じる
  * @param {HTMLElement} modalElement 
  */
 const closeModal = (modalElement) => {
     if (modalElement) {
         modalElement.classList.remove('active');
+    }
+    // (★AI対応★) オーダーモーダルが閉じる場合、AIサジェストも隠す
+    if (modalElement && modalElement.id === 'order-modal' && aiSuggestionBox) {
+        aiSuggestionBox.classList.add('hidden');
     }
 };
 
@@ -1190,8 +1235,10 @@ const handlePaidSlipClick = (slipId) => {
 };
 
 
-// (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
-// (※ データ構造の基盤となるため、このファイルにも定義を残します)
+/**
+ * (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+ * (※ データ構造の基盤となるため、このファイルにも定義を残します)
+ */
 const getDefaultSettings = () => {
     return {
         slipTagsMaster: [
@@ -1208,6 +1255,8 @@ const getDefaultSettings = () => {
         // (★新規★) 端数処理設定
         rounding: { type: 'none', unit: 1 }, // 'none', 'round_up_total', 'round_down_total', 'round_up_subtotal'
         dayChangeTime: "05:00",
+        // (★削除★) 報酬関連の設定を削除
+        /*
         performanceSettings: {
             menuItems: {
                 'm14_default': { salesType: 'percentage', salesValue: 100, countNomination: true }
@@ -1216,6 +1265,7 @@ const getDefaultSettings = () => {
             tax: { salesType: 'percentage', salesValue: 0 },
             sideCustomer: { salesValue: 100, countNomination: true }
         },
+        */
         ranking: { period: 'monthly', type: 'nominations' }
     };
 };
@@ -1229,7 +1279,7 @@ const getDefaultMenu = () => {
         categories: [
             { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false },
             { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false },
-            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true }, 
+            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: false }, // (★報酬削除★) isCastCategory: true を false に変更
         ],
         items: [
             { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, inventoryItemId: null, inventoryConsumption: null },
@@ -1531,9 +1581,11 @@ document.addEventListener('DOMContentLoaded', () => {
     printSlipBtn = document.getElementById('print-slip-btn');
     goToCheckoutBtn = document.getElementById('go-to-checkout-btn');
     reopenSlipBtn = document.getElementById('reopen-slip-btn');
+    
     // (★削除★) menu-editor-modal 関連は不要
     // menuEditorModal = document.getElementById('menu-editor-modal');
     // ...
+    
     cancelSlipModal = document.getElementById('cancel-slip-modal');
     openCancelSlipModalBtn = document.getElementById('open-cancel-slip-modal-btn');
     cancelSlipModalTitle = document.getElementById('cancel-slip-modal-title');
@@ -1609,6 +1661,10 @@ document.addEventListener('DOMContentLoaded', () => {
     transferSlipNumber = document.getElementById('transfer-slip-number');
     transferTableGrid = document.getElementById('transfer-table-grid');
     transferError = document.getElementById('transfer-error');
+
+    // (★AI対応★) AIサジェスト
+    aiSuggestionBox = document.getElementById('ai-suggestion-box');
+    aiSuggestionText = document.getElementById('ai-suggestion-text');
 
     // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
     

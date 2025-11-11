@@ -12,6 +12,9 @@ import {
     signOut // (★新規★)
 } from './firebase-init.js';
 
+// (★新規★) AIサービスから関数をインポート
+import { getCustomerFollowUpAdvice } from './ai-service.js';
+
 // (★変更★) 参照は firebaseReady イベントで受け取る
 let settingsRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef;
 
@@ -68,59 +71,88 @@ const getBusinessDayStart = (date) => {
     return startDate;
 };
 
-// =================================================
-// (★新規★) 顧客一覧ページ専用ロジック
-// =================================================
+// ===================================
+// (★新規★) 顧客データ集計ヘルパー (customers.js からコピー)
+// ===================================
 
 /**
- * (★新規★) 顧客の最終来店日を計算する (簡易版)
- * @param {string} customerName 
- * @returns {string} 最終来店日の説明文字列
+ * (★新規★) 顧客に関連する伝票データを集計する
+ * @param {string} customerId - 顧客ID
+ * @param {string} customerName - 顧客名 (※古い伝票はIDがないため名前で照合)
+ * @returns {object} { slips: [], lastVisit: Date|null, visitCount: 0, totalSpend: 0 }
  */
-const getLastVisitDate = (customerName) => {
-    if (!slips || slips.length === 0 || !settings) { // (★変更★) settings が必要
-        return "来店履歴なし";
+const getCustomerStats = (customerId, customerName) => {
+    if (!slips || slips.length === 0) {
+        return { slips: [], lastVisit: null, visitCount: 0, totalSpend: 0 };
     }
 
-    // (★変更★) 顧客名で伝票をフィルタリング (会計済みのみ)
-    const customerSlips = slips.filter(
-        slip => slip.name === customerName && slip.status === 'paid' && slip.paidTimestamp
-    );
+    const customerSlips = slips.filter(slip => {
+        if (slip.status !== 'paid' || !slip.paidTimestamp) return false;
+        
+        // (★変更★) IDと名前の両方で照合
+        if (slip.customerId === customerId) return true; 
+        if (slip.name === customerName) return true;
+        
+        return false;
+    });
 
     if (customerSlips.length === 0) {
-        return "来店履歴なし";
+        return { slips: [], lastVisit: null, visitCount: 0, totalSpend: 0 };
     }
 
-    // (★変更★) タイムスタンプでソートして最新の日付を取得
     customerSlips.sort((a, b) => new Date(b.paidTimestamp).getTime() - new Date(a.paidTimestamp).getTime());
     
     const lastVisitDate = new Date(customerSlips[0].paidTimestamp);
     
-    // (★新規★) 何日前か計算
-    // (★変更★) 営業日基準で「今日」を判定
+    const totalSpend = customerSlips.reduce((total, slip) => total + (slip.paidAmount || 0), 0);
+    
+    return {
+        slips: customerSlips,
+        lastVisit: lastVisitDate,
+        visitCount: customerSlips.length,
+        totalSpend: totalSpend
+    };
+};
+
+
+// =================================================
+// (★AI対応★) 顧客一覧ページ専用ロジック
+// =================================================
+
+/**
+ * (★AI対応★) 顧客の最終来店日の文字列を生成する
+ * @param {Date | null} lastVisitDate 
+ * @returns {string} 最終来店日の説明文字列
+ */
+const formatLastVisitDate = (lastVisitDate) => {
+    if (!lastVisitDate || !settings) {
+        return "来店履歴なし";
+    }
+
     const todayBusinessStart = getBusinessDayStart(new Date());
     const lastVisitBusinessStart = getBusinessDayStart(lastVisitDate);
 
-    const diffTime = Math.abs(todayBusinessStart.getTime() - lastVisitBusinessStart.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffTime = todayBusinessStart.getTime() - lastVisitBusinessStart.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
     
     const dateStr = lastVisitDate.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
 
     if (diffDays === 0) {
         return `最終来店: ${dateStr} (本日)`;
-    } else if (diffDays <= 30) {
+    } else if (diffDays > 0 && diffDays <= 30) {
         return `最終来店: ${dateStr} (${diffDays}日前)`;
     } else {
         return `最終来店: ${dateStr}`;
     }
 };
 
+
 /**
- * (★変更★) キャストの指名顧客一覧を描画する
+ * (★AI対応★) キャストの指名顧客一覧を描画する
  * @param {string} searchTerm (オプション) 検索キーワード
  */
 const renderCastCustomerList = (searchTerm = "") => {
-    if (!customerListContainer || !customers || !currentCastId) return;
+    if (!customerListContainer || !customers || !currentCastId || !slips || !settings) return;
     
     const lowerSearchTerm = searchTerm.toLowerCase();
 
@@ -136,7 +168,7 @@ const renderCastCustomerList = (searchTerm = "") => {
         );
     }
     
-    // (★仮★) 最終来店日ソート (ロジックが重いため、一旦名前ソート)
+    // (★仮★) 名前ソート
     myCustomers.sort((a,b) => a.name.localeCompare(b.name));
     
     // (★変更★) ローディング表示を削除
@@ -152,17 +184,19 @@ const renderCastCustomerList = (searchTerm = "") => {
         return;
     }
     
-    // (★変更★) 顧客リストのUI
+    // (★AI対応★) 顧客リストのUIを変更
     myCustomers.forEach(cust => {
-        // (★新規★) 最終来店日を計算
-        const lastVisit = getLastVisitDate(cust.name); 
-        
-        // (★新規★) 顧客メモ (ダミー)
-        const memo = cust.memo || "（メモ未登録）"; // ※現状 customer オブジェクトに memo は無い
+        // (★AI対応★) 顧客の統計情報を取得
+        const stats = getCustomerStats(cust.id, cust.name);
+        const lastVisit = formatLastVisitDate(stats.lastVisit);
+        const memo = cust.memo || "（メモ未登録）";
 
-        // (★新規★) 来店中かチェック
+        // (★AI対応★) 来店中かチェック
         const activeSlip = slips.find(s => s.name === cust.name && (s.status === 'active' || s.status === 'checkout'));
         
+        // (★AI対応★) AIアドバイス用のプレースホルダーID
+        const aiAdviceId = `ai-advice-${cust.id}`;
+
         const itemHTML = `
             <div class="bg-white p-4 rounded-xl shadow border border-slate-200">
                 <div class="flex justify-between items-center">
@@ -173,9 +207,32 @@ const renderCastCustomerList = (searchTerm = "") => {
                     <p><i class="fa-solid fa-clock fa-fw w-5"></i> ${lastVisit}</p>
                     <p><i class="fa-solid fa-note-sticky fa-fw w-5"></i> ${memo}</p>
                 </div>
+                <div class="mt-3 pt-3 border-t border-slate-200">
+                    <p class="text-xs font-semibold text-blue-600 mb-1">
+                        <i class="fa-solid fa-lightbulb-on mr-1"></i> AI Follow-up Advice
+                    </p>
+                    <p id="${aiAdviceId}" class="text-sm text-slate-700">
+                        <i class="fa-solid fa-spinner fa-spin text-xs"></i> 分析中...
+                    </p>
+                </div>
             </div>
         `;
         customerListContainer.innerHTML += itemHTML;
+        
+        // (★AI対応★) HTML描画後に非同期でAIアドバイスを取得
+        getCustomerFollowUpAdvice(cust, stats).then(advice => {
+            const adviceEl = document.getElementById(aiAdviceId);
+            if (adviceEl) {
+                adviceEl.textContent = advice;
+            }
+        }).catch(err => {
+            console.error("AI Advice Error: ", err);
+            const adviceEl = document.getElementById(aiAdviceId);
+            if (adviceEl) {
+                adviceEl.textContent = "アドバイスの取得に失敗しました。";
+                adviceEl.classList.add("text-red-500");
+            }
+        });
     });
 };
 
@@ -184,9 +241,9 @@ const renderCastCustomerList = (searchTerm = "") => {
  * (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
  */
 const getDefaultSettings = () => {
-    // (★簡易版★ cast-customers.js は settings を参照しないため空でも良い)
+    // (★簡易版★ cast-customers.js は dayChangeTime のみ必要)
     return {
-        dayChangeTime: "05:00" // (★変更★) 最終来店日計算のために dayChangeTime は必要
+        dayChangeTime: "05:00"
     };
 };
 

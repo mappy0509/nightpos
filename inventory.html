@@ -10,6 +10,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="stylesheet" href="style.css">
+    
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@google/generative-ai/+esm"></script>
+
 </head>
 <body class="text-slate-800">
 
@@ -55,9 +58,14 @@
                             <input type="text" id="inventory-search-input" placeholder="在庫名で検索..." class="w-full p-3 pl-10 border border-slate-300 rounded-lg shadow-sm">
                             <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
                         </div>
-                        <button id="add-inventory-item-btn" class="bg-blue-600 text-white px-5 py-3 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 whitespace-nowrap">
-                            <i class="fa-solid fa-plus mr-2"></i>新規在庫品目登録
-                        </button>
+                        <div class="flex space-x-3">
+                            <button id="ai-restock-btn" class="bg-white text-blue-600 px-5 py-3 rounded-lg font-semibold border border-blue-300 hover:bg-blue-50 transition duration-200 whitespace-nowrap">
+                                <i class="fa-solid fa-lightbulb-on mr-2"></i>AI発注サジェスト
+                            </button>
+                            <button id="add-inventory-item-btn" class="bg-blue-600 text-white px-5 py-3 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 whitespace-nowrap">
+                                <i class="fa-solid fa-plus mr-2"></i>新規在庫品目登録
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden overflow-x-auto">
@@ -191,6 +199,38 @@
         </div>
     </div>
 
+    <div id="ai-suggestion-modal" class="modal-backdrop">
+        <div class="modal-content w-full max-w-2xl">
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold">
+                    <i class="fa-solid fa-lightbulb-on text-blue-500 mr-2"></i>
+                    AI発注サジェスト
+                </h3>
+                <button type="button" class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <div class="p-6 max-h-[70vh] overflow-y-auto">
+                <p class="text-sm text-slate-600 mb-4">現在の在庫状況と直近1週間の消費傾向に基づき、発注を推奨する品目をリストアップします。</p>
+                <div id="ai-suggestion-content" class="prose prose-sm max-w-none">
+                    <p class="text-slate-500 text-center py-8">
+                        <i class="fa-solid fa-spinner fa-spin fa-2x"></i><br>
+                        AIが分析中です...
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg">
+                <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module" src="ai-service.js"></script>
     <script type="module" src="inventory.js"></script>
 </body>
 </html>

@@ -13,6 +13,9 @@ import {
     collection // (★削除★)
 } from './firebase-init.js';
 
+// (★新規★) AIサービスをインポート (将来的な機能拡張のため)
+import * as aiService from './ai-service.js';
+
 // (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
 /*
 import {
@@ -33,7 +36,7 @@ const getUUID = () => {
 };
 
 // (★変更★) state を分割して管理
-let settings = null; // (★追加★) カテゴリ管理（isCastCategoryなど）のため
+let settings = null; // (★報酬削除★) 権限チェックは不要になったが、ストア名表示のために残す
 let menu = null;
 let inventoryItems = []; // (★在庫管理 追加★)
 // (★削除★) casts, customers, slips, slipCounter は不要
@@ -390,7 +393,7 @@ const deleteMenuItem = async (menuId) => {
 };
 
 // ===================================
-// (★新規★) カテゴリ管理ロジック
+// (★報酬削除★) カテゴリ管理ロジック
 // ===================================
 
 /**
@@ -405,7 +408,7 @@ const openCategoryEditorModal = () => {
 };
 
 /**
- * (★新規★) カテゴリ管理リストを描画する
+ * (★報酬削除★) カテゴリ管理リストを描画する
  */
 const renderCategoryList = () => {
     if (!currentCategoriesList || !menu) return;
@@ -420,9 +423,7 @@ const renderCategoryList = () => {
     }
     
     categories.forEach(category => {
-        // (★変更★) settings からキャスト料金カテゴリIDを取得して比較
-        const castPriceCategoryId = settings?.performanceSettings?.castPriceCategoryId;
-        const isProtected = (category.id === castPriceCategoryId); 
+        // (★報酬削除★) isProtected 関連のロジックを削除
         
         // (★並び替え 変更★) data-id 属性とドラッグハンドルを追加
         const itemHTML = `
@@ -430,7 +431,7 @@ const renderCategoryList = () => {
                 <div class="flex-1 flex items-center space-x-3">
                     <i class="fa-solid fa-grip-vertical text-slate-400 cursor-move category-drag-handle"></i>
                     <input type="text" value="${category.name}" 
-                           class="w-1/3 p-2 border border-slate-300 rounded-lg category-name-input" 
+                           class="w-1/2 p-2 border border-slate-300 rounded-lg category-name-input" 
                            data-category-id="${category.id}">
                     <label class="text-sm flex items-center space-x-1">
                         <input type="checkbox" ${category.isSetCategory ? 'checked' : ''} 
@@ -438,20 +439,11 @@ const renderCategoryList = () => {
                                data-category-id="${category.id}">
                         <span>セット料金</span>
                     </label>
-                    <label class="text-sm flex items-center space-x-1 ${isProtected ? 'opacity-50' : ''}">
-                        <input type="checkbox" ${category.isCastCategory ? 'checked' : ''} 
-                               class="rounded border-slate-400 text-pink-600 focus:ring-pink-500 category-cast-toggle" 
-                               data-category-id="${category.id}"
-                               ${isProtected ? 'disabled' : ''}
-                               title="${isProtected ? 'このカテゴリは「店舗設定」の成績反映対象です' : ''}">
-                        <span>キャスト料金 (成績反映)</span>
-                    </label>
-                </div>
+                    </div>
                 <button type="button" 
-                        class="delete-category-btn text-red-500 hover:text-red-700 disabled:opacity-30 disabled:cursor-not-allowed" 
+                        class="delete-category-btn text-red-500 hover:text-red-700" 
                         data-category-id="${category.id}"
-                        ${isProtected ? 'disabled' : ''}
-                        title="${isProtected ? '「成績反映」に設定されているカテゴリは削除できません' : 'カテゴリを削除'}">
+                        title="カテゴリを削除">
                     <i class="fa-solid fa-trash"></i>
                 </button>
             </div>
@@ -482,7 +474,7 @@ const addCategory = async () => {
         id: getUUID(),
         name: newName,
         isSetCategory: false,
-        isCastCategory: false,
+        isCastCategory: false, // (★報酬削除★) デフォルトはfalse
         order: (menu.categories || []).length // (★並び替え 変更★) order を追加
     };
     
@@ -524,9 +516,9 @@ const updateCategoryName = async (categoryId, newName) => {
 };
 
 /**
- * (★新規★) カテゴリのフラグ（isSetCategory, isCastCategory）を更新する
+ * (★報酬削除★) カテゴリのフラグ（isSetCategory）を更新する
  * @param {string} categoryId 
- * @param {string} flagType 'isSetCategory' または 'isCastCategory'
+ * @param {string} flagType 'isSetCategory'
  * @param {boolean} isChecked 
  */
 const updateCategoryFlag = async (categoryId, flagType, isChecked) => {
@@ -536,31 +528,8 @@ const updateCategoryFlag = async (categoryId, flagType, isChecked) => {
     if (category) {
         if (flagType === 'isSetCategory') {
             category.isSetCategory = isChecked;
-        } else if (flagType === 'isCastCategory') {
-            // (★重要★) isCastCategoryは1つしか設定できないようにする
-            // (※ settings.js 側で「どれを成績対象にするか」を選ぶ方が堅牢だが、
-            //    現在のUIに合わせてここで制御する)
-            
-            // 一旦すべてを false にする
-            menu.categories.forEach(c => c.isCastCategory = false);
-            // 選択されたものだけ true にする
-            category.isCastCategory = isChecked; 
-            
-            // (★重要★) settings.js 側が参照するIDも更新する
-            if (settings) {
-                // (★修正★) settings.performanceSettings が無い場合に備える
-                if (!settings.performanceSettings) {
-                    settings.performanceSettings = {};
-                }
-                settings.performanceSettings.castPriceCategoryId = isChecked ? categoryId : null;
-                try {
-                    await setDoc(settingsRef, settings);
-                } catch (e) {
-                    console.error("Error updating settings.performanceSettings.castPriceCategoryId: ", e);
-                    // エラーが出ても menu の更新は試みる
-                }
-            }
         }
+        // (★報酬削除★) isCastCategory の分岐を削除
         
         try {
             await setDoc(menuRef, menu);
@@ -628,14 +597,14 @@ const closeModal = (modalElement) => {
 // handleSlipClick, handlePaidSlipClick
 
 
-// (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+/**
+ * (★報酬削除★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+ */
 const getDefaultSettings = () => {
     return {
         // (★簡易版★ menu.js は settings を参照するだけなので)
         storeInfo: { name: "店舗" }, // (★動的表示 追加★)
-        performanceSettings: {
-            castPriceCategoryId: null
-        }
+        // (★削除★) performanceSettings を削除
     };
 };
 
@@ -653,7 +622,7 @@ const getDefaultMenu = () => {
             { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false, order: 1 },
             { id: catBottleId, name: 'ボトル', isSetCategory: false, isCastCategory: false, order: 2 },
             { id: catFoodId, name: 'フード', isSetCategory: false, isCastCategory: false, order: 3 },
-            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true, order: 4 }, 
+            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: false, order: 4 }, // (★報酬削除★)
             { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false, order: 5 },
         ],
         items: [
@@ -723,7 +692,7 @@ const initSortable = () => {
             animation: 150,
             handle: '.item-drag-handle', // 掴むハンドルを指定
             onEnd: async (evt) => {
-                if (!menu || !menu.items || !currentActiveMenuCategoryId) return;
+                if (!menu || !menu.items || !menu.currentActiveMenuCategoryId) return;
 
                 // DOMから新しいIDの順序を取得
                 const newOrderIds = Array.from(evt.target.children).map(child => child.dataset.id);
@@ -732,7 +701,7 @@ const initSortable = () => {
                 let orderCounter = 0;
                 newOrderIds.forEach(id => {
                     const item = menu.items.find(i => i.id === id);
-                    if (item && item.categoryId === currentActiveMenuCategoryId) {
+                    if (item && item.categoryId === menu.currentActiveMenuCategoryId) {
                         item.order = orderCounter++;
                     }
                 });
@@ -776,8 +745,9 @@ const initSortable = () => {
 };
 
 
-// (★変更★) --- Firestore リアルタイムリスナー ---
-// (★変更★) firebaseReady イベントを待ってからリスナーを設定
+/**
+ * (★報酬削除★) --- Firestore リアルタイムリスナー ---
+ */
 document.addEventListener('firebaseReady', (e) => {
     
     // (★在庫管理 変更★)
@@ -971,7 +941,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // (★新規★) カテゴリリストのイベント委任 (編集・削除)
+    /**
+     * (★報酬削除★) カテゴリリストのイベント委任 (編集・削除)
+     */
     if (currentCategoriesList) {
         // 削除
         currentCategoriesList.addEventListener('click', (e) => {
@@ -1009,9 +981,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target.classList.contains('category-set-toggle')) {
                 updateCategoryFlag(categoryId, 'isSetCategory', e.target.checked); // (★変更★)
             }
-            else if (e.target.classList.contains('category-cast-toggle')) {
-                updateCategoryFlag(categoryId, 'isCastCategory', e.target.checked); // (★変更★)
-            }
+            // (★報酬削除★) isCastCategory のリスナーを削除
         });
     }
 

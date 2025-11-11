@@ -31,12 +31,12 @@ const getUUID = () => {
 
 // (★変更★) state を分割して管理 (settings と menu のみ)
 let settings = null;
-let menu = null;
+// (★削除★) let menu = null;
 let slips = []; // (★追加★) 削除判定のために slips が必要
 // (★削除★) casts, customers, slipCounter, currentSlipId は不要
 
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
-let settingsRef, menuRef, slipsCollectionRef,
+let settingsRef, /* (★削除★) menuRef, */ slipsCollectionRef,
     currentStoreId; // (★動的表示 追加★)
 
 
@@ -60,12 +60,12 @@ let modalCloseBtns, // (★注意★) settings.html にモーダルは無いた�
     
     // (★削除★) キャスト設定DOMを削除
 
-    // 成績設定
-    performanceCastItemsContainer,
-    settingScSalesValue, settingScSalesType,
-    settingTaxSalesValue, settingTaxSalesType,
-    settingSideSalesValue,
-    settingSideCountNomination,
+    // (★削除★) 成績設定
+    // performanceCastItemsContainer,
+    // settingScSalesValue, settingScSalesType,
+    // settingTaxSalesValue, settingTaxSalesType,
+    // settingSideSalesValue,
+    // settingSideCountNomination,
     
     storeSelector; // (★動的表示 追加★)
 
@@ -107,7 +107,7 @@ const closeModal = (modalElement) => {
 };
 
 /**
- * (新規) 設定フォームに現在の値を読み込む
+ * (★報酬削除★) 設定フォームに現在の値を読み込む
  */
 const loadSettingsToForm = () => {
     if (!settings) return; 
@@ -133,83 +133,17 @@ const loadSettingsToForm = () => {
     renderTableSettingsList();
     renderTagSettingsList(); 
     // (★削除★) renderCastSettingsList();
-    renderPerformanceSettings();
+    // (★削除★) renderPerformanceSettings();
 };
 
 /**
- * (★変更★) キャスト成績反映設定セクションを描画する
+ * (★削除★) キャスト成績反映設定セクションを描画する
  */
-const renderPerformanceSettings = () => {
-    if (!settings || !menu) return; 
-    
-    // 1. キャスト料金項目の動的生成
-    if (performanceCastItemsContainer) {
-        performanceCastItemsContainer.innerHTML = '';
-        
-        // (★変更★) isCastCategory: true のカテゴリIDを探す
-        // (★変更★) settings 側で指定された「キャスト料金カテゴリID」を使う
-        const castPriceCategoryId = settings.performanceSettings?.castPriceCategoryId;
-        const castCategory = (menu.categories || []).find(c => c.id === castPriceCategoryId);
-        
-        let castMenuItems = [];
-        if (castCategory) {
-            // (★変更★) `menu.items` から該当カテゴリの商品をフィルタリング
-            castMenuItems = (menu.items || []).filter(item => item.categoryId === castCategory.id);
-        }
-        
-        if (castMenuItems.length === 0) {
-            performanceCastItemsContainer.innerHTML = '<p class="text-sm text-slate-500">「メニュー管理」の「カテゴリ管理」で「キャスト料金(成績反映)」にチェックを入れ、このページで「保存」を押してください。</p>';
-        } else {
-            castMenuItems.forEach(item => {
-                const setting = settings.performanceSettings.menuItems[item.id] || {
-                    salesType: 'percentage',
-                    salesValue: 100,
-                    countNomination: true
-                };
-
-                const itemHtml = `
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-center p-3 bg-slate-50 rounded-lg border">
-                    <span class="font-medium">${item.name} (${formatCurrency(item.price)})</span>
-                    <div>
-                        <label class="text-xs font-semibold text-slate-600">個人売上への反映</label>
-                        <div class="flex mt-1">
-                            <input type="number" value="${setting.salesValue}" class="w-2/3 p-2 border border-slate-300 rounded-l-lg focus:outline-none setting-menu-sales-value" data-menu-id="${item.id}">
-                            <select class="w-1/3 p-2 border-t border-b border-r border-slate-300 rounded-r-lg bg-slate-100 focus:outline-none setting-menu-sales-type" data-menu-id="${item.id}">
-                                <option value="percentage" ${setting.salesType === 'percentage' ? 'selected' : ''}>%</option>
-                                <option value="fixed" ${setting.salesType === 'fixed' ? 'selected' : ''}>円</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="flex items-center space-x-2 mt-5 cursor-pointer">
-                            <input type="checkbox" ${setting.countNomination ? 'checked' : ''} class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 setting-menu-count-nomination" data-menu-id="${item.id}">
-                            <span class="text-sm font-medium text-slate-700">指名本数としてカウント</span>
-                        </label>
-                    </div>
-                </div>
-                `;
-                performanceCastItemsContainer.innerHTML += itemHtml;
-            });
-        }
-    }
-
-    // 2. サービス料・税
-    const scSetting = settings.performanceSettings.serviceCharge;
-    const taxSetting = settings.performanceSettings.tax;
-    if (settingScSalesValue) settingScSalesValue.value = scSetting.salesValue;
-    if (settingScSalesType) settingScSalesType.value = scSetting.salesType;
-    if (settingTaxSalesValue) settingTaxSalesValue.value = taxSetting.salesValue;
-    if (settingTaxSalesType) settingTaxSalesType.value = taxSetting.salesType;
-
-    // 3. 枝（サイド）設定
-    const sideSetting = settings.performanceSettings.sideCustomer;
-    if (settingSideSalesValue) settingSideSalesValue.value = sideSetting.salesValue;
-    if (settingSideCountNomination) settingSideCountNomination.checked = sideSetting.countNomination;
-};
+// const renderPerformanceSettings = () => { ... };
 
 
 /**
- * (新規) フォームから設定を保存する
+ * (★報酬削除★) フォームから設定を保存する
  */
 const saveSettingsFromForm = async () => { 
     if (!settings) return; 
@@ -255,47 +189,15 @@ const saveSettingsFromForm = async () => {
         unit: parseInt(settingRoundingUnit.value) || 1
     };
 
-    // --- 成績反映設定 ---
-    const newPerformanceSettings = {
-        ...settings.performanceSettings, // (★変更★) castPriceCategoryId などを維持
-        menuItems: {},
-        serviceCharge: {
-            salesValue: parseInt(settingScSalesValue.value) || 0,
-            salesType: settingScSalesType.value
-        },
-        tax: {
-            salesValue: parseInt(settingTaxSalesValue.value) || 0,
-            salesType: settingTaxSalesType.value
-        },
-        sideCustomer: {
-            salesValue: parseInt(settingSideSalesValue.value) || 0,
-            countNomination: settingSideCountNomination.checked
-        }
-    };
-    
-    if (performanceCastItemsContainer) {
-        const itemInputs = performanceCastItemsContainer.querySelectorAll('.setting-menu-sales-value');
-        const itemTypes = performanceCastItemsContainer.querySelectorAll('.setting-menu-sales-type');
-        const itemCounts = performanceCastItemsContainer.querySelectorAll('.setting-menu-count-nomination');
-        
-        itemInputs.forEach((input, index) => {
-            const menuId = input.dataset.menuId;
-            if (menuId) {
-                newPerformanceSettings.menuItems[menuId] = {
-                    salesValue: parseInt(input.value) || 0,
-                    salesType: itemTypes[index].value,
-                    countNomination: itemCounts[index].checked
-                };
-            }
-        });
-    }
+    // (★削除★) --- 成績反映設定 ---
+    // const newPerformanceSettings = { ... };
 
     // (★変更★) settings オブジェクトを直接更新
     settings.storeInfo = newStoreInfo;
     settings.rates = newRates;
     settings.dayChangeTime = newDayChangeTime;
     settings.rounding = newRounding; // (★新規★)
-    settings.performanceSettings = newPerformanceSettings;
+    // (★削除★) settings.performanceSettings = newPerformanceSettings;
     
     // (★変更★) Firestoreに保存
     try {
@@ -527,7 +429,9 @@ const renderStoreSelector = () => {
 };
 
 
-// (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+/**
+ * (★報酬削除★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+ */
 const getDefaultSettings = () => {
     return {
         slipTagsMaster: [
@@ -546,59 +450,41 @@ const getDefaultSettings = () => {
         rates: { tax: 0.10, service: 0.20 },
         rounding: { type: 'none', unit: 1 }, // (★新規★)
         dayChangeTime: "05:00",
-        performanceSettings: {
-            castPriceCategoryId: null, // (★変更★) menu.js側で設定される
-            menuItems: {
-                // 'm14_default': { salesType: 'percentage', salesValue: 100, countNomination: true }
-            },
-            serviceCharge: { salesType: 'percentage', salesValue: 0 },
-            tax: { salesType: 'percentage', salesValue: 0 },
-            sideCustomer: { salesValue: 100, countNomination: true }
-        },
+        // (★削除★) performanceSettings を削除
         ranking: { period: 'monthly', type: 'nominations' }
     };
 };
 
-const getDefaultMenu = () => {
-    // (★簡易版★ settings.js が必要なデータのみ)
-    const catCastId = getUUID();
-    return {
-        categories: [
-             { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true }, 
-        ],
-        items: [
-            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null }, 
-        ],
-        currentActiveMenuCategoryId: catCastId,
-    };
-};
+// (★削除★) getDefaultMenu を削除
+// const getDefaultMenu = () => { ... };
 
 
-// (★変更★) --- Firestore リアルタイムリスナー ---
-// (★変更★) firebaseReady イベントを待ってからリスナーを設定
+/**
+ * (★報酬削除★) --- Firestore リアルタイムリスナー ---
+ */
 document.addEventListener('firebaseReady', (e) => {
     
     // (★変更★) 必要な参照のみ取得
     const { 
         settingsRef: sRef, 
-        menuRef: mRef, 
+        // (★削除★) menuRef: mRef, 
         slipsCollectionRef: slRef,
         currentStoreId: csId // (★動的表示 追加★)
     } = e.detail;
 
     // (★変更★) グローバル変数に参照をセット
     settingsRef = sRef;
-    menuRef = mRef;
+    // (★削除★) menuRef = mRef;
     slipsCollectionRef = slRef;
     currentStoreId = csId; // (★動的表示 追加★)
 
     let settingsLoaded = false;
-    let menuLoaded = false;
+    // (★削除★) let menuLoaded = false;
     let slipsLoaded = false; // (★追加★) テーブル削除可否の判定に必要
 
     const checkAndRenderAll = () => {
-        // (★変更★) settings.js は loadSettingsToForm を呼ぶ
-        if (settingsLoaded && menuLoaded && slipsLoaded) {
+        // (★報酬削除★) menuLoaded を依存関係から削除
+        if (settingsLoaded && slipsLoaded) {
             console.log("All data loaded. Rendering UI for settings.js");
             loadSettingsToForm();
             renderStoreSelector(); // (★動的表示 追加★)
@@ -620,19 +506,8 @@ document.addEventListener('firebaseReady', (e) => {
         checkAndRenderAll();
     }, (error) => console.error("Error listening to settings: ", error));
 
-    // 2. Menu
-    onSnapshot(menuRef, async (docSnap) => {
-        if (docSnap.exists()) {
-            menu = docSnap.data();
-        } else {
-            console.log("No menu document found. Creating default menu...");
-            const defaultMenu = getDefaultMenu();
-            await setDoc(menuRef, defaultMenu);
-            menu = defaultMenu;
-        }
-        menuLoaded = true;
-        checkAndRenderAll();
-    }, (error) => console.error("Error listening to menu: ", error));
+    // (★削除★) 2. Menu
+    // onSnapshot(menuRef, ...)
 
     // (★削除★) slipCounter, casts, customers のリスナーを削除
     
@@ -690,14 +565,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // (★削除★) キャスト
     // ...
 
-    // (★修正★) 成績設定
-    performanceCastItemsContainer = document.getElementById('performance-cast-items-container');
-    settingScSalesValue = document.getElementById('setting-sc-sales-value');
-    settingScSalesType = document.getElementById('setting-sc-sales-type');
-    settingTaxSalesValue = document.getElementById('setting-tax-sales-value');
-    settingTaxSalesType = document.getElementById('setting-tax-sales-type');
-    settingSideSalesValue = document.getElementById('setting-side-sales-value');
-    settingSideCountNomination = document.getElementById('setting-side-count-nomination');
+    // (★削除★) 成績設定
+    // performanceCastItemsContainer = document.getElementById('performance-cast-items-container');
+    // ...
     
     storeSelector = document.getElementById('store-selector'); // (★動的表示 追加★)
 

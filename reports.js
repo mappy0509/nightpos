@@ -13,6 +13,10 @@ import {
     collection // (★削除★)
 } from './firebase-init.js';
 
+// (★新規★) AIサービスから関数をインポート
+import { getSalesReport } from './ai-service.js';
+
+
 // (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
 /*
 import {
@@ -60,6 +64,8 @@ let modalCloseBtns, // (★削除★) モーダルが無いため、本当は不
     reportContentArea,
     // (★新規★) 日付選択
     reportDatePicker,
+    // (★AI対応★) AI分析
+    aiAnalyzeBtn, aiReportModal, aiReportContent,
     storeSelector; // (★動的表示 追加★)
     
 // (★削除★) 他のHTMLからコピーされたモーダル用のDOMをすべて削除
@@ -93,11 +99,50 @@ const formatCurrency = (amount) => {
 const closeModal = (modalElement) => {
     // (★変更★) reports.html にはモーダルが無いため、この関数は実質不要だが、
     // DOMContentLoaded 内のリスナーが参照しているため残す (中身は空でも良い)
-    const modals = document.querySelectorAll('.modal-backdrop');
-    modals.forEach(modal => {
-        modal.classList.remove('active');
-    });
+    // (★AI対応★) AIモーダルが追加されたため、中身を復活
+    if (modalElement) {
+        modalElement.classList.remove('active');
+    }
 };
+
+/**
+ * (★AI対応★) モーダルを開く
+ * @param {HTMLElement} modalElement 
+ */
+const openModal = (modalElement) => {
+    if (modalElement) {
+        modalElement.classList.add('active');
+    }
+};
+
+/**
+ * (★AI対応★) 簡易MarkdownリストをHTMLに変換
+ * @param {string} text 
+ * @returns {string}
+ */
+const parseMarkdownReport = (text) => {
+    return text
+        .split('\n')
+        .map(line => {
+            line = line.trim();
+            if (line.startsWith('## ')) {
+                return `<h3>${line.substring(3).trim()}</h3>`;
+            } else if (line.startsWith('##')) {
+                return `<h3>${line.substring(2).trim()}</h3>`;
+            } else if (line.startsWith('* ')) {
+                return `<li>${line.substring(2).trim()}</li>`;
+            } else if (line.startsWith('- ')) {
+                return `<li>${line.substring(2).trim()}</li>`;
+            } else if (line.length > 0) {
+                return `<p>${line}</p>`;
+            }
+            return '';
+        })
+        .join('')
+        .replace(/<\/li><p>/g, '</li><ul><p>') // ネスト開始を雑に処理
+        .replace(/<\/p><li>/g, '</p></ul><li>'); // ネスト終了を雑に処理
+};
+
 
 // ===================================
 // (★新規★) 売上集計ヘルパー関数
@@ -399,10 +444,53 @@ const updateAllReports = () => {
     renderSalesChart();
 };
 
+/**
+ * (★AI対応★) AI分析モーダルを開く
+ */
+const handleAiReport = async () => {
+    if (!aiReportModal || !aiReportContent || !slips || !menu) return;
+
+    // モーダルを開き、ローディング表示
+    openModal(aiReportModal);
+    aiReportContent.innerHTML = `
+        <p class="text-slate-500 text-center py-8">
+            <i class="fa-solid fa-spinner fa-spin fa-2x"></i><br>
+            AIがデータを分析中です... (Gemini Pro)
+        </p>`;
+
+    // データを準備
+    const { paidSlips, range } = getSlipsForPeriod(currentReportPeriod, currentReportDate);
+    
+    // 期間のテキストを生成
+    let periodText = "";
+    const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
+    if (currentReportPeriod === 'daily') {
+        periodText = `日次 (${range.start.toLocaleDateString('ja-JP', options)})`;
+    } else if (currentReportPeriod === 'weekly') {
+        periodText = `週次 (${range.start.toLocaleDateString('ja-JP', options)} 〜 ${range.end.toLocaleDateString('ja-JP', options)})`;
+    } else {
+        periodText = `月次 (${range.start.getFullYear()}年${range.start.getMonth() + 1}月)`;
+    }
+
+    try {
+        const reportMarkdown = await getSalesReport(paidSlips, menu, periodText);
+        
+        // Markdownを簡易HTMLに変換して表示
+        aiReportContent.innerHTML = parseMarkdownReport(reportMarkdown);
+
+    } catch (error) {
+        console.error("AI report error:", error);
+        aiReportContent.innerHTML = `<p class="text-red-500 text-center py-8">分析に失敗しました。(${error.message})</p>`;
+    }
+};
+
+
 // (★削除★) 伝票作成関連のロジック (createNewSlip, renderSlipSelectionModal, renderNewSlipConfirmModal) をすべて削除
 
 
-// (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+/**
+ * (★報酬削除★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+ */
 const getDefaultSettings = () => {
     return {
         // (★簡易版★ reports.js が必要なデータのみ)
@@ -444,8 +532,9 @@ const renderStoreSelector = () => {
     storeSelector.disabled = true;
 };
 
-// (★変更★) --- Firestore リアルタイムリスナー ---
-// (★変更★) firebaseReady イベントを待ってからリスナーを設定
+/**
+ * (★報酬削除★) --- Firestore リアルタイムリスナー ---
+ */
 document.addEventListener('firebaseReady', (e) => {
     
     // (★変更★) 必要な参照のみ取得
@@ -566,11 +655,16 @@ document.addEventListener('DOMContentLoaded', () => {
     reportContentArea = document.getElementById('reports-content-area'); 
     
     // (★新規★) 日付ピッカー
-    reportDatePicker = document.querySelector('input[type="date"]');
+    reportDatePicker = document.getElementById('report-date-picker'); // (★AI対応★) IDを変更
     if(reportDatePicker) {
         currentReportDate = new Date();
         reportDatePicker.value = currentReportDate.toISOString().split('T')[0];
     }
+    
+    // (★AI対応★)
+    aiAnalyzeBtn = document.getElementById('ai-analyze-btn');
+    aiReportModal = document.getElementById('ai-report-modal');
+    aiReportContent = document.getElementById('ai-report-content');
     
     storeSelector = document.getElementById('store-selector'); // (★動的表示 追加★)
     
@@ -581,7 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // ===== イベントリスナーの設定 =====
 
-    // (★変更★) モーダルを閉じるボタン (HTMLにはもう存在しないが、念のため残す)
+    // (★変更★) モーダルを閉じるボタン
     if (modalCloseBtns) {
         modalCloseBtns.forEach(btn => {
             btn.addEventListener('click', (e) => { // (★動的表示 変更★)
@@ -612,6 +706,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const dateParts = e.target.value.split('-').map(Number);
             currentReportDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
             updateAllReports();
+        });
+    }
+
+    // (★AI対応★) AI分析ボタン
+    if (aiAnalyzeBtn) {
+        aiAnalyzeBtn.addEventListener('click', () => {
+            handleAiReport();
         });
     }
 

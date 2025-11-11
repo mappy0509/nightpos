@@ -10,6 +10,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="stylesheet" href="style.css">
+    
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@google/generative-ai/+esm"></script>
+
 </head>
 <body class="text-slate-800 bg-slate-50">
 
@@ -52,9 +55,6 @@
         </a>
         <a href="cast-customers.html" class="bottom-nav-link">
             <i class="fa-solid fa-users fa-lg"></i>
-        </a>
-        <a href="cast-pay.html" class="bottom-nav-link">
-            <i class="fa-solid fa-yen-sign fa-lg"></i>
         </a>
         <a href="cast-app-settings.html" class="bottom-nav-link">
             <i class="fa-solid fa-gear fa-lg"></i>
@@ -159,6 +159,13 @@
                     <h4 class="font-semibold mb-3">ご注文内容</h4>
                     <div class="flex-1 space-y-3 pr-2 overflow-y-auto" id="order-items-list">
                         </div>
+                    
+                    <div id="ai-suggestion-box" class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-center hidden">
+                        <p class="text-sm font-semibold text-blue-700">
+                            <i class="fa-solid fa-lightbulb-on mr-1"></i>
+                            <span id="ai-suggestion-text">...</span>
+                        </p>
+                    </div>
                 </div>
 
                 <div class="w-full md:w-2/5 bg-slate-50 flex flex-col overflow-y-auto">
@@ -462,7 +469,7 @@
                 </div>
             </div>
 
-            <div class="flex justify-between p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
+            <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center p-5 border-t bg-slate-50 rounded-b-lg space-x-3 gap-2">
                 <button id="reopen-slip-btn" class="px-4 py-2 rounded-lg bg-yellow-500 text-white font-semibold hover:bg-yellow-600">
                     <i class="fa-solid fa-undo mr-2"></i>伝票を復活させる
                 </button>
@@ -479,6 +486,7 @@
         </div>
     </div>
     
+    <script type="module" src="ai-service.js"></script>
     <script type="module" src="cast-order.js"></script>
 </body>
 </html>

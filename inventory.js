@@ -1,7 +1,7 @@
 // (★新規★) サイドバーコンポーネントをインポート
 import { renderSidebar } from './sidebar.js';
 
-// (★新規★) firebase-init.js から必要なモジュールをインポート
+// (★変更★) firebase-init.js から必要なモジュールをインポート
 import { 
     db, 
     auth, 
@@ -11,8 +11,13 @@ import {
     deleteDoc, 
     doc,
     collection,
+    query, // (★AI対応★)
+    where, // (★AI対応★)
     serverTimestamp // (★新規★) 最終更新日のために追加
 } from './firebase-init.js';
+
+// (★新規★) AIサービスから関数をインポート
+import { getRestockSuggestion } from './ai-service.js';
 
 // ===== グローバル定数・変数 =====
 
@@ -26,6 +31,7 @@ const getUUID = () => {
 
 // 在庫品目リスト
 let inventoryItems = [];
+let slips = []; // (★AI対応★) 直近の伝票データを保持
 // 現在編集中の品目ID
 let currentEditingItemId = null;
 // 在庫調整モーダルの調整タイプ
@@ -33,6 +39,7 @@ let currentAdjustmentType = 'add'; // 'add', 'subtract', 'set'
 
 // (★新規★) 参照(Ref)はグローバル変数として保持
 let inventoryItemsCollectionRef;
+let slipsCollectionRef; // (★AI対応★)
 
 
 // ===== DOM要素 =====
@@ -53,6 +60,9 @@ let pageTitle,
     adjustmentTypeTabs,
     adjustmentAmountInput, adjustmentAmountLabel,
     adjustmentMemoInput, adjustmentError, saveAdjustmentBtn,
+    
+    // (★AI対応★) AIサジェストモーダル
+    aiRestockBtn, aiSuggestionModal, aiSuggestionContent,
     
     modalCloseBtns;
 
@@ -95,6 +105,55 @@ const formatTimestamp = (timestamp) => {
         hour: '2-digit',
         minute: '2-digit'
     });
+};
+
+// ===================================
+// (★AI対応★) ヘルパー関数
+// ===================================
+
+/**
+ * (★AI対応★) 直近N日間の会計済み伝票を取得する
+ * @param {number} days 
+ * @returns {Array}
+ */
+const getRecentSlips = (days = 7) => {
+    const now = new Date();
+    const cutoff = now.getTime() - (days * 24 * 60 * 60 * 1000);
+    
+    return (slips || []).filter(slip => {
+        if (slip.status !== 'paid' || !slip.paidTimestamp) return false;
+        try {
+            const paidTime = new Date(slip.paidTimestamp).getTime();
+            return paidTime >= cutoff;
+        } catch (e) {
+            return false;
+        }
+    });
+};
+
+/**
+ * (★AI対応★) 簡易MarkdownリストをHTMLに変換
+ * @param {string} text 
+ * @returns {string}
+ */
+const parseMarkdownList = (text) => {
+    return text
+        .split('\n')
+        .map(line => {
+            line = line.trim();
+            if (line.startsWith('- [ ]')) {
+                // チェックボックス
+                return `<li style="list-style-type: none; margin-left: -20px;"><input type="checkbox" class="mr-2" disabled> ${line.substring(5).trim()}</li>`;
+            } else if (line.startsWith('- ') || line.startsWith('* ')) {
+                // 通常のリスト
+                return `<li>${line.substring(2).trim()}</li>`;
+            } else if (line.trim().length > 0) {
+                // リスト以外の行 (Pタグ)
+                return `<p>${line}</p>`;
+            }
+            return '';
+        })
+        .join('');
 };
 
 // ===================================
@@ -407,16 +466,59 @@ const saveStockAdjustment = async () => {
     }
 };
 
+/**
+ * (★AI対応★) AI発注サジェストモーダルを開く
+ */
+const handleAiRestockSuggestion = async () => {
+    if (!aiSuggestionModal || !aiSuggestionContent) return;
 
-// (★変更★) --- Firestore リアルタイムリスナー ---
+    // モーダルを開き、ローディング表示
+    openModal(aiSuggestionModal);
+    aiSuggestionContent.innerHTML = `
+        <p class="text-slate-500 text-center py-8">
+            <i class="fa-solid fa-spinner fa-spin fa-2x"></i><br>
+            AIが直近1週間の売上データと在庫を分析中です...
+        </p>`;
+
+    // データを準備
+    const recentSlips = getRecentSlips(7); // 直近7日間の伝票
+    
+    try {
+        const suggestionMarkdown = await getRestockSuggestion(inventoryItems, recentSlips);
+        
+        // Markdownを簡易HTMLに変換して表示
+        aiSuggestionContent.innerHTML = parseMarkdownList(suggestionMarkdown);
+
+    } catch (error) {
+        console.error("AI restock suggestion error:", error);
+        aiSuggestionContent.innerHTML = `<p class="text-red-500 text-center py-8">分析に失敗しました。(${error.message})</p>`;
+    }
+};
+
+
+/**
+ * (★AI対応★) --- Firestore リアルタイムリスナー ---
+ */
 document.addEventListener('firebaseReady', (e) => {
     
-    // (★変更★) 在庫コレクションの参照を取得
+    // (★AI対応★) 在庫と伝票の参照を取得
     const { 
-        inventoryItemsCollectionRef: iRef
+        inventoryItemsCollectionRef: iRef,
+        slipsCollectionRef: sRef // (★AI対応★)
     } = e.detail;
 
     inventoryItemsCollectionRef = iRef;
+    slipsCollectionRef = sRef; // (★AI対応★)
+
+    let inventoryLoaded = false;
+    let slipsLoaded = false;
+
+    const checkAndRenderAll = () => {
+        if (inventoryLoaded && slipsLoaded) {
+            console.log("Inventory and Slips data loaded. Rendering UI for inventory.js");
+            renderInventoryList();
+        }
+    };
 
     // (★新規★) 在庫品目リストのリッスン
     onSnapshot(inventoryItemsCollectionRef, (querySnapshot) => {
@@ -425,15 +527,31 @@ document.addEventListener('firebaseReady', (e) => {
             inventoryItems.push({ ...doc.data(), id: doc.id });
         });
         console.log("Inventory items loaded: ", inventoryItems.length);
-        
-        // UIを描画
-        renderInventoryList();
+        inventoryLoaded = true;
+        checkAndRenderAll();
         
     }, (error) => {
         console.error("Error listening to inventory items: ", error);
         if (inventoryListLoading) {
             inventoryListLoading.parentElement.textContent = "在庫データの読み込みに失敗しました。";
         }
+        inventoryLoaded = true; // エラーでも続行
+        checkAndRenderAll();
+    });
+    
+    // (★AI対応★) 伝票のリッスン
+    onSnapshot(slipsCollectionRef, (querySnapshot) => {
+        slips = [];
+        querySnapshot.forEach((doc) => {
+            slips.push({ ...doc.data(), slipId: doc.id });
+        });
+        console.log("Slips loaded (for AI analysis): ", slips.length);
+        slipsLoaded = true;
+        checkAndRenderAll();
+    }, (error) => {
+        console.error("Error listening to slips: ", error);
+        slipsLoaded = true; // エラーでも続行
+        checkAndRenderAll();
     });
 });
 
@@ -475,6 +593,11 @@ document.addEventListener('DOMContentLoaded', () => {
     adjustmentError = document.getElementById('adjustment-error');
     saveAdjustmentBtn = document.getElementById('save-adjustment-btn');
     
+    // (★AI対応★)
+    aiRestockBtn = document.getElementById('ai-restock-btn');
+    aiSuggestionModal = document.getElementById('ai-suggestion-modal');
+    aiSuggestionContent = document.getElementById('ai-suggestion-content');
+    
     modalCloseBtns = document.querySelectorAll('.modal-close-btn');
 
     // ===== イベントリスナーの設定 =====
@@ -490,6 +613,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (addInventoryItemBtn) {
         addInventoryItemBtn.addEventListener('click', () => {
             openInventoryEditorModal(null);
+        });
+    }
+    
+    // (★AI対応★) AIサジェストボタン
+    if (aiRestockBtn) {
+        aiRestockBtn.addEventListener('click', () => {
+            handleAiRestockSuggestion();
         });
     }
 
