@@ -143,17 +143,13 @@ const loadCastInfo = async () => {
  * (★NFC対応★) Web NFC リーダーを初期化し、スキャンを開始する
  */
 const initializeNfcReader = async () => {
-    // (★修正★) isNfcInitialized チェックを削除 (複数回呼べるように)
     
     if (!('NDEFReader' in window)) {
         // (★NFC対応★) NFC非対応ブラウザ
         console.warn("Web NFC is not supported on this browser.");
-        if (nfcProcessingContainer) nfcProcessingContainer.classList.remove('hidden'); // (★修正★) 表示はする
-        if (nfcFeedback) nfcFeedback.textContent = "お使いのブラウザはNFC打刻に対応していません。"; // (★修正★) エラー表示
-        if (nfcIcon) nfcIcon.classList.remove('fa-spin');
-        // (★修正★) 手動ボタンは HTML 側で hidden になっているので、JSでの操作を削除
-        // if (attendanceActions) attendanceActions.classList.add('hidden');
-        // if (absentActions) absentActions.classList.add('hidden');
+        if (nfcProcessingContainer) nfcProcessingContainer.classList.remove('hidden'); 
+        if (nfcFeedback) nfcFeedback.textContent = "お使いのブラウザはNFC打刻に対応していません。"; 
+        if (nfcIcon) nfcIcon.classList.remove('nfc-blink', 'fa-spin'); // (★修正★) アニメーション停止
         return;
     }
     
@@ -161,21 +157,20 @@ const initializeNfcReader = async () => {
     isNfcInitialized = true;
     if (nfcProcessingContainer) nfcProcessingContainer.classList.remove('hidden');
     if (nfcFeedback) nfcFeedback.textContent = "NFCスキャン準備中...";
-    // (★修正★) 手動ボタンは HTML 側で hidden になっているので、JSでの操作を削除
-    // if (attendanceActions) attendanceActions.classList.add('hidden');
-    // if (absentActions) absentActions.classList.add('hidden');
+    if (nfcIcon) nfcIcon.classList.remove('fa-spin', 'nfc-blink');
 
     try {
         ndefReader = new NDEFReader();
         await ndefReader.scan();
         console.log("NFC Reader started.");
         nfcFeedback.textContent = "NFCタグをかざしてください";
-        nfcIcon.classList.add('fa-spin'); // スキャン中アニメーション
+        nfcIcon.classList.remove('fa-spin');
+        nfcIcon.classList.add('nfc-blink'); // (★修正★) 点滅アニメーション開始
 
         ndefReader.addEventListener("readingerror", () => {
             console.error("NFC reading error.");
             nfcFeedback.textContent = "NFCの読み取りに失敗しました";
-            nfcIcon.classList.remove('fa-spin');
+            nfcIcon.classList.remove('fa-spin', 'nfc-blink'); // (★修正★) アニメーション停止
         });
 
         ndefReader.addEventListener("reading", ({ serialNumber }) => {
@@ -186,8 +181,7 @@ const initializeNfcReader = async () => {
     } catch (error) {
         console.error("NFC scan initialization failed: ", error);
         nfcFeedback.textContent = "NFCの起動に失敗しました";
-        nfcIcon.classList.remove('fa-spin');
-        // (★修正★) 手動ボタンは HTML 側で hidden になっているので、JSでの操作を削除
+        nfcIcon.classList.remove('fa-spin', 'nfc-blink'); // (★修正★) アニメーション停止
     }
 };
 
@@ -231,10 +225,14 @@ const handleNfcReading = (serialNumber) => {
         nfcFeedback.textContent = "不明なNFCタグです";
     }
     
-    // フィードバックメッセージを3秒後にリセット
+    // (★修正★) フィードバックメッセージを3秒後にリセットし、点滅を再開
     setTimeout(() => {
         if (nfcFeedback.textContent !== "NFCタグをかざしてください") {
              nfcFeedback.textContent = "NFCタグをかざしてください";
+             // (★修正★) 処理中でない（fa-spinが付いていない）場合のみ点滅を再開
+             if (nfcIcon && !nfcIcon.classList.contains('fa-spin')) {
+                nfcIcon.classList.add('nfc-blink');
+             }
         }
     }, 3000);
 };
@@ -273,11 +271,8 @@ const updateUI = () => {
         // NFC非対応ブラウザ
         if (nfcProcessingContainer) nfcProcessingContainer.classList.remove('hidden');
         if (nfcFeedback) nfcFeedback.textContent = "NFC非対応ブラウザです";
-        if (nfcIcon) nfcIcon.classList.remove('fa-spin');
+        if (nfcIcon) nfcIcon.classList.remove('fa-spin', 'nfc-blink'); // (★修正★) アニメーション停止
     }
-    
-    // (★修正★) 手動ボタン(attendanceActions)と欠勤連絡(absentActions)は
-    // HTML側で永続的に hidden になっているため、JSでの操作は不要
 };
 
 /**
@@ -351,21 +346,20 @@ const loadTodaysAttendance = async () => {
  * (★NFC対応★) 出勤打刻処理
  * @param {'manual' | 'nfc'} source 呼び出し元
  */
-const handleClockIn = async (source = 'nfc') => { // (★修正★) デフォルトを nfc に
+const handleClockIn = async (source = 'nfc') => { 
     if (!todaysAttendanceDocRef) return;
     
     if (source === 'manual') {
-        // (★修正★) 手動ボタンは無くなったが、ロジックは残す
-        // clockInBtn.disabled = true;
-        // clockInBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 処理中...';
+        // 手動ボタンは無くなった
     } else {
         if (nfcFeedback) nfcFeedback.textContent = "出勤処理中...";
-        if (nfcIcon) nfcIcon.classList.add('fa-spin');
+        if (nfcIcon) nfcIcon.classList.remove('nfc-blink'); // (★修正★) 点滅を停止
+        if (nfcIcon) nfcIcon.classList.add('fa-spin'); // (★修正★) 回転を開始
     }
     
     const now = new Date();
     
-    const newStatus = 'clocked_in'; // (★簡易実装★)
+    const newStatus = 'clocked_in'; 
     
     const attendanceData = {
         castId: currentCastId,
@@ -380,23 +374,22 @@ const handleClockIn = async (source = 'nfc') => { // (★修正★) デフォル
     try {
         await setDoc(todaysAttendanceDocRef, attendanceData, { merge: true });
         // 成功
-        todaysAttendanceData = attendanceData; // ローカルを更新
-        updateUI(); // UIを更新
+        todaysAttendanceData = attendanceData; 
+        updateUI(); 
         
         if (source === 'nfc') {
             if (nfcFeedback) nfcFeedback.textContent = "出勤打刻が完了しました";
-            if (nfcIcon) nfcIcon.classList.remove('fa-spin');
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); // (★修正★) 回転を停止
         }
         
     } catch (error) {
         console.error("Error clocking in: ", error);
         if (source === 'manual') {
             alert("出勤打刻に失敗しました。");
-            // clockInBtn.disabled = false;
-            // clockInBtn.innerHTML = '<i class="fa-solid fa-right-to-bracket mr-3"></i> 出勤';
         } else {
             if (nfcFeedback) nfcFeedback.textContent = "エラー: 出勤打刻に失敗";
-            if (nfcIcon) nfcIcon.classList.remove('fa-spin');
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); // (★修正★) 回転を停止
+            if (nfcIcon) nfcIcon.classList.add('nfc-blink'); // (★修正★) エラー時は点滅に戻す
         }
     }
 };
@@ -405,19 +398,15 @@ const handleClockIn = async (source = 'nfc') => { // (★修正★) デフォル
  * (★NFC対応★) 退勤打刻処理
  * @param {'manual' | 'nfc'} source 呼び出し元
  */
-const handleClockOut = async (source = 'nfc') => { // (★修正★) デフォルトを nfc に
+const handleClockOut = async (source = 'nfc') => { 
     if (!todaysAttendanceDocRef) return;
     
     if (source === 'manual') {
-        // (★修正★) 手動ボタンは無くなったが、ロジックは残す
-        // if (!confirm("退勤しますか？\n(※ 退勤後は注文操作などができなくなります)")) {
-        //     return;
-        // }
-        // clockOutBtn.disabled = true;
-        // clockOutBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 処理中...';
+        // 手動ボタンは無くなった
     } else {
         if (nfcFeedback) nfcFeedback.textContent = "退勤処理中...";
-        if (nfcIcon) nfcIcon.classList.add('fa-spin');
+        if (nfcIcon) nfcIcon.classList.remove('nfc-blink'); // (★修正★) 点滅を停止
+        if (nfcIcon) nfcIcon.classList.add('fa-spin'); // (★修正★) 回転を開始
     }
     
     const now = new Date();
@@ -431,23 +420,22 @@ const handleClockOut = async (source = 'nfc') => { // (★修正★) デフォ�
     try {
         await setDoc(todaysAttendanceDocRef, attendanceData, { merge: true });
         // 成功
-        todaysAttendanceData = { ...todaysAttendanceData, ...attendanceData }; // ローカルを更新
-        updateUI(); // UIを更新
+        todaysAttendanceData = { ...todaysAttendanceData, ...attendanceData }; 
+        updateUI(); 
         
         if (source === 'nfc') {
             if (nfcFeedback) nfcFeedback.textContent = "退勤打刻が完了しました";
-            if (nfcIcon) nfcIcon.classList.remove('fa-spin');
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); // (★修正★) 回転を停止
         }
 
     } catch (error) {
         console.error("Error clocking out: ", error);
         if (source === 'manual') {
             alert("退勤打刻に失敗しました。");
-            // clockOutBtn.disabled = false;
-            // clockOutBtn.innerHTML = '<i class="fa-solid fa-right-from-bracket mr-3"></i> 退勤';
         } else {
             if (nfcFeedback) nfcFeedback.textContent = "エラー: 退勤打刻に失敗";
-            if (nfcIcon) nfcIcon.classList.remove('fa-spin');
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); // (★修正★) 回転を停止
+            if (nfcIcon) nfcIcon.classList.add('nfc-blink'); // (★修正★) エラー時は点滅に戻す
         }
     }
 };
@@ -560,15 +548,4 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // (★修正★) 手動ボタンはHTML側で hidden になっているため、リスナーを削除
-    /*
-    if (clockInBtn) {
-        clockInBtn.addEventListener('click', () => handleClockIn('manual'));
-    }
-    if (clockOutBtn) {
-        clockOutBtn.addEventListener('click', () => handleClockOut('manual'));
-    }
-    if (reportAbsenceBtn) {
-        reportAbsenceBtn.addEventListener('click', handleReportAbsence);
-    }
-    */
 });
