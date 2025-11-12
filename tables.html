@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Night POS - テーブル管理</title>
+    <title>NPS.AI - テーブル管理</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,11 +33,9 @@
                 </h2>
 
                 <div class="hidden lg:flex items-center space-x-4">
-                    <div class="relative">
-                        <i class="fa-solid fa-store absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                        <select id="store-selector" class="pl-10 pr-4 py-2 text-sm font-medium border border-slate-300 rounded-lg bg-white hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="store1">新宿本店</option>
-                        </select>
+                    <div class="flex items-center space-x-2 px-3 py-2 rounded-lg bg-slate-100 border border-slate-200">
+                        <i class="fa-solid fa-store text-slate-500"></i>
+                        <span id="header-store-name" class="text-sm font-semibold text-slate-700">loading...</span>
                     </div>
                     <button class="text-slate-500 hover:text-blue-600">
                         <i class="fa-regular fa-bell fa-lg"></i>
@@ -46,7 +44,6 @@
                 
                 <div class="lg:hidden w-8"></div>
             </header>
-
             <div class="flex-1 overflow-y-auto p-4 lg:p-8">
                 
                 <div id="tables">
@@ -60,7 +57,7 @@
                         </div>
                 </div>
 
-                </div>
+            </div>
         </main>
     </div>
 
@@ -288,7 +285,7 @@
                         <span class="text-slate-600">サービス料 (<span id="slip-service-rate">0</span>%)</span>
                         <span id="slip-service-charge">¥0</span>
                     </div>
-                    <div class_=("flex justify-between")>
+                    <div class="flex justify-between">
                         <span class="text-slate-600">消費税 (<span id="slip-tax-rate">0</span>%)</span>
                         <span id="slip-tax">¥0</span>
                     </div>
@@ -302,7 +299,7 @@
                     </div>
                 </div>
                 
-                <div class_("text-center text-xs text-slate-500 mt-6")>
+                <div class("text-center text-xs text-slate-500 mt-6")>
                     <p>※ この伝票は仮伝票です。</p>
                     <p>お会計はスタッフをお呼びください。</p>
                 </div>
@@ -425,47 +422,72 @@
 
     <div id="receipt-modal" class="modal-backdrop">
         <div class="modal-content w-full max-w-md">
-            <div class="flex justify-between items-center p-5 border-b">
+            <div class="flex justify-between items-center p-5 border-b non-printable">
                 <h3 class="text-xl font-semibold">領収書</h3>
                 <button class="modal-close-btn text-slate-400 hover:text-slate-600">
                     <i class="fa-solid fa-xmark fa-xl"></i>
                 </button>
             </div>
             
-            <div class="p-8 bg-white" id="receipt-content">
-                <div class="text-center mb-6">
-                    <h2 class="text-2xl font-bold mb-2">領 収 書</h2>
-                    <p class="text-sm text-slate-500">発行日: <span id="receipt-date">2025/10/29</span></p>
-                </div>
-                
-                <div class="mb-4">
-                    <input type="text" value="鈴木様" class="w-full text-lg border-b-2 border-dotted border-slate-400 focus:outline-none pb-1" id="receipt-customer-name">
-                    <span class="text-lg font-medium ml-2">御中</span>
-                </div>
-                
-                <div class="text-center my-6 border-b-2 border-t-2 border-double border-slate-900 py-4">
-                    <p class="text-4xl font-bold tracking-wider" id="receipt-total">¥36,960 -</p>
-                </div>
-                
-                <div class="mb-6">
-                    <label class="text-xs text-slate-500">但し</label>
-                    <input type="text" value="お飲食代として" class="w-full text-sm border-b border-dotted border-slate-400 focus:outline-none pt-1" id="receipt-description">
-                </div>
+            <div class="p-6 bg-white" id="receipt-content-wrapper">
+                <form id="receipt-form" class="space-y-4 non-printable">
+                    <div>
+                        <label for="receipt-customer-name-input" class="text-sm font-semibold text-slate-600">宛名</label>
+                        <input type="text" id="receipt-customer-name-input" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
+                    </div>
+                    <div>
+                        <label for="receipt-description-input" class="text-sm font-semibold text-slate-600">但し書き</label>
+                        <input type="text" id="receipt-description-input" value="お飲食代として" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <label class="flex items-center space-x-2">
+                            <input type="checkbox" id="receipt-option-date" class="rounded h-5 w-5 text-blue-600" checked>
+                            <span>日付を記載</span>
+                        </label>
+                        <label class="flex items-center space-x-2">
+                            <input type="checkbox" id="receipt-option-amount" class="rounded h-5 w-5 text-blue-600" checked>
+                            <span>金額を記載 ("¥---" にしない)</span>
+                        </label>
+                    </div>
+                </form>
 
-                <div class="text-left text-sm">
-                    <p class="font-semibold" id="receipt-store-name">Night POS 新宿本店</p>
-                    <p id="receipt-store-zip" class="hidden">〒160-0021</p>
-                    <p id="receipt-store-address">東京都新宿区歌舞伎町1-1-1</p>
-                    <p id="receipt-store-tel">TEL: 03-0000-0000</p>
-                    <p class="mt-2" id="receipt-staff">担当: 山田</p>
-                </div>
-                
-                <div class="text-right text-xs text-slate-400 mt-2" id="receipt-invoice-number">
-                    インボイス登録番号: T1234567890
+                <div class="mt-6 border border-dashed border-slate-400 p-4" id="receipt-preview-area">
+                    <div class="p-4 bg-white" id="receipt-content">
+                        <div class="text-center mb-6">
+                            <h2 class="text-2xl font-bold mb-2">領 収 書</h2>
+                            <p class="text-sm text-slate-500" id="receipt-date-display">発行日: 2025/10/29</p>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <p id="receipt-customer-name-display" class="w-full text-lg border-b-2 border-dotted border-slate-400 pb-1 min-h-[30px]"></p>
+                            <span class="text-lg font-medium ml-2">御中</span>
+                        </div>
+                        
+                        <div class="text-center my-6 border-b-2 border-t-2 border-double border-slate-900 py-4">
+                            <p class="text-4xl font-bold tracking-wider" id="receipt-total-display">¥36,960 -</p>
+                        </div>
+                        
+                        <div class="mb-6">
+                            <label class="text-xs text-slate-500">但し</label>
+                            <p id="receipt-description-display" class="w-full text-sm border-b border-dotted border-slate-400 pt-1 min-h-[24px]">お飲食代として</p>
+                        </div>
+        
+                        <div class="text-left text-sm">
+                            <p class="font-semibold" id="receipt-store-name">Night POS 新宿本店</p>
+                            <p id="receipt-store-zip" class="hidden">〒160-0021</p>
+                            <p id="receipt-store-address">東京都新宿区歌舞伎町1-1-1</p>
+                            <p id="receipt-store-tel">TEL: 03-0000-0000</p>
+                            <p class="mt-2" id="receipt-staff">担当: 山田</p>
+                        </div>
+                        
+                        <div class="text-right text-xs text-slate-400 mt-2" id="receipt-invoice-number">
+                            インボイス登録番号: T1234567890
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center p-5 border-t bg-slate-50 rounded-b-lg space-x-3 gap-2">
+            <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center p-5 border-t bg-slate-50 rounded-b-lg space-x-3 gap-2 non-printable">
                 <button id="reopen-slip-btn" class="px-4 py-2 rounded-lg bg-yellow-500 text-white font-semibold hover:bg-yellow-600">
                     <i class="fa-solid fa-undo mr-2"></i>伝票を復活させる
                 </button>
@@ -525,5 +547,7 @@
         </div>
     </div>
 
-    <script type="module" src="tables.js"></script> </body>
+    <script type="module" src="sidebar.js"></script>
+    <script type="module" src="tables.js"></script>
+</body>
 </html>

@@ -7,7 +7,8 @@ import {
     auth, 
     onSnapshot, 
     setDoc, 
-    doc 
+    doc,
+    serverTimestamp // (★変更★) serverTimestamp をインポート
 } from './firebase-init.js';
 
 // (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
@@ -47,6 +48,10 @@ let modalCloseBtns, // (★注意★) settings.html にモーダルは無いた�
     taxRateInput, serviceRateInput,
     dayChangeTimeInput,
     
+    // (★要望6★) 領収書設定
+    receiptStoreNameInput, receiptAddressInput, receiptTelInput,
+    receiptInvoiceNumberInput, receiptDefaultDescriptionInput,
+    
     // (★新規★) 端数処理
     settingRoundingType, settingRoundingUnit,
     
@@ -72,7 +77,7 @@ let modalCloseBtns, // (★注意★) settings.html にモーダルは無いた�
     // settingSideSalesValue,
     // settingSideCountNomination,
     
-    storeSelector; // (★動的表示 追加★)
+    headerStoreName; // (★要望4★) storeSelector から変更
 
 // (★削除★) 伝票関連モーダルDOM (newSlipConfirmModal, slipSelectionModal, etc...) をすべて削除
 
@@ -197,32 +202,47 @@ const handleNfcScan = async (targetType) => {
 
 
 /**
- * (★NFC対応★) 設定フォームに現在の値を読み込む
+ * (★要望6★) 設定フォームに現在の値を読み込む
  */
 const loadSettingsToForm = () => {
     if (!settings) return; 
 
+    const storeInfo = settings.storeInfo || {};
+    const rates = settings.rates || { tax: 0.1, service: 0.2 };
+    const rounding = settings.rounding || { type: 'none', unit: 1 };
+    const nfcTagIds = settings.nfcTagIds || { clockIn: null, clockOut: null };
+    const receiptSettings = settings.receiptSettings || {}; // (★要望6★)
+
     // 店舗情報
-    if (storeNameInput) storeNameInput.value = settings.storeInfo.name;
-    if (storeAddressInput) storeAddressInput.value = settings.storeInfo.address;
-    if (storeTelInput) storeTelInput.value = settings.storeInfo.tel;
+    if (storeNameInput) storeNameInput.value = storeInfo.name || '';
+    if (storeAddressInput) storeAddressInput.value = storeInfo.address || '';
+    if (storeTelInput) storeTelInput.value = storeInfo.tel || '';
 
     // 税率・サービス料
-    if (taxRateInput) taxRateInput.value = settings.rates.tax * 100;
-    if (serviceRateInput) serviceRateInput.value = settings.rates.service * 100;
+    if (taxRateInput) taxRateInput.value = (rates.tax || 0) * 100;
+    if (serviceRateInput) serviceRateInput.value = (rates.service || 0) * 100;
     
     // 営業日付
-    if (dayChangeTimeInput) dayChangeTimeInput.value = settings.dayChangeTime; 
+    if (dayChangeTimeInput) dayChangeTimeInput.value = settings.dayChangeTime || '05:00'; 
     
     // (★新規★) 端数処理
-    const rounding = settings.rounding || { type: 'none', unit: 1 };
     if (settingRoundingType) settingRoundingType.value = rounding.type;
     if (settingRoundingUnit) settingRoundingUnit.value = rounding.unit;
     
     // (★NFC対応★) NFCタグID
-    const nfcTagIds = settings.nfcTagIds || { clockIn: null, clockOut: null };
     if (nfcTagIdClockIn) nfcTagIdClockIn.value = nfcTagIds.clockIn || '';
     if (nfcTagIdClockOut) nfcTagIdClockOut.value = nfcTagIds.clockOut || '';
+
+    // (★要望6★) 領収書設定
+    if (receiptStoreNameInput) receiptStoreNameInput.value = receiptSettings.storeName || storeInfo.name || '';
+    if (receiptAddressInput) {
+        // (★修正★) HTML <br> タグを textarea の改行(\n)に変換
+        const address = receiptSettings.address || (storeInfo.address ? `〒${storeInfo.zip || ''}\n${storeInfo.address}` : '');
+        receiptAddressInput.value = address.replace(/<br\s*\/?>/gi, '\n');
+    }
+    if (receiptTelInput) receiptTelInput.value = receiptSettings.tel || storeInfo.tel || '';
+    if (receiptInvoiceNumberInput) receiptInvoiceNumberInput.value = receiptSettings.invoiceNumber || '';
+    if (receiptDefaultDescriptionInput) receiptDefaultDescriptionInput.value = receiptSettings.defaultDescription || 'お飲食代として';
 
 
     // 各リストの描画
@@ -239,7 +259,7 @@ const loadSettingsToForm = () => {
 
 
 /**
- * (★NFC対応★) フォームから設定を保存する
+ * (★要望6★) フォームから設定を保存する
  */
 const saveSettingsFromForm = async () => { 
     if (!settings || !settingsRef) return; 
@@ -249,7 +269,7 @@ const saveSettingsFromForm = async () => {
         name: storeNameInput.value.trim(),
         address: storeAddressInput.value.trim(),
         tel: storeTelInput.value.trim(),
-        zip: settings.storeInfo.zip || "" 
+        zip: settings.storeInfo.zip || "" // Zipはここでは編集しない
     };
 
     // --- 税率 ---
@@ -290,6 +310,16 @@ const saveSettingsFromForm = async () => {
         clockIn: nfcTagIdClockIn.value.trim() || null,
         clockOut: nfcTagIdClockOut.value.trim() || null,
     };
+    
+    // (★要望6★) --- 領収書設定 ---
+    const newReceiptSettings = {
+        storeName: receiptStoreNameInput.value.trim(),
+        // (★修正★) textarea の改行(\n)を HTML <br> タグに変換
+        address: receiptAddressInput.value.trim().replace(/\n/g, '<br>'),
+        tel: receiptTelInput.value.trim(),
+        invoiceNumber: receiptInvoiceNumberInput.value.trim(),
+        defaultDescription: receiptDefaultDescriptionInput.value.trim()
+    };
 
 
     // (★削除★) --- 成績反映設定 ---
@@ -301,6 +331,7 @@ const saveSettingsFromForm = async () => {
     settings.dayChangeTime = newDayChangeTime;
     settings.rounding = newRounding; // (★新規★)
     settings.nfcTagIds = newNfcTagIds; // (★NFC対応★)
+    settings.receiptSettings = newReceiptSettings; // (★要望6★)
     // (★削除★) settings.performanceSettings = newPerformanceSettings;
     
     // (★変更★) Firestoreに保存
@@ -516,25 +547,22 @@ const deleteTagSetting = async (tagId) => {
 // (★削除★) キャスト設定セクション (cast-settings.js に移動)
 // (★削除★) 伝票作成関連のロジック (createNewSlip, renderSlipSelectionModal, renderNewSlipConfirmModal)
 
-// (★動的表示 追加★)
+// (★要望4, 5★)
 /**
- * (★新規★) ヘッダーのストアセレクターを描画する
+ * (★新規★) ヘッダーのストア名をレンダリングする
  */
-const renderStoreSelector = () => {
-    if (!storeSelector || !settings || !currentStoreId) return;
+const renderHeaderStoreName = () => {
+    if (!headerStoreName || !settings || !currentStoreId) return;
 
     const currentStoreName = settings.storeInfo.name || "店舗";
     
-    // (★変更★) 現在は複数店舗の切り替えをサポートしていないため、
-    // (★変更★) 現在の店舗名のみを表示し、ドロップダウンを無効化する
-    storeSelector.innerHTML = `<option value="${currentStoreId}">${currentStoreName}</option>`;
-    storeSelector.value = currentStoreId;
-    storeSelector.disabled = true;
+    // (★変更★) loading... を店舗名で上書き
+    headerStoreName.textContent = currentStoreName;
 };
 
 
 /**
- * (★報酬削除★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
+ * (★要望6★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
  */
 const getDefaultSettings = () => {
     return {
@@ -555,6 +583,14 @@ const getDefaultSettings = () => {
         rounding: { type: 'none', unit: 1 }, // (★新規★)
         dayChangeTime: "05:00",
         nfcTagIds: { clockIn: null, clockOut: null }, // (★NFC対応★)
+        // (★要望6★) 領収書設定
+        receiptSettings: {
+            storeName: "Night POS",
+            address: "〒160-0021<br>東京都新宿区歌舞伎町1-1-1",
+            tel: "TEL: 03-0000-0000",
+            invoiceNumber: "T1234567890",
+            defaultDescription: "お飲食代として"
+        },
         // (★削除★) performanceSettings を削除
         ranking: { period: 'monthly', type: 'nominations' }
     };
@@ -592,7 +628,7 @@ document.addEventListener('firebaseReady', (e) => {
         if (settingsLoaded && slipsLoaded) {
             console.log("All data loaded. Rendering UI for settings.js");
             loadSettingsToForm();
-            renderStoreSelector(); // (★動的表示 追加★)
+            renderHeaderStoreName(); // (★要望4★)
             // (★削除★) updateModalCommonInfo();
         }
     };
@@ -648,6 +684,13 @@ document.addEventListener('DOMContentLoaded', () => {
     serviceRateInput = document.getElementById('service-rate');
     dayChangeTimeInput = document.getElementById('day-change-time'); 
     
+    // (★要望6★) 領収書設定
+    receiptStoreNameInput = document.getElementById('receipt-store-name');
+    receiptAddressInput = document.getElementById('receipt-address');
+    receiptTelInput = document.getElementById('receipt-tel');
+    receiptInvoiceNumberInput = document.getElementById('receipt-invoice-number');
+    receiptDefaultDescriptionInput = document.getElementById('receipt-default-description');
+    
     // (★新規★) 端数処理
     settingRoundingType = document.getElementById('setting-rounding-type');
     settingRoundingUnit = document.getElementById('setting-rounding-unit');
@@ -681,7 +724,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // performanceCastItemsContainer = document.getElementById('performance-cast-items-container');
     // ...
     
-    storeSelector = document.getElementById('store-selector'); // (★動的表示 追加★)
+    headerStoreName = document.getElementById('header-store-name'); // (★要望4★)
 
     // (★削除★) 伝票関連モーダルDOM
     // ...

@@ -30,6 +30,7 @@ const getUUID = () => {
 };
 
 // 在庫品目リスト
+let settings = null; // (★要望4★) ヘッダー表示のため追加
 let inventoryItems = [];
 let slips = []; // (★AI対応★) 直近の伝票データを保持
 // 現在編集中の品目ID
@@ -38,8 +39,10 @@ let currentEditingItemId = null;
 let currentAdjustmentType = 'add'; // 'add', 'subtract', 'set'
 
 // (★新規★) 参照(Ref)はグローバル変数として保持
+let settingsRef; // (★要望4★) ヘッダー表示のため追加
 let inventoryItemsCollectionRef;
 let slipsCollectionRef; // (★AI対応★)
+let currentStoreId; // (★要望4★) ヘッダー表示のため追加
 
 
 // ===== DOM要素 =====
@@ -64,7 +67,9 @@ let pageTitle,
     // (★AI対応★) AIサジェストモーダル
     aiRestockBtn, aiSuggestionModal, aiSuggestionContent,
     
-    modalCloseBtns;
+    modalCloseBtns,
+    
+    headerStoreName; // (★要望4★) storeSelector から変更
 
 
 // --- 関数 ---
@@ -446,7 +451,7 @@ const saveStockAdjustment = async () => {
     }
     
     // (★重要★) 
-    // 将来的には、この調整履歴を別コレクション (inventoryLogs) に
+    // 将来的にには、この調整履歴を別コレクション (inventoryLogs) に
     // 保存するロジックを追加する。
     // await addDoc(collection(db, "stores", currentStoreId, "inventoryLogs"), { ... });
 
@@ -495,6 +500,19 @@ const handleAiRestockSuggestion = async () => {
     }
 };
 
+// (★要望4, 5★)
+/**
+ * (★新規★) ヘッダーのストア名をレンダリングする
+ */
+const renderHeaderStoreName = () => {
+    if (!headerStoreName || !settings || !currentStoreId) return;
+
+    const currentStoreName = settings.storeInfo.name || "店舗";
+    
+    // (★変更★) loading... を店舗名で上書き
+    headerStoreName.textContent = currentStoreName;
+};
+
 
 /**
  * (★AI対応★) --- Firestore リアルタイムリスナー ---
@@ -502,23 +520,47 @@ const handleAiRestockSuggestion = async () => {
 document.addEventListener('firebaseReady', (e) => {
     
     // (★AI対応★) 在庫と伝票の参照を取得
+    // (★要望4★) settingsRef, currentStoreId も追加
     const { 
+        settingsRef: sRef,
         inventoryItemsCollectionRef: iRef,
-        slipsCollectionRef: sRef // (★AI対応★)
+        slipsCollectionRef: sRef_slips, // (★修正★) sRef が重複するため変更
+        currentStoreId: csId
     } = e.detail;
 
+    settingsRef = sRef; // (★要望4★)
     inventoryItemsCollectionRef = iRef;
-    slipsCollectionRef = sRef; // (★AI対応★)
+    slipsCollectionRef = sRef_slips; // (★AI対応★)
+    currentStoreId = csId; // (★要望4★)
 
+    let settingsLoaded = false; // (★要望4★)
     let inventoryLoaded = false;
     let slipsLoaded = false;
 
     const checkAndRenderAll = () => {
-        if (inventoryLoaded && slipsLoaded) {
-            console.log("Inventory and Slips data loaded. Rendering UI for inventory.js");
+        // (★要望4★) settingsLoaded も条件に追加
+        if (settingsLoaded && inventoryLoaded && slipsLoaded) {
+            console.log("Settings, Inventory and Slips data loaded. Rendering UI for inventory.js");
             renderInventoryList();
+            renderHeaderStoreName(); // (★要望4★)
         }
     };
+
+    // (★要望4★) Settings のスナップショット
+    onSnapshot(settingsRef, async (docSnap) => {
+        if (docSnap.exists()) {
+            settings = docSnap.data();
+        } else {
+            console.warn("No settings document found. Using fallback.");
+            settings = { storeInfo: { name: "店舗" } };
+        }
+        settingsLoaded = true;
+        checkAndRenderAll();
+    }, (error) => {
+        console.error("Error listening to settings: ", error);
+        settingsLoaded = true; // エラーでも続行
+        checkAndRenderAll();
+    });
 
     // (★新規★) 在庫品目リストのリッスン
     onSnapshot(inventoryItemsCollectionRef, (querySnapshot) => {
@@ -599,6 +641,8 @@ document.addEventListener('DOMContentLoaded', () => {
     aiSuggestionContent = document.getElementById('ai-suggestion-content');
     
     modalCloseBtns = document.querySelectorAll('.modal-close-btn');
+
+    headerStoreName = document.getElementById('header-store-name'); // (★要望4★)
 
     // ===== イベントリスナーの設定 =====
 

@@ -33,9 +33,10 @@ const createSidebarHTML = (currentPage) => {
 
     // サイドバー全体のHTML
     // (★レスポンシブ対応★) ロゴ部分のflexコンテナを変更
+    // (★要望2★) ロゴテキストを "NPS.AI" に変更
     return `
         <div class="h-16 flex items-center justify-between border-b px-4">
-            <h1 class="text-2xl font-bold text-blue-600">Night POS</h1>
+            <h1 class="text-2xl font-bold text-blue-600">NPS.AI</h1>
             <button id="sidebar-close-btn" class="lg:hidden text-slate-500 hover:text-slate-800">
                 <i class="fa-solid fa-xmark fa-xl"></i>
             </button>

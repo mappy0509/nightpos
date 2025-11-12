@@ -73,20 +73,33 @@ let /* navLinks, (★削除★) */ pageTitle, dashboardSlips,
     checkoutPaymentTotalEl, checkoutShortageEl, checkoutChangeEl, slipSubtotalEl,
     slipServiceChargeEl, slipTaxEl, slipPaidAmountEl, slipTotalEl, castRankingList,
     rankingPeriodSelect, rankingTypeBtns,
-    // (新規) HTML側で追加したID
-    summaryTotalSales, summaryTableUsage, summaryAvgSales, summaryCastCount,
+    
+    // (★要望1, 4, 5★) HTML側で変更したID
+    summaryTotalSales, summarySalesComparison,
+    summaryTableRate, summaryTableDetail,
+    summaryAvgSpend, summaryAvgSpendComparison,
+    summaryCastNum, summaryCastTrial,
+
     slipStoreName, slipStoreTel, slipServiceRate, slipTaxRate,
     checkoutStoreName, checkoutStoreTel, checkoutServiceRate, checkoutTaxRate,
     receiptStoreName, receiptAddress, receiptTel,
+    
     // (★新規★) 割引機能
     discountAmountInput, discountTypeSelect,
     // (★新規★) 伝票作成時間
     newSlipStartTimeInput, newSlipTimeError,
-    storeSelector, // (★動的表示 追加★)
     
+    headerStoreName, // (★要望4★) storeSelector から変更
+
     // (★新規★) 転卓モーダル
     tableTransferModal, openTransferModalBtn, transferSlipNumber, 
-    transferTableGrid, transferError;
+    transferTableGrid, transferError,
+    
+    // (★要望5★) 領収書モーダルの新UI
+    receiptForm, receiptCustomerNameInput, receiptDescriptionInput,
+    receiptOptionDate, receiptOptionAmount,
+    receiptPreviewArea, receiptDateDisplay, receiptCustomerNameDisplay,
+    receiptTotalDisplay, receiptDescriptionDisplay, printReceiptBtn;
 
 
 // --- 関数 ---
@@ -326,61 +339,65 @@ const getSlipsForPeriod = (period, baseDate) => {
 
 
 /**
- * (変更) ダッシュボードサマリーを更新する
+ * (★要望1★ 変更) ダッシュボードサマリーを更新する
  */
 const renderDashboardSummary = () => {
-    // (★変更★) settings, attendances を参照
-    if (!settings || !attendances) return; 
+    // (★変更★) settings, attendances, slips が必要
+    if (!settings || !attendances || !slips) return; 
     
-    // (★修正★) 「本日」の営業日データを取得
-    const { paidSlips } = getSlipsForPeriod('daily', new Date());
-
-    // 1. 本日の総売上
-    // (★修正★) paidSlips は既にフィルタリング済み
+    // --- (★要望1★) 総売上 & 平均客単価 (注文ベース) ---
+    const todayBusinessStart = getBusinessDayStart(new Date());
+    const todayBusinessEnd = getBusinessDayEnd(todayBusinessStart);
+    
+    // 1. 本日の「未会計」伝票 (active, checkout) を取得
+    const activeSlipsToday = slips.filter(slip => {
+        if (slip.status !== 'active' && slip.status !== 'checkout') return false;
+        if (!slip.startTime) return false;
+        try {
+            const startTimeMs = new Date(slip.startTime).getTime();
+            return startTimeMs >= todayBusinessStart.getTime() && startTimeMs <= todayBusinessEnd.getTime();
+        } catch (e) {
+            return false;
+        }
+    });
+    
+    // 2. 総売上 (注文ベース)
     let totalSales = 0;
-    paidSlips.forEach(slip => {
-        // (★変更★) 伝票の paidAmount (割引後) を集計する
-        totalSales += slip.paidAmount || 0;
+    activeSlipsToday.forEach(slip => {
+        totalSales += calculateSlipTotal(slip); // (割引前の合計)
     });
     if (summaryTotalSales) summaryTotalSales.textContent = formatCurrency(totalSales);
+    if (summarySalesComparison) summarySalesComparison.textContent = "（現在の注文ベース）";
 
-    // 2. テーブル稼働率
+    // 3. 平均客単価 (注文ベース)
+    const activeSlipCount = activeSlipsToday.length;
+    const avgSales = activeSlipCount > 0 ? totalSales / activeSlipCount : 0;
+    if (summaryAvgSpend) summaryAvgSpend.textContent = formatCurrency(Math.round(avgSales));
+    if (summaryAvgSpendComparison) summaryAvgSpendComparison.textContent = "（現在の注文ベース）";
+
+
+    // --- (★要望1★) テーブル稼働率 ---
+    // (★修正★) getActiveSlipCount は全期間の未会計伝票を見るため、これで正しい
     const activeTables = settings.tables.filter(t => getActiveSlipCount(t.id) > 0).length;
     const totalTables = settings.tables.length;
     const usageRate = totalTables > 0 ? (activeTables / totalTables) * 100 : 0;
-    if (summaryTableUsage) {
-        // (★修正★) index.html の構造に合わせてセレクタを修正
-        const rateEl = summaryTableUsage.querySelector('p.text-3xl');
-        const detailEl = summaryTableUsage.querySelector('p.text-sm');
-        if (rateEl) rateEl.textContent = `${Math.round(usageRate)}%`;
-        if (detailEl) detailEl.textContent = `${activeTables} / ${totalTables} 卓`;
-    }
-
-    // 3. 平均客単価
-    const avgSales = paidSlips.length > 0 ? totalSales / paidSlips.length : 0;
-    if (summaryAvgSales) {
-        // (★修正★) index.html の構造に合わせてセレクタを修正
-        const avgEl = summaryAvgSales.querySelector('p.text-3xl');
-        if (avgEl) avgEl.textContent = formatCurrency(Math.round(avgSales));
-    }
     
-    // 4. (★勤怠機能修正★) 出勤キャスト
-    if (summaryCastCount) {
-        // (★修正★) index.html の構造に合わせてセレクタを修正
-        const countEl = summaryCastCount.querySelector('p.text-3xl');
-        
-        // (★勤怠機能修正★) attendances から本日の出勤者数をカウント
-        const businessDayStart = getBusinessDayStart(new Date());
-        const businessDayStr = formatDateISO(businessDayStart);
-        
-        // (★勤怠機能修正★) date が今日で、ステータスが 'clocked_in' または 'late' のキャスト
-        const checkedInCasts = attendances.filter(a => 
-            a.date === businessDayStr && 
-            (a.status === 'clocked_in' || a.status === 'late')
-        ).length;
-        
-        if (countEl) countEl.innerHTML = `${checkedInCasts} <span class="text-lg font-medium">名</span>`; // (innerHTMLに変更)
-    }
+    if (summaryTableRate) summaryTableRate.textContent = `${Math.round(usageRate)}%`;
+    if (summaryTableDetail) summaryTableDetail.textContent = `${activeTables} / ${totalTables} 卓`;
+    
+
+    // --- (★要望1★) 出勤キャスト ---
+    // (★勤怠機能修正★) attendances から本日の出勤者数をカウント
+    const businessDayStr = formatDateISO(todayBusinessStart); // (★修正★) 上で計算済みのものを再利用
+    
+    const checkedInCasts = attendances.filter(a => 
+        a.date === businessDayStr && 
+        (a.status === 'clocked_in' || a.status === 'late')
+    ).length;
+    
+    if (summaryCastNum) summaryCastNum.innerHTML = `${checkedInCasts} <span class="text-lg font-medium">名</span>`;
+    // (★仮★) 体験入店は 0 名
+    if (summaryCastTrial) summaryCastTrial.textContent = "0名 体験入店"; 
 };
 
 
@@ -841,6 +858,15 @@ const updateModalCommonInfo = () => {
 
     const store = settings.storeInfo; // (★変更★)
     const rates = settings.rates; // (★変更★)
+    
+    // (★要望5★) 領収書のカスタム設定を取得
+    const receiptSettings = settings.receiptSettings || {
+        storeName: store.name,
+        address: `〒${store.zip || ''}<br>${store.address || ''}`,
+        tel: `TEL: ${store.tel}`,
+        invoiceNumber: "" // (★要望5★) 将来的なインボイス番号設定欄
+    };
+
 
     // 伝票プレビュー
     if (slipStoreName) slipStoreName.textContent = store.name;
@@ -854,10 +880,20 @@ const updateModalCommonInfo = () => {
     if (checkoutServiceRate) checkoutServiceRate.textContent = `サービス料 (${rates.service * 100}%)`;
     if (checkoutTaxRate) checkoutTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
 
-    // 領収書
-    if (receiptStoreName) receiptStoreName.textContent = store.name;
-    if (receiptAddress) receiptAddress.innerHTML = `〒${store.zip || ''}<br>${store.address || ''}`; // (変更) 郵便番号・改行対応
-    if (receiptTel) receiptTel.textContent = `TEL: ${store.tel}`;
+    // 領収書 (★要望5★ 設定を反映)
+    if (receiptStoreName) receiptStoreName.textContent = receiptSettings.storeName || store.name;
+    if (receiptAddress) receiptAddress.innerHTML = receiptSettings.address || `〒${store.zip || ''}<br>${store.address || ''}`;
+    if (receiptTel) receiptTel.textContent = receiptSettings.tel || `TEL: ${store.tel}`;
+    // (★要望5★)
+    const invoiceEl = document.getElementById('receipt-invoice-number');
+    if (invoiceEl) {
+        if (receiptSettings.invoiceNumber) {
+            invoiceEl.textContent = `インボイス登録番号: ${receiptSettings.invoiceNumber}`;
+            invoiceEl.style.display = 'block';
+        } else {
+            invoiceEl.style.display = 'none';
+        }
+    }
 };
 
 
@@ -1000,7 +1036,8 @@ const renderCheckoutModal = () => {
 
     updatePaymentStatus(); 
 
-    document.getElementById('receipt-total').textContent = formatCurrency(finalBillingAmount);
+    // (★要望5★) 領収書モーダルの合計金額も更新 (renderReceiptModalより先)
+    if(receiptTotalDisplay) receiptTotalDisplay.textContent = formatCurrency(finalBillingAmount);
 };
 
 /**
@@ -1046,7 +1083,9 @@ const updatePaymentStatus = () => {
     // (★修正★) ローカル変数を更新
     currentBillingAmount = finalBillingAmount;
     checkoutTotalEl.textContent = formatCurrency(finalBillingAmount);
-    document.getElementById('receipt-total').textContent = formatCurrency(finalBillingAmount);
+    
+    // (★要望5★) 領収書モーダルの合計金額も更新
+    if(receiptTotalDisplay) receiptTotalDisplay.textContent = formatCurrency(finalBillingAmount);
     
     // --- ここから下は支払い計算 ---
     const billingAmount = currentBillingAmount; // (★変更★)
@@ -1089,21 +1128,55 @@ const updatePaymentStatus = () => {
 
 
 /**
- * 領収書モーダルを描画する
+ * (★要望5★) 領収書モーダルを描画・更新する
  */
 const renderReceiptModal = () => {
-    if (!settings) return; // (★変更★)
-    const now = new Date();
-    document.getElementById('receipt-date').textContent = now.toLocaleDateString('ja-JP');
+    if (!settings) return;
     
-    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
-    if (slipData) {
-        const receiptCustomerName = document.getElementById('receipt-customer-name');
-        if (receiptCustomerName) receiptCustomerName.value = slipData.name || '';
+    const slipData = slips.find(s => s.slipId === currentSlipId);
+    if (!slipData) return;
+    
+    // (★要望5★) フォームの初期値を設定
+    if (receiptCustomerNameInput) {
+        receiptCustomerNameInput.value = slipData.name !== "新規のお客様" ? slipData.name : '';
     }
-    // (★修正★) 領収書の合計金額も割引後の金額を反映
-    document.getElementById('receipt-total').textContent = formatCurrency(currentBillingAmount); // (★変更★)
+    if (receiptDescriptionInput) {
+        // (★要望5★) settings から但し書きのデフォルトを取得
+        receiptDescriptionInput.value = settings.receiptSettings?.defaultDescription || "お飲食代として";
+    }
+    if (receiptOptionDate) receiptOptionDate.checked = true;
+    if (receiptOptionAmount) receiptOptionAmount.checked = true;
+    
+    // (★要望5★) プレビューを更新
+    updateReceiptPreview();
 };
+
+/**
+ * (★要望5★) 領収書プレビューを更新する
+ */
+const updateReceiptPreview = () => {
+    if (!receiptPreviewArea) return;
+
+    // フォームの値を取得
+    const name = receiptCustomerNameInput.value.trim() ? `${receiptCustomerNameInput.value.trim()} ` : '';
+    const description = receiptDescriptionInput.value.trim() || 'お飲食代として';
+    const showDate = receiptOptionDate.checked;
+    const showAmount = receiptOptionAmount.checked;
+
+    // プレビューに反映
+    if (receiptCustomerNameDisplay) receiptCustomerNameDisplay.textContent = name;
+    if (receiptDescriptionDisplay) receiptDescriptionDisplay.textContent = description;
+    
+    if (receiptDateDisplay) {
+        const now = new Date();
+        receiptDateDisplay.textContent = showDate ? `発行日: ${now.toLocaleDateString('ja-JP')}` : '';
+    }
+    
+    if (receiptTotalDisplay) {
+        receiptTotalDisplay.textContent = showAmount ? formatCurrency(currentBillingAmount) + " -" : '¥ ---';
+    }
+};
+
 
 /**
  * (新規) ボツ伝理由入力モーダルを描画する
@@ -1549,6 +1622,14 @@ const getDefaultSettings = () => {
         rates: { tax: 0.10, service: 0.20 },
         // (★新規★) 端数処理設定
         rounding: { type: 'none', unit: 1 }, // 'none', 'round_up_total', 'round_down_total', 'round_up_subtotal'
+        // (★要望5★) 領収書設定
+        receiptSettings: {
+            storeName: "Night POS",
+            address: "〒160-0021<br>東京都新宿区歌舞伎町1-1-1",
+            tel: "TEL: 03-0000-0000",
+            invoiceNumber: "T1234567890",
+            defaultDescription: "お飲食代として"
+        },
         dayChangeTime: "05:00",
         performanceSettings: {
             // (★注意★) m14 は getDefaultMenu で生成されるIDと合わせる必要あり
@@ -1598,24 +1679,17 @@ const getDefaultMenu = () => {
 // (★削除★) Firestore への state 保存関数（各関数内で直接実行）
 // const updateStateInFirestore = async (newState) => { ... };
 
-// (★動的表示 追加★)
+// (★要望4, 5★)
 /**
  * (★新規★) ヘッダーのストアセレクターを描画する
  */
-const renderStoreSelector = () => {
-    if (!storeSelector || !settings || !currentStoreId) return;
+const renderHeaderStoreName = () => {
+    if (!headerStoreName || !settings || !currentStoreId) return;
 
     const currentStoreName = settings.storeInfo.name || "店舗";
     
-    // (★変更★) 現在は複数店舗の切り替えをサポートしていないため、
-    // (★変更★) 現在の店舗名のみを表示し、ドロップダウンを無効化する
-    storeSelector.innerHTML = `<option value="${currentStoreId}">${currentStoreName}</option>`;
-    storeSelector.value = currentStoreId;
-    storeSelector.disabled = true;
-    
-    // (★将来的な拡張★) 
-    // 複数店舗をサポートする場合、ここで `stores` コレクションから
-    // ユーザーがアクセス可能な店舗一覧を取得し、<option> を動的生成する
+    // (★変更★) loading... を店舗名で上書き
+    headerStoreName.textContent = currentStoreName;
 };
 
 
@@ -1724,7 +1798,7 @@ document.addEventListener('firebaseReady', (e) => {
             renderCastRanking();
             renderDashboardSlips();
             updateModalCommonInfo(); 
-            renderStoreSelector(); // (★動的表示 追加★)
+            renderHeaderStoreName(); // (★要望4★)
         }
     };
 
@@ -1739,7 +1813,8 @@ document.addEventListener('firebaseReady', (e) => {
             settings = defaultSettings;
         }
         settingsLoaded = true;
-        checkAndRenderAll();
+        // (★要望1★) settings が更新されたらサマリーとモーダル共通情報を再描画
+        checkAndRenderAll(); 
     }, (error) => console.error("Error listening to settings: ", error));
 
     // 2. Menu
@@ -1799,7 +1874,8 @@ document.addEventListener('firebaseReady', (e) => {
         });
         console.log("Slips loaded: ", slips.length);
         slipsLoaded = true;
-        checkAndRenderAll();
+        // (★要望1★) 伝票が更新されたらサマリーを再描画
+        checkAndRenderAll(); 
     }, (error) => {
         console.error("Error listening to slips: ", error);
         if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
@@ -1815,6 +1891,7 @@ document.addEventListener('firebaseReady', (e) => {
         });
         console.log("Attendances loaded: ", attendances.length);
         attendancesLoaded = true;
+        // (★要望1★) 勤怠が更新されたらサマリーを再描画
         checkAndRenderAll();
     }, (error) => {
         console.error("Error listening to attendances: ", error);
@@ -1858,7 +1935,10 @@ document.addEventListener('DOMContentLoaded', () => {
     modalCloseBtns = document.querySelectorAll('.modal-close-btn');
     openSlipPreviewBtn = document.getElementById('open-slip-preview-btn');
     processPaymentBtn = document.getElementById('process-payment-btn');
-    printSlipBtn = document.getElementById('print-slip-btn');
+    
+    // (★要望5★) 領収書印刷ボタンのIDを変更
+    printReceiptBtn = document.getElementById('print-receipt-btn'); // (★旧 printSlipBtn★)
+    
     goToCheckoutBtn = document.getElementById('go-to-checkout-btn');
     reopenSlipBtn = document.getElementById('reopen-slip-btn');
     menuEditorModal = document.getElementById('menu-editor-modal');
@@ -1924,32 +2004,48 @@ document.addEventListener('DOMContentLoaded', () => {
     rankingPeriodSelect = document.getElementById('ranking-period-select');
     rankingTypeBtns = document.querySelectorAll('.ranking-type-btn');
     
-    // (新規) ダッシュボードサマリーカードのDOM
+    // (★要望1★) ダッシュボードサマリーカードのDOM
     summaryTotalSales = document.getElementById('summary-total-sales');
-    summaryTableUsage = document.getElementById('summary-table-usage');
-    summaryAvgSales = document.getElementById('summary-avg-sales');
-    summaryCastCount = document.getElementById('summary-cast-count');
+    summarySalesComparison = document.getElementById('summary-sales-comparison');
+    summaryTableRate = document.getElementById('summary-table-rate');
+    summaryTableDetail = document.getElementById('summary-table-detail');
+    summaryAvgSpend = document.getElementById('summary-avg-spend');
+    summaryAvgSpendComparison = document.getElementById('summary-avg-spend-comparison');
+    summaryCastNum = document.getElementById('summary-cast-num');
+    summaryCastTrial = document.getElementById('summary-cast-trial');
     
     // (新規) モーダル共通情報のDOM
     slipStoreName = document.getElementById('slip-store-name');
     slipStoreTel = document.getElementById('slip-store-tel');
     slipServiceRate = document.getElementById('slip-service-rate');
     slipTaxRate = document.getElementById('slip-tax-rate');
-    // (★修正★) index.html には checkout/receipt のストア情報ID がないので null チェック
     checkoutStoreName = document.getElementById('checkout-store-name');
     checkoutStoreTel = document.getElementById('checkout-store-tel');
     checkoutServiceRate = document.getElementById('checkout-service-rate');
     checkoutTaxRate = document.getElementById('checkout-tax-rate');
+    
+    // (★要望5★) 領収書モーダルのDOM
     receiptStoreName = document.getElementById('receipt-store-name');
     receiptAddress = document.getElementById('receipt-address');
     receiptTel = document.getElementById('receipt-tel');
+    receiptForm = document.getElementById('receipt-form');
+    receiptCustomerNameInput = document.getElementById('receipt-customer-name-input');
+    receiptDescriptionInput = document.getElementById('receipt-description-input');
+    receiptOptionDate = document.getElementById('receipt-option-date');
+    receiptOptionAmount = document.getElementById('receipt-option-amount');
+    receiptPreviewArea = document.getElementById('receipt-preview-area');
+    receiptDateDisplay = document.getElementById('receipt-date-display');
+    receiptCustomerNameDisplay = document.getElementById('receipt-customer-name-display');
+    receiptTotalDisplay = document.getElementById('receipt-total-display');
+    receiptDescriptionDisplay = document.getElementById('receipt-description-display');
+
 
     // (★新規★) 割引
     discountAmountInput = document.getElementById('discount-amount');
     discountTypeSelect = document.getElementById('discount-type');
     
-    // (★動的表示 追加★)
-    storeSelector = document.getElementById('store-selector');
+    // (★要望4★)
+    headerStoreName = document.getElementById('header-store-name');
 
     // (★新規★) 転卓モーダル
     tableTransferModal = document.getElementById('table-transfer-modal');
@@ -2139,10 +2235,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (printSlipBtn) {
-        printSlipBtn.addEventListener('click', () => {
+    // (★要望5★) 領収書印刷ボタン (旧 printSlipBtn)
+    if (printReceiptBtn) {
+        printReceiptBtn.addEventListener('click', () => {
+            // (★要望5★) 印刷前にプレビューを最終更新
+            updateReceiptPreview(); 
+            // 印刷実行
             window.print();
         });
+    }
+
+    // (★要望5★) 領収書フォームの入力でプレビューを更新
+    if (receiptForm) {
+        receiptForm.addEventListener('input', updateReceiptPreview);
     }
 
     if (goToCheckoutBtn) {

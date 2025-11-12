@@ -66,7 +66,8 @@ let modalCloseBtns, // (★削除★) モーダルが無いため、本当は不
     reportDatePicker,
     // (★AI対応★) AI分析
     aiAnalyzeBtn, aiReportModal, aiReportContent,
-    storeSelector; // (★動的表示 追加★)
+    
+    headerStoreName; // (★要望4★) storeSelector から変更
     
 // (★削除★) 他のHTMLからコピーされたモーダル用のDOMをすべて削除
 // newSlipConfirmModal, slipSelectionModal, etc...
@@ -516,20 +517,17 @@ const getDefaultMenu = () => {
 // (★削除★) Firestore への state 保存関数
 // const updateStateInFirestore = async (newState) => { ... };
 
-// (★動的表示 追加★)
+// (★要望4, 5★)
 /**
- * (★新規★) ヘッダーのストアセレクターを描画する
+ * (★新規★) ヘッダーのストア名をレンダリングする
  */
-const renderStoreSelector = () => {
-    if (!storeSelector || !settings || !currentStoreId) return;
+const renderHeaderStoreName = () => {
+    if (!headerStoreName || !settings || !currentStoreId) return;
 
     const currentStoreName = settings.storeInfo.name || "店舗";
     
-    // (★変更★) 現在は複数店舗の切り替えをサポートしていないため、
-    // (★変更★) 現在の店舗名のみを表示し、ドロップダウンを無効化する
-    storeSelector.innerHTML = `<option value="${currentStoreId}">${currentStoreName}</option>`;
-    storeSelector.value = currentStoreId;
-    storeSelector.disabled = true;
+    // (★変更★) loading... を店舗名で上書き
+    headerStoreName.textContent = currentStoreName;
 };
 
 /**
@@ -565,7 +563,7 @@ document.addEventListener('firebaseReady', (e) => {
         if (settingsLoaded && menuLoaded && castsLoaded && slipsLoaded) {
             console.log("All data loaded. Rendering UI for reports.js");
             updateAllReports();
-            renderStoreSelector(); // (★動的表示 追加★)
+            renderHeaderStoreName(); // (★要望4★)
             // (★削除★) updateModalCommonInfo(); 
         }
     };
@@ -666,7 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
     aiReportModal = document.getElementById('ai-report-modal');
     aiReportContent = document.getElementById('ai-report-content');
     
-    storeSelector = document.getElementById('store-selector'); // (★動的表示 追加★)
+    headerStoreName = document.getElementById('header-store-name'); // (★要望4★)
     
     // (★削除★) 伝票関連モーダルのDOM取得を削除
     
