@@ -24,11 +24,15 @@ let todaysAttendanceData = null;
 let businessDayStart = null;
 let clockInterval = null;
 
+// (★NFC対応★) NDEFReader インスタンス
+let ndefReader = null;
+let isNfcInitialized = false;
+
 // ===== DOM要素 =====
 let castHeaderName, pageTitle,
     currentBusinessDate, currentTime, attendanceLoading,
     // (★NFC対応★) NFC用UI
-    nfcProcessingContainer, nfcFeedback,
+    nfcProcessingContainer, nfcFeedback, nfcIcon,
     attendanceActions, clockInBtn, clockOutBtn,
     attendanceStatus, statusText, statusClockIn, statusClockOut,
     absentActions, reportAbsenceBtn, absenceFeedback,
@@ -90,7 +94,7 @@ const getStatusStyle = (status) => {
             return { text: '有給休暇', color: 'purple' };
         case 'unsubmitted':
         default:
-            return { text: '未提出', color: 'slate' };
+            return { text: '未提出', color: 'slate' }; // (★修正★) 「未出勤」から「未提出」へ文言変更 (UI統一)
     }
 };
 
@@ -107,7 +111,7 @@ const updateClock = () => {
     });
 };
 
-// --- (★新規★) 勤怠ロジック ---
+// --- (★NFC対応★) 勤怠ロジック (Web NFC APIベースに変更) ---
 
 /**
  * (★新規★) ログインキャストの情報を取得してグローバル変数にセット
@@ -136,11 +140,110 @@ const loadCastInfo = async () => {
 };
 
 /**
+ * (★NFC対応★) Web NFC リーダーを初期化し、スキャンを開始する
+ */
+const initializeNfcReader = async () => {
+    if (isNfcInitialized || !('NDEFReader' in window)) {
+        // (★NFC対応★) NFC非対応ブラウザの場合、手動ボタンをフォールバック表示
+        if (!('NDEFReader' in window)) {
+            console.warn("Web NFC is not supported on this browser.");
+            if (nfcProcessingContainer) nfcProcessingContainer.classList.add('hidden');
+            if (attendanceActions) attendanceActions.classList.remove('hidden');
+            if (absentActions) absentActions.classList.remove('hidden');
+        }
+        return;
+    }
+    
+    // (★NFC対応★) NFC対応ブラウザの場合、NFC UIを表示
+    isNfcInitialized = true;
+    if (nfcProcessingContainer) nfcProcessingContainer.classList.remove('hidden');
+    if (nfcFeedback) nfcFeedback.textContent = "NFCスキャン準備中...";
+    if (attendanceActions) attendanceActions.classList.add('hidden');
+    if (absentActions) absentActions.classList.add('hidden');
+
+    try {
+        ndefReader = new NDEFReader();
+        await ndefReader.scan();
+        console.log("NFC Reader started.");
+        nfcFeedback.textContent = "NFCタグをかざしてください";
+        nfcIcon.classList.add('fa-spin'); // スキャン中アニメーション
+
+        ndefReader.addEventListener("readingerror", () => {
+            console.error("NFC reading error.");
+            nfcFeedback.textContent = "NFCの読み取りに失敗しました";
+            nfcIcon.classList.remove('fa-spin');
+        });
+
+        ndefReader.addEventListener("reading", ({ serialNumber }) => {
+            console.log(`NFC tag detected: ${serialNumber}`);
+            handleNfcReading(serialNumber);
+        });
+
+    } catch (error) {
+        console.error("NFC scan initialization failed: ", error);
+        nfcFeedback.textContent = "NFCの起動に失敗しました";
+        nfcIcon.classList.remove('fa-spin');
+        // (★NFC対応★) NFC起動失敗時は手動ボタンをフォールバック表示
+        if (attendanceActions) attendanceActions.classList.remove('hidden');
+        if (absentActions) absentActions.classList.remove('hidden');
+    }
+};
+
+/**
+ * (★NFC対応★) 読み取ったNFCシリアル番号を処理する
+ * @param {string} serialNumber
+ */
+const handleNfcReading = (serialNumber) => {
+    if (!settings || !settings.nfcTagIds) {
+        nfcFeedback.textContent = "店舗設定(NFC)が未ロードです";
+        return;
+    }
+    
+    const { clockIn, clockOut } = settings.nfcTagIds;
+    
+    if (serialNumber === clockIn) {
+        // --- 出勤タグ ---
+        console.log("Clock-In tag matched.");
+        if (todaysAttendanceData.status === 'unsubmitted') {
+            handleClockIn('nfc');
+        } else if (todaysAttendanceData.status === 'clocked_in' || todaysAttendanceData.status === 'late') {
+            nfcFeedback.textContent = "既に出勤済みです";
+        } else {
+            nfcFeedback.textContent = "出勤できません (退勤/欠勤)";
+        }
+    } 
+    else if (serialNumber === clockOut) {
+        // --- 退勤タグ ---
+        console.log("Clock-Out tag matched.");
+        if (todaysAttendanceData.status === 'clocked_in' || todaysAttendanceData.status === 'late') {
+            handleClockOut('nfc');
+        } else if (todaysAttendanceData.status === 'clocked_out') {
+            nfcFeedback.textContent = "既に退勤済みです";
+        } else {
+            nfcFeedback.textContent = "先に出勤してください";
+        }
+    } 
+    else {
+        // --- 不明なタグ ---
+        console.warn(`Unknown NFC tag: ${serialNumber}`);
+        nfcFeedback.textContent = "不明なNFCタグです";
+    }
+    
+    // フィードバックメッセージを3秒後にリセット
+    setTimeout(() => {
+        if (nfcFeedback.textContent !== "NFCタグをかざしてください") {
+             nfcFeedback.textContent = "NFCタグをかざしてください";
+        }
+    }, 3000);
+};
+
+
+/**
  * (★NFC対応★) 今日の勤怠ステータスに基づいてUIを更新する
  */
 const updateUI = () => {
     if (!todaysAttendanceData || !businessDayStart) {
-        attendanceLoading.textContent = "勤怠データの取得に失敗しました。";
+        if(attendanceLoading) attendanceLoading.textContent = "勤怠データの取得に失敗しました。";
         return;
     }
     
@@ -153,23 +256,25 @@ const updateUI = () => {
     const { status, clockIn, clockOut, memo } = todaysAttendanceData;
     const style = getStatusStyle(status);
 
-    // 1. ステータス表示欄
+    // (★★★ 修正点 1 ★★★)
+    // 1. ステータス表示欄 (常時表示する)
+    attendanceStatus.classList.remove('hidden'); // <-- 常に表示
     statusText.textContent = style.text;
     statusText.className = `text-lg font-bold text-${style.color}-600`;
     statusClockIn.textContent = clockIn ? new Date(clockIn).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '--:--';
     statusClockOut.textContent = clockOut ? new Date(clockOut).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '--:--';
     
-    // (★NFC対応★) NFC処理中は手動ボタンを非表示
-    if (nfcProcessingContainer && !nfcProcessingContainer.classList.contains('hidden')) {
+    // (★NFC対応★) NFCが初期化されているかチェック
+    if (isNfcInitialized) {
+        // NFCモード: 手動ボタンは隠し、NFCとステータスを表示
         attendanceActions.classList.add('hidden');
-        attendanceStatus.classList.remove('hidden'); // ステータスは表示
-        absentActions.classList.add('hidden');
-        return;
+        absentActions.classList.add('hidden'); // 欠勤連絡も隠す (NFC運用と仮定)
+        nfcProcessingContainer.classList.remove('hidden');
+        return; // NFCモードではここで終了
     }
 
-    // 2. ボタンとセクションの表示切り替え
+    // (★NFC対応★) 以下はNFC非対応ブラウザのフォールバック
     attendanceActions.classList.remove('hidden');
-    attendanceStatus.classList.remove('hidden');
     absentActions.classList.remove('hidden');
     
     clockInBtn.classList.add('hidden');
@@ -179,7 +284,9 @@ const updateUI = () => {
         case 'unsubmitted':
             // 未提出 -> 出勤ボタンと欠勤連絡を表示
             clockInBtn.classList.remove('hidden');
-            attendanceStatus.classList.add('hidden'); // ステータス欄は隠す
+            // (★★★ 修正点 2 ★★★) 
+            // 以前はここでステータス欄を隠していたが、その行を削除
+            // attendanceStatus.classList.add('hidden'); // <-- この行を削除
             break;
             
         case 'clocked_in':
@@ -200,11 +307,32 @@ const updateUI = () => {
 };
 
 /**
- * (★新規★) 今日の営業日の勤怠データを読み込む
+ * (★NFC対応★) 今日の営業日の勤怠データを読み込む
  */
 const loadTodaysAttendance = async () => {
-    if (!settings || !currentCastId || !attendancesCollectionRef) {
-        console.warn("Cannot load attendance data: Settings or CastID or Ref missing.");
+    if (!settings || !attendancesCollectionRef) {
+        console.warn("Cannot load attendance data: Settings or Ref missing.");
+        // (★★★ 修正点 3 ★★★)
+        // settings がない場合もローディングを停止
+        if (attendanceLoading) {
+            attendanceLoading.textContent = "店舗設定の読み込みに失敗しました。";
+            attendanceLoading.classList.add("text-red-500");
+        }
+        return; 
+    }
+    
+    // (★★★ 修正点 4 ★★★)
+    // currentCastId がない (管理者など) 場合は、エラー表示して停止
+    if (!currentCastId) {
+        console.error("No currentCastId found. This page is for casts only.");
+        if (attendanceLoading) {
+            attendanceLoading.textContent = "このページはキャスト専用です。";
+            attendanceLoading.classList.add("text-red-500");
+        }
+        // NFCや手動ボタンも隠す
+        if (nfcProcessingContainer) nfcProcessingContainer.classList.add('hidden');
+        if (attendanceActions) attendanceActions.classList.add('hidden');
+        if (absentActions) absentActions.classList.add('hidden');
         return;
     }
 
@@ -238,6 +366,9 @@ const loadTodaysAttendance = async () => {
         // 4. UIを更新
         updateUI();
         
+        // 5. (★NFC対応★) 勤怠データ取得後、NFCリーダーを初期化
+        initializeNfcReader();
+        
     } catch (error) {
         console.error("Error fetching today's attendance: ", error);
         attendanceLoading.textContent = "勤怠データの取得に失敗しました。";
@@ -245,56 +376,9 @@ const loadTodaysAttendance = async () => {
 };
 
 /**
- * (★NFC対応★) URLをチェックして自動打刻を実行
+ * (★NFC対応★) URLチェック(handleNfcPunch)を削除
  */
-const handleNfcPunch = async () => {
-    const params = new URLSearchParams(window.location.search);
-    if (!params.has('source') || params.get('source') !== 'nfc') {
-        // NFC経由でない場合は何もしない
-        return;
-    }
-
-    // NFC経由の場合
-    console.log("NFC punch detected!");
-
-    // 1. UIをNFC処理中モードに変更
-    if (attendanceLoading) attendanceLoading.classList.add('hidden');
-    if (nfcProcessingContainer) nfcProcessingContainer.classList.remove('hidden');
-    if (nfcFeedback) nfcFeedback.textContent = "NFC打刻を処理中...";
-    
-    // 手動ボタン・欠勤連絡を非表示
-    if (attendanceActions) attendanceActions.classList.add('hidden');
-    if (absentActions) absentActions.classList.add('hidden');
-
-    // 2. 勤怠データをチェック (todaysAttendanceData は loadTodaysAttendance でセット済み)
-    if (!todaysAttendanceData) {
-        if (nfcFeedback) nfcFeedback.textContent = "エラー: 勤怠データを取得できませんでした。";
-        return;
-    }
-
-    // 3. ステータスに応じて処理を振り分け
-    const status = todaysAttendanceData.status;
-
-    if (status === 'unsubmitted') {
-        // --- 出勤処理 ---
-        await handleClockIn('nfc'); // NFC用の処理を呼び出す
-    } 
-    else if (status === 'clocked_in' || status === 'late') {
-        // --- 退勤処理 ---
-        await handleClockOut('nfc'); // NFC用の処理を呼び出す
-    } 
-    else if (status === 'clocked_out') {
-        // --- 退勤済み ---
-        if (nfcFeedback) nfcFeedback.textContent = "既に退勤済みです。";
-    } 
-    else {
-        // --- 欠勤など ---
-        if (nfcFeedback) nfcFeedback.textContent = "本日は欠勤（または休暇）連絡済みです。";
-    }
-    
-    // 4. ステータス欄は表示する
-    if (attendanceStatus) attendanceStatus.classList.remove('hidden');
-};
+// const handleNfcPunch = async () => { ... };
 
 
 /**
@@ -309,6 +393,7 @@ const handleClockIn = async (source = 'manual') => {
         clockInBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 処理中...';
     } else {
         if (nfcFeedback) nfcFeedback.textContent = "出勤処理中...";
+        if (nfcIcon) nfcIcon.classList.add('fa-spin');
     }
     
     const now = new Date();
@@ -335,7 +420,8 @@ const handleClockIn = async (source = 'manual') => {
         updateUI(); // UIを更新
         
         if (source === 'nfc') {
-            if (nfcFeedback) nfcFeedback.textContent = "出勤打刻が完了しました。";
+            if (nfcFeedback) nfcFeedback.textContent = "出勤打刻が完了しました";
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin');
         }
         
     } catch (error) {
@@ -345,7 +431,8 @@ const handleClockIn = async (source = 'manual') => {
             clockInBtn.disabled = false;
             clockInBtn.innerHTML = '<i class="fa-solid fa-right-to-bracket mr-3"></i> 出勤';
         } else {
-            if (nfcFeedback) nfcFeedback.textContent = "エラー: 出勤打刻に失敗しました。";
+            if (nfcFeedback) nfcFeedback.textContent = "エラー: 出勤打刻に失敗";
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin');
         }
     }
 };
@@ -365,6 +452,7 @@ const handleClockOut = async (source = 'manual') => {
         clockOutBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 処理中...';
     } else {
         if (nfcFeedback) nfcFeedback.textContent = "退勤処理中...";
+        if (nfcIcon) nfcIcon.classList.add('fa-spin');
     }
     
     const now = new Date();
@@ -382,7 +470,8 @@ const handleClockOut = async (source = 'manual') => {
         updateUI(); // UIを更新
         
         if (source === 'nfc') {
-            if (nfcFeedback) nfcFeedback.textContent = "退勤打刻が完了しました。";
+            if (nfcFeedback) nfcFeedback.textContent = "退勤打刻が完了しました";
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin');
         }
 
     } catch (error) {
@@ -392,7 +481,8 @@ const handleClockOut = async (source = 'manual') => {
             clockOutBtn.disabled = false;
             clockOutBtn.innerHTML = '<i class="fa-solid fa-right-from-bracket mr-3"></i> 退勤';
         } else {
-            if (nfcFeedback) nfcFeedback.textContent = "エラー: 退勤打刻に失敗しました。";
+            if (nfcFeedback) nfcFeedback.textContent = "エラー: 退勤打刻に失敗";
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin');
         }
     }
 };
@@ -471,7 +561,10 @@ document.addEventListener('firebaseReady', async (e) => {
     attendancesCollectionRef = aRef;
 
     // 認証直後にまずキャスト名を取得
-    await loadCastInfo();
+    // (★修正★) currentCastId が存在する場合のみ実行
+    if (currentCastId) {
+        await loadCastInfo();
+    }
 
     // Settings の onSnapshot を設定
     onSnapshot(settingsRef, async (docSnap) => {
@@ -479,19 +572,23 @@ document.addEventListener('firebaseReady', async (e) => {
             settings = docSnap.data();
         } else {
             console.warn("No settings document found. Using fallback.");
-            settings = { dayChangeTime: "05:00" };
+            settings = { 
+                dayChangeTime: "05:00", 
+                nfcTagIds: { clockIn: null, clockOut: null } // (★NFC対応★)
+            };
         }
         
         // Settings (特に dayChangeTime) 取得後に、勤怠データをロード
+        // (★NFC対応★) loadTodaysAttendance の中で initializeNfcReader が呼ばれる
         await loadTodaysAttendance();
-        
-        // (★NFC対応★) 勤怠データロード後にNFC処理を試みる
-        await handleNfcPunch();
         
     }, (error) => {
         console.error("Error listening to settings: ", error);
         // エラーでもフォールバック設定で勤怠ロードを試みる
-        settings = { dayChangeTime: "05:00" };
+        settings = { 
+            dayChangeTime: "05:00",
+            nfcTagIds: { clockIn: null, clockOut: null } // (★NFC対応★)
+        };
         loadTodaysAttendance();
     });
     
@@ -512,6 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // (★NFC対応★)
     nfcProcessingContainer = document.getElementById('nfc-processing-container');
     nfcFeedback = document.getElementById('nfc-feedback');
+    nfcIcon = document.getElementById('nfc-icon'); // (★NFC対応★)
     
     attendanceActions = document.getElementById('attendance-actions');
     clockInBtn = document.getElementById('clock-in-btn');
@@ -537,17 +635,17 @@ document.addEventListener('DOMContentLoaded', () => {
         logoutButtonHeader.addEventListener('click', handleLogout);
     }
     
-    // (★新規★) 出勤ボタン
+    // (★新規★) 出勤ボタン (NFC非対応時のフォールバック)
     if (clockInBtn) {
         clockInBtn.addEventListener('click', () => handleClockIn('manual'));
     }
     
-    // (★新規★) 退勤ボタン
+    // (★新規★) 退勤ボタン (NFC非対応時のフォールバック)
     if (clockOutBtn) {
         clockOutBtn.addEventListener('click', () => handleClockOut('manual'));
     }
     
-    // (★新規★) 欠勤連絡ボタン
+    // (★新規★) 欠勤連絡ボタン (NFC非対応時のフォールバック)
     if (reportAbsenceBtn) {
         reportAbsenceBtn.addEventListener('click', handleReportAbsence);
     }
