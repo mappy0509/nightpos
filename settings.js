@@ -50,6 +50,11 @@ let modalCloseBtns, // (★注意★) settings.html にモーダルは無いた�
     // (★新規★) 端数処理
     settingRoundingType, settingRoundingUnit,
     
+    // (★NFC対応★)
+    nfcTagIdClockIn, nfcTagIdClockOut,
+    scanNfcClockInBtn, scanNfcClockOutBtn,
+    nfcScanFeedback,
+    
     saveSettingsBtn, settingsFeedback,
     
     // テーブル設定
@@ -106,8 +111,93 @@ const closeModal = (modalElement) => {
     });
 };
 
+// ===================================
+// (★NFC対応★) NFCスキャン関連
+// ===================================
+
 /**
- * (★報酬削除★) 設定フォームに現在の値を読み込む
+ * (★NFC対応★) バイト配列を16進数文字列に変換
+ * @param {BufferSource} buffer 
+ * @returns {string}
+ */
+const bytesToHex = (buffer) => {
+    return Array.from(new Uint8Array(buffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+};
+
+/**
+ * (★NFC対応★) NFCタグのスキャンを実行
+ * @param {'clockIn' | 'clockOut'} targetType - どの入力欄を対象にするか
+ */
+const handleNfcScan = async (targetType) => {
+    if (!('NDEFReader' in window)) {
+        nfcScanFeedback.textContent = "このブラウザは Web NFC に対応していません。";
+        nfcScanFeedback.className = "text-xs mt-3 text-red-600";
+        return;
+    }
+
+    const targetInput = (targetType === 'clockIn') ? nfcTagIdClockIn : nfcTagIdClockOut;
+    const targetButton = (targetType === 'clockIn') ? scanNfcClockInBtn : scanNfcClockOutBtn;
+    
+    if (!targetInput || !targetButton) return;
+
+    try {
+        nfcScanFeedback.textContent = "NFCタグをスキャン待機中... タグをかざしてください。";
+        nfcScanFeedback.className = "text-xs mt-3 text-blue-600";
+        targetButton.disabled = true;
+        
+        const ndef = new NDEFReader();
+        await ndef.scan();
+        
+        console.log("NFC スキャン開始");
+
+        // (★NFC対応★) 読み取りイベントリスナー (一度だけ実行)
+        ndef.addEventListener("reading", ({ message, serialNumber }) => {
+            console.log(`NFC タグ検出: Serial Number: ${serialNumber}`);
+            
+            if (serialNumber) {
+                targetInput.value = serialNumber;
+                nfcScanFeedback.textContent = `タグ (SN: ${serialNumber}) を読み取りました。保存ボタンを押してください。`;
+                nfcScanFeedback.className = "text-xs mt-3 text-green-600";
+            } else {
+                nfcScanFeedback.textContent = "タグのシリアル番号が読み取れませんでした。";
+                nfcScanFeedback.className = "text-xs mt-3 text-red-600";
+            }
+            
+            // スキャンは一度で十分なので、ここで停止
+            // (※ abort() がないため、リスナー削除で代用)
+            // ※ NDEFReader の仕様上、明示的な停止は難しい場合がある
+        }, { once: true }); // (★NFC対応★) { once: true } で一度だけ実行
+
+    } catch (error) {
+        console.error("NFCスキャンエラー: ", error);
+        if (error.name === 'NotAllowedError') {
+            nfcScanFeedback.textContent = "NFCの利用が許可されませんでした。ブラウザの設定を確認してください。";
+        } else if (error.name === 'NotSupportedError') {
+             nfcScanFeedback.textContent = "このデバイスまたはブラウザは Web NFC に対応していません。";
+        } else {
+            nfcScanFeedback.textContent = `スキャンエラー: ${error.message}`;
+        }
+        nfcScanFeedback.className = "text-xs mt-3 text-red-600";
+        targetButton.disabled = false;
+    }
+    
+    // (★NFC対応★) 
+    // スキャンボタンは再度押せるように有効化しておく
+    // (NDEFReaderがアクティブなままでも、再度 scan() を呼べる)
+    setTimeout(() => {
+        targetButton.disabled = false;
+        if (nfcScanFeedback.textContent === "NFCタグをスキャン待機中... タグをかざしてください。") {
+             nfcScanFeedback.textContent = "準備完了";
+             nfcScanFeedback.className = "text-xs mt-3 text-slate-500";
+        }
+    }, 5000); // 5秒後にボタンを再度有効化
+};
+
+
+/**
+ * (★NFC対応★) 設定フォームに現在の値を読み込む
  */
 const loadSettingsToForm = () => {
     if (!settings) return; 
@@ -128,6 +218,12 @@ const loadSettingsToForm = () => {
     const rounding = settings.rounding || { type: 'none', unit: 1 };
     if (settingRoundingType) settingRoundingType.value = rounding.type;
     if (settingRoundingUnit) settingRoundingUnit.value = rounding.unit;
+    
+    // (★NFC対応★) NFCタグID
+    const nfcTagIds = settings.nfcTagIds || { clockIn: null, clockOut: null };
+    if (nfcTagIdClockIn) nfcTagIdClockIn.value = nfcTagIds.clockIn || '';
+    if (nfcTagIdClockOut) nfcTagIdClockOut.value = nfcTagIds.clockOut || '';
+
 
     // 各リストの描画
     renderTableSettingsList();
@@ -143,10 +239,10 @@ const loadSettingsToForm = () => {
 
 
 /**
- * (★報酬削除★) フォームから設定を保存する
+ * (★NFC対応★) フォームから設定を保存する
  */
 const saveSettingsFromForm = async () => { 
-    if (!settings) return; 
+    if (!settings || !settingsRef) return; 
     
     // --- 店舗情報 ---
     const newStoreInfo = {
@@ -188,6 +284,13 @@ const saveSettingsFromForm = async () => {
         type: settingRoundingType.value,
         unit: parseInt(settingRoundingUnit.value) || 1
     };
+    
+    // (★NFC対応★) --- NFCタグID ---
+    const newNfcTagIds = {
+        clockIn: nfcTagIdClockIn.value.trim() || null,
+        clockOut: nfcTagIdClockOut.value.trim() || null,
+    };
+
 
     // (★削除★) --- 成績反映設定 ---
     // const newPerformanceSettings = { ... };
@@ -197,6 +300,7 @@ const saveSettingsFromForm = async () => {
     settings.rates = newRates;
     settings.dayChangeTime = newDayChangeTime;
     settings.rounding = newRounding; // (★新規★)
+    settings.nfcTagIds = newNfcTagIds; // (★NFC対応★)
     // (★削除★) settings.performanceSettings = newPerformanceSettings;
     
     // (★変更★) Firestoreに保存
@@ -264,7 +368,7 @@ const renderTableSettingsList = () => {
  * (新規) テーブル設定を追加する
  */
 const addTableSetting = async () => { 
-    if (!newTableIdInput || !tableSettingsError || !settings) return; 
+    if (!newTableIdInput || !tableSettingsError || !settings || !settingsRef) return; 
     
     const newId = newTableIdInput.value.trim().toUpperCase();
     
@@ -302,7 +406,7 @@ const addTableSetting = async () => {
  * @param {string} tableId 
  */
 const deleteTableSetting = async (tableId) => { 
-    if (!settings || !slips) return; // (★変更★) slips もチェック
+    if (!settings || !slips || !settingsRef) return; // (★変更★) slips もチェック
     const table = settings.tables.find(t => t.id === tableId); 
     
     const isOccupied = (slips || []).some(s => s.tableId === tableId && (s.status === 'active' || s.status === 'checkout')); 
@@ -358,7 +462,7 @@ const renderTagSettingsList = () => {
  * (★新規★) 伝票タグを追加する
  */
 const addTagSetting = async () => { 
-    if (!newTagNameInput || !tagSettingsError || !settings) return;
+    if (!newTagNameInput || !tagSettingsError || !settings || !settingsRef) return;
     
     const newName = newTagNameInput.value.trim();
     if (newName === "") {
@@ -392,7 +496,7 @@ const addTagSetting = async () => {
  * @param {string} tagId 
  */
 const deleteTagSetting = async (tagId) => { 
-    if (!settings) return;
+    if (!settings || !settingsRef) return;
     
     const tagToDelete = settings.slipTagsMaster.find(t => t.id === tagId); 
     if (!tagToDelete) return;
@@ -450,6 +554,7 @@ const getDefaultSettings = () => {
         rates: { tax: 0.10, service: 0.20 },
         rounding: { type: 'none', unit: 1 }, // (★新規★)
         dayChangeTime: "05:00",
+        nfcTagIds: { clockIn: null, clockOut: null }, // (★NFC対応★)
         // (★削除★) performanceSettings を削除
         ranking: { period: 'monthly', type: 'nominations' }
     };
@@ -546,6 +651,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // (★新規★) 端数処理
     settingRoundingType = document.getElementById('setting-rounding-type');
     settingRoundingUnit = document.getElementById('setting-rounding-unit');
+    
+    // (★NFC対応★)
+    nfcTagIdClockIn = document.getElementById('nfc-tag-id-clock-in');
+    nfcTagIdClockOut = document.getElementById('nfc-tag-id-clock-out');
+    scanNfcClockInBtn = document.getElementById('scan-nfc-clock-in-btn');
+    scanNfcClockOutBtn = document.getElementById('scan-nfc-clock-out-btn');
+    nfcScanFeedback = document.getElementById('nfc-scan-feedback');
     
     saveSettingsBtn = document.getElementById('save-settings-btn');
     settingsFeedback = document.getElementById('settings-feedback');
@@ -648,6 +760,30 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    
+    // --- (★NFC対応★) NFCスキャン ---
+    if ('NDEFReader' in window) {
+        // Web NFC が利用可能な場合のみボタンを有効化
+        if (scanNfcClockInBtn) scanNfcClockInBtn.disabled = false;
+        if (scanNfcClockOutBtn) scanNfcClockOutBtn.disabled = false;
+        
+        if (scanNfcClockInBtn) {
+            scanNfcClockInBtn.addEventListener('click', () => handleNfcScan('clockIn'));
+        }
+        if (scanNfcClockOutBtn) {
+            scanNfcClockOutBtn.addEventListener('click', () => handleNfcScan('clockOut'));
+        }
+        if (nfcScanFeedback) {
+            nfcScanFeedback.textContent = "NFCスキャン準備完了 (HTTPS接続時のみ有効)";
+            nfcScanFeedback.className = "text-xs mt-3 text-slate-500";
+        }
+    } else {
+        if (nfcScanFeedback) {
+            nfcScanFeedback.textContent = "このブラウザは Web NFC に対応していません。手動でIDを入力してください。";
+            nfcScanFeedback.className = "text-xs mt-3 text-red-600";
+        }
+    }
+
 
     // (★削除★) キャスト設定関連リスナー
     // ...

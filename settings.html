@@ -117,6 +117,32 @@
                                 </div>
 
                                 <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
+                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">NFCタイムカード設定</h3>
+                                    <p class="text-sm text-slate-600 mb-4">
+                                        キャッシャー（レジ）に設置するNFCタグの情報を登録します。<br>
+                                        キャストはこのタグにスマートフォンをかざすことで、出退勤打刻を行います。
+                                    </p>
+                                    <div>
+                                        <label for="nfc-tag-id-clock-in" class="text-sm font-semibold text-slate-600">出勤用NFCタグ シリアル番号</label>
+                                        <div class="flex space-x-2 mt-1">
+                                            <input type="text" id="nfc-tag-id-clock-in" class="w-full p-2 border border-slate-300 rounded-lg font-mono bg-slate-100" placeholder="NFCタグをスキャン...">
+                                            <button type="button" id="scan-nfc-clock-in-btn" class="px-4 py-2 rounded-lg bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                                                <i class="fa-solid fa-nfc-symbol mr-2"></i>スキャン
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="mt-4">
+                                        <label for="nfc-tag-id-clock-out" class="text-sm font-semibold text-slate-600">退勤用NFCタグ シリアル番号</label>
+                                        <div class="flex space-x-2 mt-1">
+                                            <input type="text" id="nfc-tag-id-clock-out" class="w-full p-2 border border-slate-300 rounded-lg font-mono bg-slate-100" placeholder="NFCタグをスキャン...">
+                                            <button type="button" id="scan-nfc-clock-out-btn" class="px-4 py-2 rounded-lg bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                                                <i class="fa-solid fa-nfc-symbol mr-2"></i>スキャン
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p id="nfc-scan-feedback" class="text-xs mt-3"></p>
+                                </div>
+                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
                                     <h3 class="text-lg font-semibold mb-5 border-b pb-3">テーブル設定</h3>
                                     
                                     <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4 gap-2">
