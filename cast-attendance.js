@@ -186,7 +186,7 @@ const initializeNfcReader = async () => {
 };
 
 /**
- * (★NFC対応★) 読み取ったNFCシリアル番号を処理する
+ * (★修正★) 読み取ったNFCシリアル番号を処理する (1分以内チェック追加)
  * @param {string} serialNumber
  */
 const handleNfcReading = (serialNumber) => {
@@ -196,30 +196,79 @@ const handleNfcReading = (serialNumber) => {
     }
     
     const { clockIn, clockOut } = settings.nfcTagIds;
+    const isSingleTagMode = (clockIn && clockOut && clockIn === clockOut);
     
-    if (serialNumber === clockIn) {
-        // --- 出勤タグ ---
+    // (★要望3★) 1分以内チェックのためのヘルパー関数
+    const checkLastPunchTime = () => {
+        // (★修正★) updatedAt を参照して最後のDB更新時刻をチェック
+        const lastPunchTimeStr = todaysAttendanceData.updatedAt;
+        if (!lastPunchTimeStr) {
+            return true; // 最初の打刻なのでOK
+        }
+        try {
+            const lastPunchTime = new Date(lastPunchTimeStr).getTime();
+            const now = new Date().getTime();
+            const diffSeconds = (now - lastPunchTime) / 1000;
+            
+            if (diffSeconds < 60) {
+                console.warn(`Duplicate punch detected (within 60s). Ignoring.`);
+                nfcFeedback.textContent = "連続打刻はできません (1分待機)";
+                return false; // 1分以内なのでNG
+            }
+            return true; // 1分経過しているのでOK
+        } catch (e) {
+            console.warn("Error parsing lastPunchTime. Allowing punch.", e);
+            return true; // 念のためOK
+        }
+    };
+
+    if (isSingleTagMode && serialNumber === clockIn) {
+        // --- (★新★) 1タグ運用モード ---
+        console.log("Single-Tag mode punch detected.");
+        
+        if (todaysAttendanceData.status === 'unsubmitted') {
+            // 1. 出勤処理
+            if (checkLastPunchTime()) { // (1分チェック)
+                handleClockIn('nfc');
+            }
+        } else if (todaysAttendanceData.status === 'clocked_in' || todaysAttendanceData.status === 'late') {
+            // 2. 退勤処理 (★要望2★)
+            if (checkLastPunchTime()) { // (★要望3★)
+                handleClockOut('nfc');
+            }
+        } else if (todaysAttendanceData.status === 'clocked_out') {
+            nfcFeedback.textContent = "既に退勤済みです";
+        } else {
+            nfcFeedback.textContent = "打刻できません (欠勤)";
+        }
+
+    } else if (serialNumber === clockIn) {
+        // --- (従来) 2タグ運用: 出勤タグ ---
         console.log("Clock-In tag matched.");
         if (todaysAttendanceData.status === 'unsubmitted') {
-            handleClockIn('nfc');
+            if (checkLastPunchTime()) {
+                handleClockIn('nfc');
+            }
         } else if (todaysAttendanceData.status === 'clocked_in' || todaysAttendanceData.status === 'late') {
             nfcFeedback.textContent = "既に出勤済みです";
         } else {
             nfcFeedback.textContent = "出勤できません (退勤/欠勤)";
         }
-    } 
-    else if (serialNumber === clockOut) {
-        // --- 退勤タグ ---
+        
+    } else if (serialNumber === clockOut) {
+        // --- (従来) 2タグ運用: 退勤タグ ---
         console.log("Clock-Out tag matched.");
         if (todaysAttendanceData.status === 'clocked_in' || todaysAttendanceData.status === 'late') {
-            handleClockOut('nfc');
+            if (checkLastPunchTime()) { // (★要望3★)
+                handleClockOut('nfc');
+            }
         } else if (todaysAttendanceData.status === 'clocked_out') {
             nfcFeedback.textContent = "既に退勤済みです";
         } else {
             nfcFeedback.textContent = "先に出勤してください";
         }
-    } 
-    else {
+        
+    } else {
         // --- 不明なタグ ---
         console.warn(`Unknown NFC tag: ${serialNumber}`);
         nfcFeedback.textContent = "不明なNFCタグです";
@@ -271,7 +320,7 @@ const updateUI = () => {
         // NFC非対応ブラウザ
         if (nfcProcessingContainer) nfcProcessingContainer.classList.remove('hidden');
         if (nfcFeedback) nfcFeedback.textContent = "NFC非対応ブラウザです";
-        if (nfcIcon) nfcIcon.classList.remove('fa-spin', 'nfc-blink'); // (★修正★) アニメーション停止
+        if (nfcIcon) nfcIcon.classList.remove('fa-spin', 'nfc-blink'); 
     }
 };
 
@@ -285,7 +334,7 @@ const loadTodaysAttendance = async () => {
         if (attendanceLoading) {
             attendanceLoading.textContent = "このページはキャスト専用です。";
             attendanceLoading.classList.add("text-red-500");
-            attendanceLoading.classList.remove("hidden"); // (★追加★) hidden解除
+            attendanceLoading.classList.remove("hidden"); 
         }
         // NFCや手動ボタンも隠す
         if (nfcProcessingContainer) nfcProcessingContainer.classList.add('hidden');
@@ -297,7 +346,7 @@ const loadTodaysAttendance = async () => {
         if (attendanceLoading) {
             attendanceLoading.textContent = "店舗設定の読み込みに失敗しました。";
             attendanceLoading.classList.add("text-red-500");
-            attendanceLoading.classList.remove("hidden"); // (★追加★) hidden解除
+            attendanceLoading.classList.remove("hidden"); 
         }
         return; 
     }
@@ -325,7 +374,8 @@ const loadTodaysAttendance = async () => {
                 status: 'unsubmitted',
                 clockIn: null,
                 clockOut: null,
-                memo: null
+                memo: null,
+                updatedAt: null // (★修正★) 1分チェック用にnullで初期化
             };
         }
         
@@ -353,8 +403,8 @@ const handleClockIn = async (source = 'nfc') => {
         // 手動ボタンは無くなった
     } else {
         if (nfcFeedback) nfcFeedback.textContent = "出勤処理中...";
-        if (nfcIcon) nfcIcon.classList.remove('nfc-blink'); // (★修正★) 点滅を停止
-        if (nfcIcon) nfcIcon.classList.add('fa-spin'); // (★修正★) 回転を開始
+        if (nfcIcon) nfcIcon.classList.remove('nfc-blink'); 
+        if (nfcIcon) nfcIcon.classList.add('fa-spin'); 
     }
     
     const now = new Date();
@@ -368,7 +418,7 @@ const handleClockIn = async (source = 'nfc') => {
         clockIn: now.toISOString(),
         clockOut: null,
         memo: source === 'nfc' ? "NFC打刻 (出勤)" : "キャストアプリから打刻",
-        updatedAt: now.toISOString()
+        updatedAt: now.toISOString() // (★修正★) 1分チェック用に更新
     };
     
     try {
@@ -379,7 +429,7 @@ const handleClockIn = async (source = 'nfc') => {
         
         if (source === 'nfc') {
             if (nfcFeedback) nfcFeedback.textContent = "出勤打刻が完了しました";
-            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); // (★修正★) 回転を停止
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); 
         }
         
     } catch (error) {
@@ -388,8 +438,8 @@ const handleClockIn = async (source = 'nfc') => {
             alert("出勤打刻に失敗しました。");
         } else {
             if (nfcFeedback) nfcFeedback.textContent = "エラー: 出勤打刻に失敗";
-            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); // (★修正★) 回転を停止
-            if (nfcIcon) nfcIcon.classList.add('nfc-blink'); // (★修正★) エラー時は点滅に戻す
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); 
+            if (nfcIcon) nfcIcon.classList.add('nfc-blink'); 
         }
     }
 };
@@ -405,8 +455,8 @@ const handleClockOut = async (source = 'nfc') => {
         // 手動ボタンは無くなった
     } else {
         if (nfcFeedback) nfcFeedback.textContent = "退勤処理中...";
-        if (nfcIcon) nfcIcon.classList.remove('nfc-blink'); // (★修正★) 点滅を停止
-        if (nfcIcon) nfcIcon.classList.add('fa-spin'); // (★修正★) 回転を開始
+        if (nfcIcon) nfcIcon.classList.remove('nfc-blink'); 
+        if (nfcIcon) nfcIcon.classList.add('fa-spin'); 
     }
     
     const now = new Date();
@@ -414,7 +464,7 @@ const handleClockOut = async (source = 'nfc') => {
     const attendanceData = {
         status: 'clocked_out',
         clockOut: now.toISOString(),
-        updatedAt: now.toISOString()
+        updatedAt: now.toISOString() // (★修正★) 1分チェック用に更新
     };
     
     try {
@@ -425,7 +475,7 @@ const handleClockOut = async (source = 'nfc') => {
         
         if (source === 'nfc') {
             if (nfcFeedback) nfcFeedback.textContent = "退勤打刻が完了しました";
-            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); // (★修正★) 回転を停止
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); 
         }
 
     } catch (error) {
@@ -434,8 +484,8 @@ const handleClockOut = async (source = 'nfc') => {
             alert("退勤打刻に失敗しました。");
         } else {
             if (nfcFeedback) nfcFeedback.textContent = "エラー: 退勤打刻に失敗";
-            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); // (★修正★) 回転を停止
-            if (nfcIcon) nfcIcon.classList.add('nfc-blink'); // (★修正★) エラー時は点滅に戻す
+            if (nfcIcon) nfcIcon.classList.remove('fa-spin'); 
+            if (nfcIcon) nfcIcon.classList.add('nfc-blink'); 
         }
     }
 };
