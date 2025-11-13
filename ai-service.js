@@ -14,7 +14,7 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "https://cd
 // (★重要★) 
 // (★修正★) Google AI Studio ( https://aistudio.google.com/ ) で取得した
 // (★修正★) APIキーを以下の "YOUR_API_KEY_HERE" と置き換えてください。
-const API_KEY = "YOUR_API_KEY_HERE"; 
+const API_KEY = "AIzaSyBTPq8GNOLAkUmfZelpYJtM4hZD4Dw_iS0"; 
 
 // --- 初期設定 ---
 let genAI;
@@ -60,14 +60,14 @@ const initializeAI = () => {
         
         // 高速モデル (Flash) の設定
         flashModel = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash-latest", // (★修正★) 支払い設定が完了したため、 -latest を使用
+            model: "gemini-pro", // (★エラー修正★) "models/" プレフィックスを削除
             safetySettings,
             // systemInstruction: "あなたはキャバクラの優秀なボーイ（ウェイター）です。簡潔に、しかし丁寧に応答してください。"
         });
         
         // (★修正★) 高性能モデル (Pro) の設定
         proModel = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-pro-latest", // (★修正★) 支払い設定が完了したため、 -latest を使用
+            model: "gemini-pro", // (★エラー修正★) "models/" プレフィックスを削除
             safetySettings,
             // systemInstruction: "あなたは優秀な経営コンサルタントです。ナイトレジャー業界のデータに基づいて、具体的で実行可能なアドバイスをください。"
         });
