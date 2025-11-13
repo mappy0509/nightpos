@@ -14,7 +14,7 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "https://cd
 // (★重要★) 
 // (★修正★) Google AI Studio ( https://aistudio.google.com/ ) で取得した
 // (★修正★) APIキーを以下の "YOUR_API_KEY_HERE" と置き換えてください。
-const API_KEY = "AIzaSyBTPq8GNOLAkUmfZelpYJtM4hZD4Dw_iS0"; 
+const API_KEY = ""; 
 
 // --- 初期設定 ---
 let genAI;
