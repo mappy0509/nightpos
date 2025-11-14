@@ -11,21 +11,11 @@ import {
     deleteDoc, 
     doc,
     collection,
-    getDoc, // (★在庫管理 追加★)
-    serverTimestamp // (★在庫管理 追加★)
+    getDoc, 
+    serverTimestamp,
+    query, // (★コール管理 追加★)
+    where // (★コール管理 追加★)
 } from './firebase-init.js';
-
-// (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
-/*
-import {
-    settingsRef,
-    menuRef,
-    slipCounterRef,
-    castsCollectionRef,
-    customersCollectionRef,
-    slipsCollectionRef
-} from './firebase-init.js';
-*/
 
 // ===== グローバル定数・変数 =====
 
@@ -44,6 +34,7 @@ let casts = [];
 let customers = [];
 let slips = [];
 let inventoryItems = []; // (★在庫管理 追加★)
+let champagneCalls = []; // (★コール管理 追加★)
 let slipCounter = 0;
 
 // (★変更★) 現在選択中の伝票ID (ローカル管理)
@@ -54,6 +45,7 @@ let currentOrderModalCategoryId = null; // (★新規★) オーダーモーダ�
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
 let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef,
     inventoryItemsCollectionRef, // (★在庫管理 追加★)
+    champagneCallsCollectionRef, // (★コール管理 追加★)
     currentStoreId; // (★動的表示 追加★)
 
 
@@ -171,9 +163,9 @@ const calculateSlipTotal = (slip) => {
         subtotal = Math.floor(subtotal / rounding.unit) * rounding.unit;
     }
 
-    const serviceCharge = subtotal * settings.rates.service;
+    const serviceCharge = subtotal * settings.rates.service; // (★変更★)
     const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * settings.rates.tax;
+    const tax = subtotalWithService * settings.rates.tax; // (★変更★)
     let total = subtotalWithService + tax;
     
     // (★新規★) 最終合計金額の端数処理
@@ -609,9 +601,74 @@ const updateSlipInfo = async () => {
     }
 };
 
+// (★コール管理 新規★) シャンパンコールをトリガー/更新する
+const checkAndTriggerChampagneCall = async (slipData) => {
+    // 設定、メニュー、またはコール管理コレクションの参照がない場合は何もしない
+    if (!settings || !settings.champagneCallBorders || settings.champagneCallBorders.length === 0 || !menu || !menu.items || !champagneCallsCollectionRef) {
+        console.log("Call check skipped: feature not configured or data not ready.");
+        return;
+    }
+
+    // 1. この伝票の「シャンパンコール対象」アイテムとその小計を計算
+    let callSubtotal = 0;
+    const callItems = [];
+    for (const item of slipData.items) {
+        const menuItem = menu.items.find(m => m.id === item.id);
+        if (menuItem && menuItem.isCallTarget) { 
+            callSubtotal += item.price * item.qty;
+            callItems.push({ name: menuItem.name, qty: item.qty });
+        }
+    }
+
+    // 2. 適用される最高の金額ボーダーを見つける
+    const applicableBorders = settings.champagneCallBorders
+        .filter(rule => callSubtotal >= rule.borderAmount)
+        .sort((a, b) => b.borderAmount - a.borderAmount); // 金額が高い順 (降順)
+
+    // 3. 適用されるボーダーがない場合
+    if (applicableBorders.length === 0) {
+        console.log("No champagne call border met.");
+        return;
+    }
+
+    const highestBorder = applicableBorders[0];
+
+    // 4. この伝票 (slipId) で、まだ「未対応 (pending)」のコールが既に存在するか確認
+    const existingPendingCall = champagneCalls.find(call => call.slipId === slipData.slipId && call.status === 'pending');
+
+    const callData = {
+        slipId: slipData.slipId,
+        tableId: slipData.tableId,
+        totalAmount: callSubtotal, // コール対象アイテムの合計小計
+        items: callItems,
+        borderAmount: highestBorder.borderAmount, // 達成したボーダー金額
+        callType: highestBorder.callName, // 設定されたデフォルトのコール名
+        status: 'pending',
+        createdAt: serverTimestamp(), // (★重要★) 常にサーバータイムスタンプで更新（リストの先頭に来るように）
+        mainMicCastId: null,
+        subMicCastId: null,
+        completedAt: null
+    };
+
+    try {
+        if (existingPendingCall) {
+            // 5. 既存の「未対応」コールを更新する
+            console.log(`Updating existing pending call ${existingPendingCall.id}`);
+            const callRef = doc(champagneCallsCollectionRef, existingPendingCall.id);
+            await setDoc(callRef, callData); 
+        } else {
+            // 6. 新規に「未対応」コールを作成する
+            console.log("Creating new pending champagne call.");
+            await addDoc(champagneCallsCollectionRef, callData);
+        }
+    } catch (e) {
+        console.error("Error triggering champagne call:", e);
+    }
+};
+
 
 /**
- * 注文リストにアイテムを追加する
+ * (★コール管理 変更★) 注文リストにアイテムを追加する
  * @param {string} id 商品ID
  * @param {string} name 商品名
  * @param {number} price 価格
@@ -632,6 +689,10 @@ const addOrderItem = async (id, name, price) => {
     try {
         const slipRef = doc(slipsCollectionRef, currentSlipId);
         await setDoc(slipRef, { items: slipData.items }, { merge: true });
+        
+        // (★コール管理 追加★) オーダー変更後にコールをチェック
+        await checkAndTriggerChampagneCall(slipData);
+        
     } catch (e) {
         console.error("Error adding order item: ", e);
     }
@@ -640,7 +701,7 @@ const addOrderItem = async (id, name, price) => {
 };
 
 /**
- * (新規) 注文リストからアイテムを削除する
+ * (★コール管理 変更★) 注文リストからアイテムを削除する
  * @param {string} id 商品ID
  */
 const removeOrderItem = async (id) => {
@@ -654,6 +715,10 @@ const removeOrderItem = async (id) => {
     try {
         const slipRef = doc(slipsCollectionRef, currentSlipId);
         await setDoc(slipRef, { items: slipData.items }, { merge: true });
+        
+        // (★コール管理 追加★) オーダー変更後にコールをチェック
+        await checkAndTriggerChampagneCall(slipData);
+        
     } catch (e) {
         console.error("Error removing order item: ", e);
     }
@@ -661,7 +726,7 @@ const removeOrderItem = async (id) => {
 };
 
 /**
- * (新規) 注文アイテムの数量を変更する
+ * (★コール管理 変更★) 注文アイテムの数量を変更する
  * @param {string} id 商品ID
  * @param {number} qty 数量
  */
@@ -679,18 +744,15 @@ const updateOrderItemQty = async (id, qty) => {
     try {
         const slipRef = doc(slipsCollectionRef, currentSlipId);
         await setDoc(slipRef, { items: slipData.items }, { merge: true });
+        
+        // (★コール管理 追加★) オーダー変更後にコールをチェック
+        await checkAndTriggerChampagneCall(slipData);
+        
     } catch (e) {
         console.error("Error updating order item qty: ", e);
     }
     renderOrderModal();
 };
-
-/**
- * (新規) メニュー管理タブとリストを描画する (all-slips.jsでは不要)
- */
-// (★削除★)
-// const renderMenuTabs = () => { ... };
-
 
 /**
  * (★要望5★) 伝票・会計・領収書モーダルの共通情報を更新する
@@ -1310,9 +1372,7 @@ const handlePaidSlipClick = (slipId) => {
 // (★削除★)
 // const renderCastRanking = () => { ... };
 
-// (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
-// (★変更★) settings, menu のデフォルトデータを返す関数に変更
-// (★要望5★) 領収書設定を追加
+// (★コール管理 変更★) デフォルトの state を定義する関数
 const getDefaultSettings = () => {
     return {
         // currentPage: 'all-slips', (settings には不要)
@@ -1354,7 +1414,15 @@ const getDefaultSettings = () => {
             tax: { salesType: 'percentage', salesValue: 0 },
             sideCustomer: { salesValue: 100, countNomination: true }
         },
-        ranking: { period: 'monthly', type: 'nominations' }
+        ranking: { period: 'monthly', type: 'nominations' },
+        // (★コール管理 追加★) デフォルトのシャンパンコール設定
+        champagneCallBorders: [
+            { callName: "シャンパンコール", borderAmount: 50000 },
+            { callName: "ロングコール (曲A)", borderAmount: 150000 },
+            { callName: "ロングコール (曲B)", borderAmount: 250000 },
+            { callName: "オールコール", borderAmount: 750000 },
+            { callName: "ミリオンコール", borderAmount: 1000000 }
+        ]
     };
 };
 
@@ -1376,11 +1444,13 @@ const getDefaultMenu = () => {
             { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false },
         ],
         items: [
-            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, inventoryItemId: null, inventoryConsumption: null },
-            { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60, inventoryItemId: null, inventoryConsumption: null },
-            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, inventoryItemId: null, inventoryConsumption: null },
-            { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null, inventoryItemId: null, inventoryConsumption: null },
-            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, inventoryItemId: null, inventoryConsumption: null, isCallTarget: false },
+            { id: 'm2', categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60, inventoryItemId: null, inventoryConsumption: null, isCallTarget: false },
+            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, inventoryItemId: null, inventoryConsumption: null, isCallTarget: false },
+            { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null, inventoryItemId: null, inventoryConsumption: null, isCallTarget: false },
+            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null, inventoryItemId: null, inventoryConsumption: null, isCallTarget: false },
+            // (★コール管理 追加★)
+            { id: getUUID(), categoryId: catBottleId, name: 'ドン・ペリニヨン', price: 80000, duration: null, inventoryItemId: null, inventoryConsumption: null, isCallTarget: true },
         ],
         currentActiveMenuCategoryId: catSetId,
     };
@@ -1460,11 +1530,12 @@ const handleTableTransfer = async (newTableId) => {
 };
 
 
-// (★変更★) --- Firestore リアルタイムリスナー ---
-// (★変更★) firebaseReady イベントを待ってからリスナーを設定
+/**
+ * (★コール管理 変更★) --- Firestore リアルタイムリスナー ---
+ */
 document.addEventListener('firebaseReady', (e) => {
     
-    // (★変更★) 新しい参照を取得
+    // (★変更★) 必要な参照のみ取得
     const { 
         settingsRef: sRef, 
         menuRef: mRef, 
@@ -1473,6 +1544,7 @@ document.addEventListener('firebaseReady', (e) => {
         customersCollectionRef: cuRef, 
         slipsCollectionRef: slRef,
         inventoryItemsCollectionRef: iRef, // (★在庫管理 追加★)
+        champagneCallsCollectionRef: ccRef, // (★コール管理 追加★)
         currentStoreId: csId // (★動的表示 追加★)
     } = e.detail;
 
@@ -1484,6 +1556,7 @@ document.addEventListener('firebaseReady', (e) => {
     customersCollectionRef = cuRef;
     slipsCollectionRef = slRef;
     inventoryItemsCollectionRef = iRef; // (★在庫管理 追加★)
+    champagneCallsCollectionRef = ccRef; // (★コール管理 追加★)
     currentStoreId = csId; // (★動的表示 追加★)
 
     // (★新規★) 全データをロードできたか確認するフラグ
@@ -1494,11 +1567,12 @@ document.addEventListener('firebaseReady', (e) => {
     let slipsLoaded = false;
     let counterLoaded = false;
     let inventoryLoaded = false; // (★在庫管理 追加★)
+    let callsLoaded = false; // (★コール管理 追加★)
 
-    // (★新規★) 全データロード後にUIを初回描画する関数
+    // (★コール管理 変更★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
         // (★変更★) all-slips.js は renderAllSlipsPage を呼ぶ
-        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && inventoryLoaded) { // (★在庫管理 変更★)
+        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && inventoryLoaded && callsLoaded) { // (★コール管理 変更★)
             console.log("All data loaded. Rendering UI for all-slips.js");
             renderAllSlipsPage();
             updateModalCommonInfo(); 
@@ -1597,6 +1671,21 @@ document.addEventListener('firebaseReady', (e) => {
     }, (error) => {
         console.error("Error listening to inventory items: ", error);
         inventoryLoaded = true; // エラーでも続行
+        checkAndRenderAll();
+    });
+    
+    // 8. (★コール管理 追加★) Champagne Calls
+    onSnapshot(champagneCallsCollectionRef, (querySnapshot) => {
+        champagneCalls = [];
+        querySnapshot.forEach((doc) => {
+            champagneCalls.push({ ...doc.data(), id: doc.id });
+        });
+        console.log("Champagne calls loaded (for trigger check): ", champagneCalls.length);
+        callsLoaded = true; 
+        checkAndRenderAll();
+    }, (error) => {
+        console.error("Error listening to champagne calls: ", error);
+        callsLoaded = true; // エラーでも続行
         checkAndRenderAll();
     });
 });
@@ -2062,7 +2151,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
     // (★新規★) オーダーモーダルのカテゴリタブ イベント委任
     if (orderCategoryTabsContainer) {
         orderCategoryTabsContainer.addEventListener('click', (e) => {
@@ -2072,7 +2161,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
+    
     // (新規) 注文メニューのイベント委任
     if (menuOrderGrid) {
         menuOrderGrid.addEventListener('click', (e) => {

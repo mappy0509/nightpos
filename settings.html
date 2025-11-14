@@ -3,227 +3,160 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NPS.AI - 店舗設定</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
+    <title>設定 - NightPOS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="style.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 </head>
-<body class="text-slate-800">
+<body>
+    <div class="wrapper">
+        <aside id="sidebar">
+            </aside>
 
-    <div class="flex h-screen bg-slate-50">
-        <aside id="sidebar-container" class="w-72 lg:w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable fixed inset-y-0 left-0 z-40 transform -translate-x-full lg:static lg:translate-x-0 transition-transform duration-300 ease-in-out">
-            <div class="flex-grow flex items-center justify-center">
-                <i class="fa-solid fa-spinner fa-spin text-blue-500"></i>
-            </div>
-        </aside>
-
-        <main class="flex-1 flex flex-col overflow-hidden non-printable admin-main">
-            <header class="h-16 bg-white border-b flex items-center justify-between px-4 lg:px-6 shadow-sm">
-                
-                <button id="sidebar-toggle-btn" class="lg:hidden text-slate-600 hover:text-slate-800">
-                    <i class="fa-solid fa-bars fa-lg"></i>
+        <div class="main-content">
+            <header>
+                <button class="btn btn-menu d-md-none" id="sidebar-toggle">
+                    <i class="fas fa-bars"></i>
                 </button>
-
-                <h2 id="page-title" class="text-xl font-semibold text-slate-700 hidden lg:block">店舗設定</h2>
-                <h2 class="text-xl font-semibold text-slate-700 lg:hidden absolute left-1/2 -translate-x-1/2">
-                    店舗設定
-                </h2>
-
-                <div class="hidden lg:flex items-center space-x-4">
-                    <div class="flex items-center space-x-2 px-3 py-2 rounded-lg bg-slate-100 border border-slate-200">
-                        <i class="fa-solid fa-store text-slate-500"></i>
-                        <span id="header-store-name" class="text-sm font-semibold text-slate-700">loading...</span>
-                    </div>
-                    <button class="text-slate-500 hover:text-blue-600">
-                        <i class="fa-regular fa-bell fa-lg"></i>
-                    </button>
-                </div>
-                
-                <div class="lg:hidden w-8"></div>
+                <h2>設定</h2>
             </header>
-            <div class="flex-1 overflow-y-auto p-4 lg:p-8">
-                
-                <div id="settings" data-page class="active"> <form id="settings-form">
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-8">
-                            
-                            <div class="lg:col-span-2 space-y-4 lg:space-y-8">
-                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
-                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">店舗情報</h3>
-                                    <div class="space-y-4">
-                                        <div>
-                                            <label for="store-name" class="text-sm font-semibold text-slate-600">店舗名</label>
-                                            <input type="text" id="store-name" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
-                                        </div>
-                                        <div>
-                                            <label for="store-address" class="text-sm font-semibold text-slate-600">住所</label>
-                                            <input type="text" id="store-address" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
-                                        </div>
-                                        <div>
-                                            <label for="store-tel" class="text-sm font-semibold text-slate-600">電話番号</label>
-                                            <input type="text" id="store-tel" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
-                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">税率・サービス料</h3>
-                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
-                                        <div>
-                                            <label for="tax-rate" class="text-sm font-semibold text-slate-600">消費税 (%)</label>
-                                            <input type="number" id="tax-rate" placeholder="10" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
-                                        </div>
-                                        <div>
-                                            <label for="service-rate" class="text-sm font-semibold text-slate-600">サービス料 (%)</label>
-                                            <input type="number" id="service-rate" placeholder="20" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
-                                        </div>
-                                        <div>
-                                            <label for="day-change-time" class="text-sm font-semibold text-slate-600">営業日付の変更時刻</label>
-                                            <input type="time" id="day-change-time" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
-                                            <p class="text-xs text-slate-500 mt-1">例: AM 5:00</p>
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
-                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">領収書 印字設定</h3>
-                                    <div class="space-y-4">
-                                        <div>
-                                            <label for="receipt-store-name" class="text-sm font-semibold text-slate-600">印字する店舗名</label>
-                                            <input type="text" id="receipt-store-name" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
-                                            <p class="text-xs text-slate-500 mt-1">（空欄の場合、店舗情報の店舗名を使用）</p>
-                                        </div>
-                                        <div>
-                                            <label for="receipt-address" class="text-sm font-semibold text-slate-600">印字する住所・郵便番号</label>
-                                            <textarea id="receipt-address" rows="3" class="w-full p-2 border border-slate-300 rounded-lg mt-1" placeholder="例: 〒160-0021&#10;東京都新宿区..."></textarea>
-                                            <p class="text-xs text-slate-500 mt-1">（空欄の場合、店舗情報の住所を使用。HTMLの<br>タグが使えます）</p>
-                                        </div>
-                                        <div>
-                                            <label for="receipt-tel" class="text-sm font-semibold text-slate-600">印字する電話番号</label>
-                                            <input type="text" id="receipt-tel" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
-                                            <p class="text-xs text-slate-500 mt-1">（空欄の場合、店舗情報の電話番号を使用）</p>
-                                        </div>
-                                        <div>
-                                            <label for="receipt-invoice-number" class="text-sm font-semibold text-slate-600">インボイス登録番号 (T...)</label>
-                                            <input type="text" id="receipt-invoice-number" class="w-full p-2 border border-slate-300 rounded-lg mt-1" placeholder="T1234567890">
-                                            <p class="text-xs text-slate-500 mt-1">（空欄の場合、領収書に番号を表示しません）</p>
-                                        </div>
-                                        <div>
-                                            <label for="receipt-default-description" class="text-sm font-semibold text-slate-600">デフォルトの但し書き</label>
-                                            <input type="text" id="receipt-default-description" class="w-full p-2 border border-slate-300 rounded-lg mt-1" placeholder="お飲食代として">
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
-                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">会計 端数処理設定</h3>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
-                                        <div>
-                                            <label for="setting-rounding-type" class="text-sm font-semibold text-slate-600">処理方法</label>
-                                            <select id="setting-rounding-type" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white">
-                                                <option value="none">端数処理をしない (1円単位)</option>
-                                                <option value="round_up_total">会計合計を切り上げ</option>
-                                                <option value="round_down_total">会計合計を切り捨て</option>
-                                                </select>
-                                        </div>
-                                        <div>
-                                            <label for="setting-rounding-unit" class="text-sm font-semibold text-slate-600">処理単位</label>
-                                            <select id="setting-rounding-unit" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white">
-                                                <option value="1">1円単位</option>
-                                                <option value="10">10円単位</option>
-                                                <option value="100">100円単位</option>
-                                                <option value="1000">1000円単位</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <p class="text-xs text-slate-500 mt-3">
-                                        例:「会計合計を切り上げ」 + 「10円単位」 = 請求額 10,001円 が 10,010円 になります。<br>
-                                        「会計合計を切り捨て」 + 「100円単位」 = 請求額 10,199円 が 10,100円 になります。
-                                    </p>
-                                </div>
-
-                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
-                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">NFCタイムカード設定</h3>
-                                    <p class="text-sm text-slate-600 mb-4">
-                                        キャッシャー（レジ）に設置するNFCタグの情報を登録します。<br>
-                                        キャストはこのタグにスマートフォンをかざすことで、出退勤打刻を行います。
-                                    </p>
-                                    <div>
-                                        <label for="nfc-tag-id-clock-in" class="text-sm font-semibold text-slate-600">出勤用NFCタグ シリアル番号</label>
-                                        <div class="flex space-x-2 mt-1">
-                                            <input type="text" id="nfc-tag-id-clock-in" class="w-full p-2 border border-slate-300 rounded-lg font-mono bg-slate-100" placeholder="NFCタグをスキャン...">
-                                            <button type="button" id="scan-nfc-clock-in-btn" class="px-4 py-2 rounded-lg bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                                                <i class="fa-solid fa-nfc-symbol mr-2"></i>スキャン
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div class="mt-4">
-                                        <label for="nfc-tag-id-clock-out" class="text-sm font-semibold text-slate-600">退勤用NFCタグ シリアル番号</label>
-                                        <div class="flex space-x-2 mt-1">
-                                            <input type="text" id="nfc-tag-id-clock-out" class="w-full p-2 border border-slate-300 rounded-lg font-mono bg-slate-100" placeholder="NFCタグをスキャン...">
-                                            <button type="button" id="scan-nfc-clock-out-btn" class="px-4 py-2 rounded-lg bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                                                <i class="fa-solid fa-nfc-symbol mr-2"></i>スキャン
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <p id="nfc-scan-feedback" class="text-xs mt-3"></p>
-                                </div>
-                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
-                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">テーブル設定</h3>
-                                    
-                                    <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4 gap-2">
-                                        <input type="text" id="new-table-id-input" placeholder="テーブル名 (例: V5, C3, V1A)" class="w-full p-2 border border-slate-300 rounded-lg">
-                                        <button type="button" id="add-table-btn" class="px-5 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 whitespace-nowrap">
-                                            <i class="fa-solid fa-plus mr-2"></i>追加
-                                        </button>
-                                    </div>
-                                    <p id="table-settings-error" class="text-xs text-red-600 mb-4"></p>
-                                    
-                                    <div class="space-y-2 max-h-60 overflow-y-auto pr-2" id="current-tables-list">
-                                        </div>
-                                </div>
-
-                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
-                                    <h3 class="text-lg font-semibold mb-5 border-b pb-3">伝票タグ設定</h3>
-                                    
-                                    <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4 gap-2">
-                                        <input type="text" id="new-tag-name-input" placeholder="タグ名 (例: VIP, 団体)" class="w-full p-2 border border-slate-300 rounded-lg">
-                                        <button type="button" id="add-tag-btn" class="px-5 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 whitespace-nowrap">
-                                            <i class="fa-solid fa-plus mr-2"></i>追加
-                                        </button>
-                                    </div>
-                                    <p id="tag-settings-error" class="text-xs text-red-600 mb-4"></p>
-                                    
-                                    <div class="space-y-2 max-h-60 overflow-y-auto pr-2" id="current-tags-list">
-                                        </div>
-                                </div>
-
-                            </div>
-                            
-                            <div class="lg:col-span-1">
-                                <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200 sticky top-4 lg:top-8">
-                                    <h3 class="text-lg font-semibold mb-4">保存</h3>
-                                    <p class="text-sm text-slate-500 mb-4">
-                                        店舗情報、税率、テーブル設定などを変更した場合は、保存ボタンを押してください。
-                                    </p>
-                                    <button id="save-settings-btn" class="w-full px-6 py-3 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 text-lg">
-                                        <i class="fa-solid fa-save mr-2"></i>設定を保存する
-                                    </button>
-                                    <p id="settings-feedback" class="text-sm mt-3"></p>
-                                </div>
-                            </div>
-
-                        </div>
-                    </form>
-
+            <main class="p-3">
+                <div class="tabs mb-4">
+                    <button class="tab-button active" onclick="openTab('general-settings', this)">一般設定</button>
+                    <button class="tab-button" onclick="openTab('cast-settings', this)">キャスト設定</button>
+                    <button class="tab-button" onclick="openTab('inventory-settings', this)">在庫管理設定</button>
+                    <button class="tab-button" onclick="openTab('champagne-call-settings', this)">コール設定</button>
                 </div>
-                
-            </div>
-        </main>
-    </div>
 
+                <div id="general-settings" class="tab-content active">
+                    <h3>店舗一般設定</h3>
+                    <form id="generalSettingsForm">
+                        <div class="mb-3">
+                            <label for="storeName" class="form-label">店舗名</label>
+                            <input type="text" class="form-control" id="storeName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="taxRate" class="form-label">消費税率 (%)</label>
+                            <input type="number" class="form-control" id="taxRate" min="0" max="100" step="0.01" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="serviceChargeRate" class="form-label">サービス料率 (%)</label>
+                            <input type="number" class="form-control" id="serviceChargeRate" min="0" max="100" step="0.01" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="cutOffTime" class="form-label">日締め時間 (HH:MM)</label>
+                            <input type="time" class="form-control" id="cutOffTime" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">設定を保存</button>
+                        <div id="general-settings-status" class="mt-3"></div>
+                    </form>
+                </div>
+
+                <div id="cast-settings" class="tab-content" style="display:none;">
+                    <h3>キャスト設定</h3>
+                    <form id="castSettingsForm">
+                        <div class="mb-3">
+                            <label for="defaultCastRank" class="form-label">デフォルトキャストランク</label>
+                            <input type="text" class="form-control" id="defaultCastRank" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">設定を保存</button>
+                        <div id="cast-settings-status" class="mt-3"></div>
+                    </form>
+                    
+                    <h4 class="mt-4">キャスト招待リンク</h4>
+                    <button id="generateInviteLinkBtn" class="btn btn-secondary">招待リンクを生成</button>
+                    <div id="inviteLinkArea" class="mt-3 card p-3" style="display:none;">
+                        <p>このリンクをキャストに送付してください:</p>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="inviteLinkInput" readonly>
+                            <button class="btn btn-outline-secondary" type="button" onclick="copyInviteLink()">コピー</button>
+                        </div>
+                        <p class="text-muted mt-2">有効期限: <span id="inviteLinkExpiry"></span></p>
+                    </div>
+                </div>
+
+                <div id="inventory-settings" class="tab-content" style="display:none;">
+                    <h3>在庫管理設定</h3>
+                    <form id="inventorySettingsForm">
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="inventoryEnabled">
+                            <label class="form-check-label" for="inventoryEnabled">在庫管理機能を有効にする</label>
+                        </div>
+                        <div class="mb-3">
+                            <label for="lowStockThreshold" class="form-label">低在庫通知しきい値</label>
+                            <input type="number" class="form-control" id="lowStockThreshold" min="1" required>
+                            <div class="form-text">在庫数がこの値以下になった場合に通知されます。</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">設定を保存</button>
+                        <div id="inventory-settings-status" class="mt-3"></div>
+                    </form>
+                </div>
+
+                <div id="champagne-call-settings" class="tab-content" style="display:none;">
+                    <h3>シャンパンコール設定</h3>
+                    <p class="text-muted">オーダー合計金額（小計）に基づいたシャンパンコールの種類と適用ボーダーを設定します。</p>
+
+                    <div class="card p-3 mb-4">
+                        <h4>新しいコールルールの追加</h4>
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-5">
+                                <label for="newCallName" class="form-label">コール名（曲名など）</label>
+                                <input type="text" class="form-control" id="newCallName" placeholder="例: お願い！セニョリータ / ロングコール" required>
+                            </div>
+                            <div class="col-md-5">
+                                <label for="newCallBorder" class="form-label">適用金額ボーダー（小計・万円単位）</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="newCallBorder" placeholder="例: 15 (15万円)" required min="0">
+                                    <span class="input-group-text">万円以上</span>
+                                </div>
+                                <div class="form-text">例: 15と入力すると、150,000円（小計）以上で適用されます。</div>
+                            </div>
+                            <div class="col-md-2">
+                                <button id="addCallBorderBtn" class="btn btn-primary w-100">追加</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card p-3">
+                        <h4>現在のコールルール一覧</h4>
+                        <table class="table table-hover mt-3">
+                            <thead>
+                                <tr>
+                                    <th>金額ボーダー（万円以上）</th>
+                                    <th>コール名</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="call-border-list">
+                                </tbody>
+                        </table>
+                        <p id="call-list-empty-message" class="text-muted text-center" style="display:none;">設定されているコールルールはありません。</p>
+                        <div id="call-settings-error" class="alert alert-danger mt-3" style="display:none;"></div>
+                    </div>
+                    
+                    <button id="saveCallBordersBtn" class="btn btn-success mt-4">コール設定を保存</button>
+                    <div id="champagne-call-settings-status" class="mt-3"></div>
+                </div>
+            </main>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module" src="firebase-init.js"></script>
     <script type="module" src="sidebar.js"></script>
     <script type="module" src="settings.js"></script>
+    <script>
+        function openTab(tabName, button) {
+            const tabs = document.querySelectorAll('.tab-content');
+            tabs.forEach(tab => tab.style.display = 'none');
+            
+            const buttons = document.querySelectorAll('.tab-button');
+            buttons.forEach(btn => btn.classList.remove('active'));
+
+            document.getElementById(tabName).style.display = 'block';
+            button.classList.add('active');
+        }
+    </script>
 </body>
 </html>

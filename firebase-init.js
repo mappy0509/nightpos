@@ -1,10 +1,7 @@
-// Firebase SDKs
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
+// (★新規★) firebase-init.js から必要なモジュールをインポート
 import { 
-    getAuth, 
-    // signInAnonymously, (★削除★)
-    onAuthStateChanged,
-    // (★新規★) 必要な認証メソッドをインポート
+    db, 
+    auth, 
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
     signOut,
@@ -142,8 +139,8 @@ const initializeFirebase = () => {
                 const slipsCollectionRef = collection(db, "stores", currentStoreId, "slips");
                 const invitesCollectionRef = collection(db, "stores", currentStoreId, "invites"); 
                 const attendancesCollectionRef = collection(db, "stores", currentStoreId, "attendances");
-                // (★在庫管理 追加★)
                 const inventoryItemsCollectionRef = collection(db, "stores", currentStoreId, "inventoryItems");
+                const champagneCallsCollectionRef = collection(db, "stores", currentStoreId, "champagneCalls"); // (★新規★)
 
                 // (★新規★) 5. 認証が完了したことを知らせるカスタムイベント
                 document.dispatchEvent(new CustomEvent('firebaseReady', { 
@@ -164,7 +161,8 @@ const initializeFirebase = () => {
                         slipsCollectionRef,
                         invitesCollectionRef,
                         attendancesCollectionRef,
-                        inventoryItemsCollectionRef // (★在庫管理 追加★)
+                        inventoryItemsCollectionRef,
+                        champagneCallsCollectionRef // (★新規★)
                     } 
                 }));
 

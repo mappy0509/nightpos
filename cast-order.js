@@ -10,7 +10,9 @@ import {
     collection,
     getDoc, // (★新規★)
     signOut, // (★新規★)
-    serverTimestamp // (★在庫管理 追加★)
+    serverTimestamp, // (★在庫管理 追加★)
+    query, // (★コール管理 追加★)
+    where // (★コール管理 追加★)
 } from './firebase-init.js';
 
 // (★新規★) AIサービスから関数をインポート
@@ -19,7 +21,8 @@ import { getUpsellSuggestion } from './ai-service.js';
 // (★変更★) 参照は firebaseReady イベントで受け取る
 let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef,
     attendancesCollectionRef, // (★勤怠機能追加★)
-    inventoryItemsCollectionRef; // (★在庫管理 追加★)
+    inventoryItemsCollectionRef, // (★在庫管理 追加★)
+    champagneCallsCollectionRef; // (★コール管理 追加★)
 
 // ===== グローバル定数・変数 =====
 
@@ -39,6 +42,7 @@ let customers = [];
 let slips = [];
 let attendances = []; // (★勤怠機能追加★)
 let inventoryItems = []; // (★在庫管理 追加★)
+let champagneCalls = []; // (★コール管理 追加★)
 let slipCounter = 0;
 
 // (★変更★) 現在選択中の伝票ID (ローカル管理)
@@ -78,6 +82,13 @@ let castHeaderName, pageTitle, tableGrid,
     slipStoreName, slipStoreTel, slipServiceRate, slipTaxRate,
     checkoutStoreName, checkoutStoreTel, checkoutServiceRate, checkoutTaxRate,
     receiptStoreName, receiptAddress, receiptTel,
+    
+    // (★要望5★) 領収書モーダルの新UI
+    receiptForm, receiptCustomerNameInput, receiptDescriptionInput,
+    receiptOptionDate, receiptOptionAmount,
+    receiptPreviewArea, receiptDateDisplay, receiptCustomerNameDisplay,
+    receiptTotalDisplay, receiptDescriptionDisplay, printReceiptBtn, // (★変更★) printSlipBtn -> printReceiptBtn
+    
     // (★新規★) 割引機能
     discountAmountInput, discountTypeSelect,
     // (★新規★) 伝票作成時間
@@ -365,7 +376,7 @@ const renderOrderModal = () => {
     });
     
     orderSubtotalEl.textContent = formatCurrency(subtotal);
-
+ 
     // (★新規★) オーダーモーダルのカテゴリタブを描画
     if (!menu.categories || menu.categories.length === 0) {
         if(orderCategoryTabsContainer) orderCategoryTabsContainer.innerHTML = '';
@@ -545,9 +556,74 @@ const updateSlipInfo = async () => {
     }
 };
 
+// (★コール管理 新規★) シャンパンコールをトリガー/更新する
+const checkAndTriggerChampagneCall = async (slipData) => {
+    // 設定、メニュー、またはコール管理コレクションの参照がない場合は何もしない
+    if (!settings || !settings.champagneCallBorders || settings.champagneCallBorders.length === 0 || !menu || !menu.items || !champagneCallsCollectionRef) {
+        console.log("Call check skipped: feature not configured or data not ready.");
+        return;
+    }
+
+    // 1. この伝票の「シャンパンコール対象」アイテムとその小計を計算
+    let callSubtotal = 0;
+    const callItems = [];
+    for (const item of slipData.items) {
+        const menuItem = menu.items.find(m => m.id === item.id);
+        if (menuItem && menuItem.isCallTarget) { 
+            callSubtotal += item.price * item.qty;
+            callItems.push({ name: menuItem.name, qty: item.qty });
+        }
+    }
+
+    // 2. 適用される最高の金額ボーダーを見つける
+    const applicableBorders = settings.champagneCallBorders
+        .filter(rule => callSubtotal >= rule.borderAmount)
+        .sort((a, b) => b.borderAmount - a.borderAmount); // 金額が高い順 (降順)
+
+    // 3. 適用されるボーダーがない場合
+    if (applicableBorders.length === 0) {
+        console.log("No champagne call border met.");
+        return;
+    }
+
+    const highestBorder = applicableBorders[0];
+
+    // 4. この伝票 (slipId) で、まだ「未対応 (pending)」のコールが既に存在するか確認
+    const existingPendingCall = champagneCalls.find(call => call.slipId === slipData.slipId && call.status === 'pending');
+
+    const callData = {
+        slipId: slipData.slipId,
+        tableId: slipData.tableId,
+        totalAmount: callSubtotal, // コール対象アイテムの合計小計
+        items: callItems,
+        borderAmount: highestBorder.borderAmount, // 達成したボーダー金額
+        callType: highestBorder.callName, // 設定されたデフォルトのコール名
+        status: 'pending',
+        createdAt: serverTimestamp(), // (★重要★) 常にサーバータイムスタンプで更新（リストの先頭に来るように）
+        mainMicCastId: null,
+        subMicCastId: null,
+        completedAt: null
+    };
+
+    try {
+        if (existingPendingCall) {
+            // 5. 既存の「未対応」コールを更新する
+            console.log(`Updating existing pending call ${existingPendingCall.id}`);
+            const callRef = doc(champagneCallsCollectionRef, existingPendingCall.id);
+            await setDoc(callRef, callData); 
+        } else {
+            // 6. 新規に「未対応」コールを作成する
+            console.log("Creating new pending champagne call.");
+            await addDoc(champagneCallsCollectionRef, callData);
+        }
+    } catch (e) {
+        console.error("Error triggering champagne call:", e);
+    }
+};
+
 
 /**
- * (★AI対応★) 注文リストにアイテムを追加する
+ * (★コール管理 変更★) 注文リストにアイテムを追加する
  * @param {string} id 商品ID
  * @param {string} name 商品名
  * @param {number} price 価格
@@ -568,6 +644,10 @@ const addOrderItem = async (id, name, price) => {
     try {
         const slipRef = doc(slipsCollectionRef, currentSlipId);
         await setDoc(slipRef, { items: slipData.items }, { merge: true });
+        
+        // (★コール管理 追加★) オーダー変更後にコールをチェック
+        await checkAndTriggerChampagneCall(slipData);
+        
     } catch (e) {
         console.error("Error adding order item: ", e);
     }
@@ -607,7 +687,7 @@ const runUpsellSuggestion = async (slipData) => {
 
 
 /**
- * (新規) 注文リストからアイテムを削除する
+ * (★コール管理 変更★) 注文リストからアイテムを削除する
  * @param {string} id 商品ID
  */
 const removeOrderItem = async (id) => {
@@ -621,6 +701,10 @@ const removeOrderItem = async (id) => {
     try {
         const slipRef = doc(slipsCollectionRef, currentSlipId);
         await setDoc(slipRef, { items: slipData.items }, { merge: true });
+        
+        // (★コール管理 追加★) オーダー変更後にコールをチェック
+        await checkAndTriggerChampagneCall(slipData);
+        
     } catch (e) {
         console.error("Error removing order item: ", e);
     }
@@ -628,7 +712,7 @@ const removeOrderItem = async (id) => {
 };
 
 /**
- * (新規) 注文アイテムの数量を変更する
+ * (★コール管理 変更★) 注文アイテムの数量を変更する
  * @param {string} id 商品ID
  * @param {number} qty 数量
  */
@@ -646,6 +730,10 @@ const updateOrderItemQty = async (id, qty) => {
     try {
         const slipRef = doc(slipsCollectionRef, currentSlipId);
         await setDoc(slipRef, { items: slipData.items }, { merge: true });
+        
+        // (★コール管理 追加★) オーダー変更後にコールをチェック
+        await checkAndTriggerChampagneCall(slipData);
+        
     } catch (e) {
         console.error("Error updating order item qty: ", e);
     }
@@ -653,15 +741,23 @@ const updateOrderItemQty = async (id, qty) => {
 };
 
 /**
- * (変更) 伝票・会計・領収書モーダルの共通情報を更新する
+ * (★要望5★ 変更) 伝票・会計・領収書モーダルの共通情報を更新する
  * (店舗名、税率など)
  */
 const updateModalCommonInfo = () => {
     if (!settings) return; // (★変更★)
 
-    const store = settings.storeInfo; // (★変更★)
-    const rates = settings.rates; // (★変更★)
+    const store = settings.storeInfo || {}; // (★修正★)
+    const rates = settings.rates || { tax: 0.1, service: 0.2 }; // (★修正★)
 
+    // (★要望5★) 領収書のカスタム設定を取得
+    const receiptSettings = settings.receiptSettings || {
+        storeName: store.name,
+        address: `〒${store.zip || ''}<br>${store.address || ''}`,
+        tel: `TEL: ${store.tel}`,
+        invoiceNumber: "" // (★要望5★) 将来的なインボイス番号設定欄
+    };
+    
     // 伝票プレビュー
     if (slipStoreName) slipStoreName.textContent = store.name;
     if (slipStoreTel) slipStoreTel.textContent = `TEL: ${store.tel}`;
@@ -674,10 +770,24 @@ const updateModalCommonInfo = () => {
     if (checkoutServiceRate) checkoutServiceRate.textContent = `サービス料 (${rates.service * 100}%)`;
     if (checkoutTaxRate) checkoutTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
 
-    // 領収書
-    if (receiptStoreName) receiptStoreName.textContent = store.name;
-    if (receiptAddress) receiptAddress.innerHTML = `〒${store.zip || ''}<br>${store.address || ''}`;
-    if (receiptTel) receiptTel.textContent = `TEL: ${store.tel}`;
+    // 領収書 (★要望5★ 設定を反映)
+    if (receiptStoreName) receiptStoreName.textContent = receiptSettings.storeName || store.name;
+    if (receiptAddress) {
+        // (★要望5★ 修正) HTML <br> タグは style.css で処理されるため、
+        // (★要望5★ 修正) JSではDBの値をそのまま（またはデフォルトを）innerHTMLに設定
+        receiptAddress.innerHTML = receiptSettings.address || (store.address ? `〒${store.zip || ''}<br>${store.address}` : '');
+    }
+    if (receiptTel) receiptTel.textContent = receiptSettings.tel || (store.tel ? `TEL: ${store.tel}` : '');
+    // (★要望5★)
+    const invoiceEl = document.getElementById('receipt-invoice-number');
+    if (invoiceEl) {
+        if (receiptSettings.invoiceNumber) {
+            invoiceEl.textContent = `インボイス登録番号: ${receiptSettings.invoiceNumber}`;
+            invoiceEl.style.display = 'block';
+        } else {
+            invoiceEl.style.display = 'none';
+        }
+    }
 };
 
 
@@ -816,7 +926,8 @@ const renderCheckoutModal = () => {
 
     updatePaymentStatus(); 
 
-    document.getElementById('receipt-total').textContent = formatCurrency(finalBillingAmount);
+    // (★要望5★) 領収書モーダルの合計金額も更新 (renderReceiptModalより先)
+    if(receiptTotalDisplay) receiptTotalDisplay.textContent = formatCurrency(finalBillingAmount);
 };
 
 /**
@@ -861,7 +972,9 @@ const updatePaymentStatus = () => {
 
     currentBillingAmount = finalBillingAmount; // (★変更★)
     checkoutTotalEl.textContent = formatCurrency(finalBillingAmount);
-    document.getElementById('receipt-total').textContent = formatCurrency(finalBillingAmount);
+    
+    // (★要望5★) 領収書モーダルの合計金額も更新
+    if(receiptTotalDisplay) receiptTotalDisplay.textContent = formatCurrency(finalBillingAmount);
     
     // --- ここから下は支払い計算 ---
     const billingAmount = currentBillingAmount; // (★変更★)
@@ -904,26 +1017,66 @@ const updatePaymentStatus = () => {
 
 
 /**
- * (★変更★) 領収書モーダルを描画する
+ * (★要望5★) 領収書モーダルを描画・更新する
  */
 const renderReceiptModal = () => {
-    if (!settings) return; // (★変更★)
-    const now = new Date();
-    document.getElementById('receipt-date').textContent = now.toLocaleDateString('ja-JP');
+    if (!settings) return;
     
-    const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
-    if (slipData) {
-        const receiptCustomerName = document.getElementById('receipt-customer-name');
-        if (receiptCustomerName) receiptCustomerName.value = slipData.name || '';
+    const slipData = slips.find(s => s.slipId === currentSlipId);
+    if (!slipData) return;
+    
+    // (★要望5★) フォームの初期値を設定
+    if (receiptCustomerNameInput) {
+        receiptCustomerNameInput.value = slipData.name !== "新規のお客様" ? slipData.name : '';
     }
-    document.getElementById('receipt-total').textContent = formatCurrency(currentBillingAmount); // (★変更★)
+    if (receiptDescriptionInput) {
+        // (★要望5★) settings から但し書きのデフォルトを取得
+        receiptDescriptionInput.value = settings.receiptSettings?.defaultDescription || "お飲食代として";
+    }
+    if (receiptOptionDate) receiptOptionDate.checked = true;
+    if (receiptOptionAmount) receiptOptionAmount.checked = true;
     
-    // (★変更★) 担当キャスト名をログインキャスト名にする
+    // (★要望5★) プレビューを更新
+    updateReceiptPreview();
+
+    // (★要望5★ 変更) 担当キャスト名を「指名キャスト」または「ログインキャスト」にする
     const receiptStaff = document.getElementById('receipt-staff');
     if (receiptStaff) {
-        receiptStaff.textContent = `担当: ${currentCastName}`;
+        const nominatedCastName = getCastNameById(slipData.nominationCastId);
+        if (nominatedCastName !== 'フリー' && nominatedCastName !== '不明') {
+            receiptStaff.textContent = `担当: ${nominatedCastName}`;
+        } else {
+            receiptStaff.textContent = `担当: ${currentCastName}`; // (フォールバック)
+        }
     }
 };
+
+/**
+ * (★要望5★) 領収書プレビューを更新する
+ */
+const updateReceiptPreview = () => {
+    if (!receiptPreviewArea) return;
+
+    // フォームの値を取得
+    const name = receiptCustomerNameInput.value.trim() ? `${receiptCustomerNameInput.value.trim()} ` : '';
+    const description = receiptDescriptionInput.value.trim() || 'お飲食代として';
+    const showDate = receiptOptionDate.checked;
+    const showAmount = receiptOptionAmount.checked;
+
+    // プレビューに反映
+    if (receiptCustomerNameDisplay) receiptCustomerNameDisplay.textContent = name;
+    if (receiptDescriptionDisplay) receiptDescriptionDisplay.textContent = description;
+    
+    if (receiptDateDisplay) {
+        const now = new Date();
+        receiptDateDisplay.textContent = showDate ? `発行日: ${now.toLocaleDateString('ja-JP')}` : '';
+    }
+    
+    if (receiptTotalDisplay) {
+        receiptTotalDisplay.textContent = showAmount ? formatCurrency(currentBillingAmount) + " -" : '¥ ---';
+    }
+};
+
 
 /**
  * (新規) ボツ伝理由入力モーダルを描画する
@@ -1236,8 +1389,7 @@ const handlePaidSlipClick = (slipId) => {
 
 
 /**
- * (★変更★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
- * (※ データ構造の基盤となるため、このファイルにも定義を残します)
+ * (★コール管理 変更★) デフォルトの state を定義する関数
  */
 const getDefaultSettings = () => {
     return {
@@ -1252,21 +1404,13 @@ const getDefaultSettings = () => {
             tel: "03-0000-0000", zip: "160-0021"
         },
         rates: { tax: 0.10, service: 0.20 },
-        // (★新規★) 端数処理設定
-        rounding: { type: 'none', unit: 1 }, // 'none', 'round_up_total', 'round_down_total', 'round_up_subtotal'
+        rounding: { type: 'none', unit: 1 }, 
         dayChangeTime: "05:00",
-        // (★削除★) 報酬関連の設定を削除
-        /*
-        performanceSettings: {
-            menuItems: {
-                'm14_default': { salesType: 'percentage', salesValue: 100, countNomination: true }
-            },
-            serviceCharge: { salesType: 'percentage', salesValue: 0 },
-            tax: { salesType: 'percentage', salesValue: 0 },
-            sideCustomer: { salesValue: 100, countNomination: true }
-        },
-        */
-        ranking: { period: 'monthly', type: 'nominations' }
+        ranking: { period: 'monthly', type: 'nominations' },
+        // (★コール管理 追加★)
+        champagneCallBorders: [
+            { callName: "シャンパンコール", borderAmount: 50000 },
+        ]
     };
 };
 
@@ -1279,12 +1423,12 @@ const getDefaultMenu = () => {
         categories: [
             { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false },
             { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false },
-            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: false }, // (★報酬削除★) isCastCategory: true を false に変更
+            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: false }, // (★報酬削除★)
         ],
         items: [
-            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, inventoryItemId: null, inventoryConsumption: null },
-            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, inventoryItemId: null, inventoryConsumption: null },
-            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null, inventoryItemId: null, inventoryConsumption: null },
+            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, isCallTarget: false },
+            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, isCallTarget: false },
+            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null, isCallTarget: false },
         ],
         currentActiveMenuCategoryId: catSetId,
     };
@@ -1402,8 +1546,9 @@ const handleTableTransfer = async (newTableId) => {
 };
 
 
-// (★変更★) --- Firestore リアルタイムリスナー ---
-// firebaseReady イベントを待ってからリスナーを設定
+/**
+ * (★コール管理 変更★) --- Firestore リアルタイムリスナー ---
+ */
 document.addEventListener('firebaseReady', async (e) => {
     
     // (★変更★) 認証情報と参照を取得
@@ -1416,7 +1561,8 @@ document.addEventListener('firebaseReady', async (e) => {
         customersCollectionRef: cuRef, 
         slipsCollectionRef: slRef,
         attendancesCollectionRef: aRef, // (★勤怠機能追加★)
-        inventoryItemsCollectionRef: iRef // (★在庫管理 追加★)
+        inventoryItemsCollectionRef: iRef, // (★在庫管理 追加★)
+        champagneCallsCollectionRef: ccRef // (★コール管理 追加★)
     } = e.detail;
 
     // (★変更★) グローバル変数にセット
@@ -1429,6 +1575,7 @@ document.addEventListener('firebaseReady', async (e) => {
     slipsCollectionRef = slRef;
     attendancesCollectionRef = aRef; // (★勤怠機能追加★)
     inventoryItemsCollectionRef = iRef; // (★在庫管理 追加★)
+    champagneCallsCollectionRef = ccRef; // (★コール管理 追加★)
     
     // (★新規★) まずキャスト情報を読み込む
     await loadCastInfo();
@@ -1442,11 +1589,12 @@ document.addEventListener('firebaseReady', async (e) => {
     let counterLoaded = false;
     let attendancesLoaded = false; // (★勤怠機能追加★)
     let inventoryLoaded = false; // (★在庫管理 追加★)
+    let callsLoaded = false; // (★コール管理 追加★)
 
-    // (★新規★) 全データロード後にUIを初回描画する関数
+    // (★コール管理 変更★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
         // (★変更★) cast-order.js は renderTableGrid を呼ぶ
-        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && attendancesLoaded && inventoryLoaded) { // (★在庫管理 変更★)
+        if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && attendancesLoaded && inventoryLoaded && callsLoaded) { // (★コール管理 変更★)
             console.log("All data loaded. Rendering UI for cast-order.js");
             renderTableGrid();
             updateModalCommonInfo(); 
@@ -1560,6 +1708,42 @@ document.addEventListener('firebaseReady', async (e) => {
         inventoryLoaded = true; // エラーでも続行
         checkAndRenderAll();
     });
+    
+    // 9. (★コール管理 追加★) Champagne Calls (Full list)
+    onSnapshot(champagneCallsCollectionRef, (querySnapshot) => {
+        champagneCalls = [];
+        querySnapshot.forEach((doc) => {
+            champagneCalls.push({ ...doc.data(), id: doc.id });
+        });
+        console.log("Champagne calls loaded (for trigger check): ", champagneCalls.length);
+        callsLoaded = true; 
+        checkAndRenderAll();
+    }, (error) => {
+        console.error("Error listening to champagne calls: ", error);
+        callsLoaded = true; // エラーでも続行
+        checkAndRenderAll();
+    });
+    
+    // 10. (★コール管理 追加★) Cast Notification Badge Listener
+    // (★重要★) 認証が完了し、`champagneCallsCollectionRef`が定義された後に設定
+    const badgeEl = document.getElementById('nav-call-management-cast-badge');
+    if (badgeEl && champagneCallsCollectionRef) {
+        // (★新規★) 'pending' (未対応) ステータスのコールのみをクエリ
+        const q = query(champagneCallsCollectionRef, where("status", "==", "pending"));
+        
+        onSnapshot(q, (snapshot) => {
+            const pendingCount = snapshot.size;
+            if (pendingCount > 0) {
+                badgeEl.textContent = pendingCount > 9 ? '9+' : pendingCount;
+                badgeEl.style.display = 'inline-flex';
+            } else {
+                badgeEl.style.display = 'none';
+            }
+        }, (error) => {
+            console.error("Error listening to champagne call notifications: ", error);
+            badgeEl.style.display = 'none';
+        });
+    }
 });
 
 
@@ -1645,9 +1829,22 @@ document.addEventListener('DOMContentLoaded', () => {
     checkoutStoreTel = document.getElementById('checkout-store-tel');
     checkoutServiceRate = document.getElementById('checkout-service-rate');
     checkoutTaxRate = document.getElementById('checkout-tax-rate');
+    
+    // (★要望5★) 領収書モーダルのDOM
     receiptStoreName = document.getElementById('receipt-store-name');
     receiptAddress = document.getElementById('receipt-address');
     receiptTel = document.getElementById('receipt-tel');
+    receiptForm = document.getElementById('receipt-form');
+    receiptCustomerNameInput = document.getElementById('receipt-customer-name-input');
+    receiptDescriptionInput = document.getElementById('receipt-description-input');
+    receiptOptionDate = document.getElementById('receipt-option-date');
+    receiptOptionAmount = document.getElementById('receipt-option-amount');
+    receiptPreviewArea = document.getElementById('receipt-preview-area');
+    receiptDateDisplay = document.getElementById('receipt-date-display');
+    receiptCustomerNameDisplay = document.getElementById('receipt-customer-name-display');
+    receiptTotalDisplay = document.getElementById('receipt-total-display');
+    receiptDescriptionDisplay = document.getElementById('receipt-description-display');
+    printReceiptBtn = document.getElementById('print-receipt-btn'); // (★変更★)
 
     // (★新規★) 割引
     discountAmountInput = document.getElementById('discount-amount');
@@ -1838,6 +2035,21 @@ document.addEventListener('DOMContentLoaded', () => {
         printSlipBtn.addEventListener('click', () => {
             window.print();
         });
+    }
+    
+    // (★要望5★) 領収書印刷ボタン
+    if (printReceiptBtn) {
+        printReceiptBtn.addEventListener('click', () => {
+            // (★要望5★) 印刷前にプレビューを最終更新
+            updateReceiptPreview(); 
+            // 印刷実行
+            window.print();
+        });
+    }
+
+    // (★要望5★) 領収書フォームの入力でプレビューを更新
+    if (receiptForm) {
+        receiptForm.addEventListener('input', updateReceiptPreview);
     }
 
     if (goToCheckoutBtn) {

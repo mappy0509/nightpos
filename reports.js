@@ -7,27 +7,14 @@ import {
     auth, 
     onSnapshot, 
     setDoc, 
-    // addDoc, (★削除★)
-    // deleteDoc, (★削除★)
     doc,
-    collection // (★削除★)
+    collection, // (★コール管理 修正★) 'collection' は削除しない
+    query, // (★コール管理 追加★)
+    where // (★コール管理 追加★)
 } from './firebase-init.js';
 
 // (★新規★) AIサービスから関数をインポート
 import { getSalesReport } from './ai-service.js';
-
-
-// (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
-/*
-import {
-    settingsRef,
-    menuRef,
-    // slipCounterRef, (★削除★)
-    castsCollectionRef,
-    // customersCollectionRef, (★削除★)
-    slipsCollectionRef
-} from './firebase-init.js';
-*/
 
 // ===== グローバル定数・変数 =====
 
@@ -43,35 +30,30 @@ const getUUID = () => {
 let settings = null;
 let menu = null;
 let casts = [];
-// let customers = []; // (★削除★)
 let slips = [];
-// let slipCounter = 0; // (★削除★)
-
-// (★削除★) 伝票関連のローカル変数を削除
-// let currentSlipId = null;
-// let currentBillingAmount = 0; 
+let champagneCalls = []; // (★コール管理 追加★)
 
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
 let settingsRef, menuRef, castsCollectionRef, slipsCollectionRef,
-    currentStoreId; // (★動的表示 追加★)
+    champagneCallsCollectionRef, // (★コール管理 追加★)
+    currentStoreId; 
 
 
 // ===== DOM要素 =====
-// (★修正★) reports.js (reports.html) に必要なDOMのみに限定
-let modalCloseBtns, // (★削除★) モーダルが無いため、本当は不要だが念のため残す
+// (★コール管理 変更★)
+let modalCloseBtns, 
     reportsSummaryCards, reportTotalSales, reportTotalSlips, reportAvgSales, reportCancelledSlips,
-    reportsPeriodTabs, reportsChartCanvas, reportsRankingList, exportJpgBtn,
+    reportsPeriodTabs, reportsChartCanvas, reportsRankingList, 
+    micRankingList, // (★コール管理 追加★)
+    exportJpgBtn,
     reportContentArea,
     // (★新規★) 日付選択
     reportDatePicker,
     // (★AI対応★) AI分析
     aiAnalyzeBtn, aiReportModal, aiReportContent,
     
-    headerStoreName; // (★要望4★) storeSelector から変更
+    headerStoreName; 
     
-// (★削除★) 他のHTMLからコピーされたモーダル用のDOMをすべて削除
-// newSlipConfirmModal, slipSelectionModal, etc...
-
 // (変更) グラフインスタンスをグローバルで保持
 let salesChart = null;
 // (★新規★) 現在のレポート集計期間
@@ -90,7 +72,17 @@ const formatCurrency = (amount) => {
     return `¥${amount.toLocaleString()}`;
 };
 
-// (★削除★) 伝票関連のヘルパー関数 (formatDateTimeLocal, formatElapsedTime, calculateSlipTotal, getCastNameById, getActiveSlipCount) をすべて削除
+/**
+ * (★コール管理 追加★) キャストIDからキャスト名を取得する
+ * @param {string | null} castId
+ * @returns {string} キャスト名
+ */
+const getCastNameById = (castId) => {
+    if (!casts) return '不明'; 
+    if (!castId || castId === 'none') return '（未割り当て）';
+    const cast = casts.find(c => c.id === castId);
+    return cast ? cast.name : '不明';
+};
 
 
 /**
@@ -98,9 +90,6 @@ const formatCurrency = (amount) => {
  * @param {HTMLElement} modalElement 
  */
 const closeModal = (modalElement) => {
-    // (★変更★) reports.html にはモーダルが無いため、この関数は実質不要だが、
-    // DOMContentLoaded 内のリスナーが参照しているため残す (中身は空でも良い)
-    // (★AI対応★) AIモーダルが追加されたため、中身を復活
     if (modalElement) {
         modalElement.classList.remove('active');
     }
@@ -140,8 +129,8 @@ const parseMarkdownReport = (text) => {
             return '';
         })
         .join('')
-        .replace(/<\/li><p>/g, '</li><ul><p>') // ネスト開始を雑に処理
-        .replace(/<\/p><li>/g, '</p></ul><li>'); // ネスト終了を雑に処理
+        .replace(/<\/li><p>/g, '</li><ul><p>') 
+        .replace(/<\/p><li>/g, '</p></ul><li>'); 
 };
 
 
@@ -188,7 +177,7 @@ const getBusinessDayEnd = (businessDayStart) => {
  * (★新規★) 指定された期間の伝票(会計済み・ボツ)を取得する
  * @param {string} period 'daily', 'weekly', 'monthly'
  * @param {Date} baseDate 基準日
- * @returns {object} { paidSlips: [], cancelledSlips: [] }
+ * @returns {object} { paidSlips: [], cancelledSlips: [], range: { start: Date, end: Date } }
  */
 const getSlipsForPeriod = (period, baseDate) => {
     if (!slips) { 
@@ -232,12 +221,10 @@ const getSlipsForPeriod = (period, baseDate) => {
     const cancelledSlips = slips.filter(slip => {
         if (slip.status !== 'cancelled') return false; 
         
-        // (★変更★) ボツ伝も paidTimestamp が記録されていれば、それで判定
         if (slip.paidTimestamp) {
              const cancelledTime = new Date(slip.paidTimestamp).getTime();
              return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
         }
-        // (★変更★) 記録がなければ startTime で判定 (フォールバック)
         if (slip.startTime) {
              const cancelledTime = new Date(slip.startTime).getTime();
              return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
@@ -309,6 +296,89 @@ const renderReportsRanking = () => {
         `;
     });
 };
+
+/**
+ * (★コール管理 追加★) マイク担当回数ランキングを描画する
+ */
+const renderMicRanking = () => {
+    if (!micRankingList || !champagneCalls || !settings || !casts) {
+        if (micRankingList) micRankingList.innerHTML = '<li class="text-slate-500">...</li>';
+        return;
+    }
+
+    // 1. 現在の期間（日次/週次/月次）の範囲を取得
+    const { range } = getSlipsForPeriod(currentReportPeriod, currentReportDate);
+    const startTimestamp = range.start.getTime();
+    const endTimestamp = range.end.getTime();
+
+    // 2. 期間内に「完了」したコールをフィルタリング
+    const completedCalls = champagneCalls.filter(call => {
+        if (call.status !== 'completed' || !call.completedAt) return false;
+        try {
+            const completedTime = new Date(call.completedAt).getTime();
+            return completedTime >= startTimestamp && completedTime <= endTimestamp;
+        } catch (e) {
+            return false;
+        }
+    });
+
+    // 3. キャストごとにマイク回数を集計
+    const micStats = new Map();
+    
+    // 集計用のヘルパー関数
+    const getStats = (castId) => {
+        if (!castId || castId === 'none') return null;
+        let stats = micStats.get(castId);
+        if (!stats) {
+            stats = {
+                id: castId,
+                name: getCastNameById(castId), // 外部関数
+                mainCount: 0,
+                subCount: 0,
+                totalCount: 0
+            };
+            micStats.set(castId, stats);
+        }
+        return stats;
+    };
+
+    completedCalls.forEach(call => {
+        const mainStats = getStats(call.mainMicCastId);
+        if (mainStats) {
+            mainStats.mainCount++;
+            mainStats.totalCount++;
+        }
+        
+        const subStats = getStats(call.subMicCastId);
+        if (subStats) {
+            subStats.subCount++;
+            subStats.totalCount++;
+        }
+    });
+
+    // 4. メインマイクの回数順にソート
+    const sortedStats = [...micStats.values()].sort((a, b) => b.mainCount - a.mainCount);
+
+    // 5. HTMLを描画
+    micRankingList.innerHTML = '';
+    if (sortedStats.length === 0) {
+        micRankingList.innerHTML = '<li class="text-slate-500">データがありません</li>';
+        return;
+    }
+
+    sortedStats.forEach((cast, index) => {
+        micRankingList.innerHTML += `
+            <li class="flex justify-between items-center py-2 border-b">
+                <span class="font-medium">${index + 1}. ${cast.name}</span>
+                <span class="font-bold text-blue-600 text-xs text-right">
+                    メイン: ${cast.mainCount}回<br>
+                    サブ: ${cast.subCount}回
+                </span>
+            </li>
+        `;
+    });
+};
+
 
 /**
  * (★修正★) 売上推移グラフを描画する
@@ -430,19 +500,16 @@ const renderSalesChart = () => {
     });
 };
 
-/**
- * (★削除★) 伝票関連のモーダル共通情報更新は不要
- */
-// const updateModalCommonInfo = () => { ... };
 
 /**
- * (★新規★) 全レポートを更新する
+ * (★コール管理 変更★) 全レポートを更新する
  */
 const updateAllReports = () => {
-    if (!settings || !slips || !menu) return; 
+    if (!settings || !slips || !menu || !casts || !champagneCalls) return; // (★コール管理 変更★)
     renderReportsSummary();
     renderReportsRanking();
     renderSalesChart();
+    renderMicRanking(); // (★コール管理 追加★)
 };
 
 /**
@@ -486,9 +553,6 @@ const handleAiReport = async () => {
 };
 
 
-// (★削除★) 伝票作成関連のロジック (createNewSlip, renderSlipSelectionModal, renderNewSlipConfirmModal) をすべて削除
-
-
 /**
  * (★報酬削除★) デフォルトの state を定義する関数（Firestoreにデータがない場合）
  */
@@ -514,9 +578,6 @@ const getDefaultMenu = () => {
     };
 };
 
-// (★削除★) Firestore への state 保存関数
-// const updateStateInFirestore = async (newState) => { ... };
-
 // (★要望4, 5★)
 /**
  * (★新規★) ヘッダーのストア名をレンダリングする
@@ -531,7 +592,7 @@ const renderHeaderStoreName = () => {
 };
 
 /**
- * (★報酬削除★) --- Firestore リアルタイムリスナー ---
+ * (★コール管理 変更★) --- Firestore リアルタイムリスナー ---
  */
 document.addEventListener('firebaseReady', (e) => {
     
@@ -541,6 +602,7 @@ document.addEventListener('firebaseReady', (e) => {
         menuRef: mRef,
         castsCollectionRef: cRef, 
         slipsCollectionRef: slRef,
+        champagneCallsCollectionRef: ccRef, // (★コール管理 追加★)
         currentStoreId: csId // (★動的表示 追加★)
     } = e.detail;
 
@@ -549,22 +611,22 @@ document.addEventListener('firebaseReady', (e) => {
     menuRef = mRef;
     castsCollectionRef = cRef;
     slipsCollectionRef = slRef;
+    champagneCallsCollectionRef = ccRef; // (★コール管理 追加★)
     currentStoreId = csId; // (★動的表示 追加★)
 
     let settingsLoaded = false;
     let menuLoaded = false;
     let castsLoaded = false;
     let slipsLoaded = false;
-    // (★削除★) customersLoaded, counterLoaded
+    let callsLoaded = false; // (★コール管理 追加★)
 
-    // (★新規★) 全データロード後にUIを初回描画する関数
+    // (★コール管理 変更★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
         // (★変更★) reports.js は updateAllReports を呼ぶ
-        if (settingsLoaded && menuLoaded && castsLoaded && slipsLoaded) {
+        if (settingsLoaded && menuLoaded && castsLoaded && slipsLoaded && callsLoaded) { // (★コール管理 変更★)
             console.log("All data loaded. Rendering UI for reports.js");
             updateAllReports();
             renderHeaderStoreName(); // (★要望4★)
-            // (★削除★) updateModalCommonInfo(); 
         }
     };
 
@@ -596,9 +658,7 @@ document.addEventListener('firebaseReady', (e) => {
         checkAndRenderAll();
     }, (error) => console.error("Error listening to menu: ", error));
 
-    // (★削除★) 3. Slip Counter
-    
-    // 4. Casts (売れ筋商品ランキングでは不要だが、将来的なキャスト別売上のため残す)
+    // 3. Casts
     onSnapshot(castsCollectionRef, (querySnapshot) => {
         casts = [];
         querySnapshot.forEach((doc) => {
@@ -609,11 +669,7 @@ document.addEventListener('firebaseReady', (e) => {
         checkAndRenderAll();
     }, (error) => console.error("Error listening to casts: ", error));
 
-    // (★削除★) 5. Customers
-    // (★変更★) customersLoaded を true に固定
-    // const customersLoaded = true; // (★修正★) customers.js からのコピペミス、不要
-    
-    // 6. Slips
+    // 4. Slips
     onSnapshot(slipsCollectionRef, (querySnapshot) => {
         slips = [];
         querySnapshot.forEach((doc) => {
@@ -624,9 +680,23 @@ document.addEventListener('firebaseReady', (e) => {
         checkAndRenderAll();
     }, (error) => {
         console.error("Error listening to slips: ", error);
-        if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
-             document.body.innerHTML = `<div class="p-8 text-center text-red-600">データベースへのアクセスに失敗しました。Firestoreのセキュリティルール（slipsコレクション）が正しく設定されているか、または必要なインデックスが作成されているか確認してください。</div>`;
-        }
+        slipsLoaded = true; // (★修正★) エラーでも続行
+        checkAndRenderAll();
+    });
+    
+    // 5. (★コール管理 追加★) Champagne Calls
+    onSnapshot(champagneCallsCollectionRef, (querySnapshot) => {
+        champagneCalls = [];
+        querySnapshot.forEach((doc) => {
+            champagneCalls.push({ ...doc.data(), id: doc.id });
+        });
+        console.log("Champagne calls loaded (for reports): ", champagneCalls.length);
+        callsLoaded = true; 
+        checkAndRenderAll();
+    }, (error) => {
+        console.error("Error listening to champagne calls: ", error);
+        callsLoaded = true; // エラーでも続行
+        checkAndRenderAll();
     });
 });
 
@@ -649,11 +719,12 @@ document.addEventListener('DOMContentLoaded', () => {
     reportsPeriodTabs = document.getElementById('reports-period-tabs');
     reportsChartCanvas = document.getElementById('reports-chart');
     reportsRankingList = document.getElementById('reports-ranking-list');
+    micRankingList = document.getElementById('mic-ranking-list'); // (★コール管理 追加★)
     exportJpgBtn = document.getElementById('export-jpg-btn');
     reportContentArea = document.getElementById('reports-content-area'); 
     
     // (★新規★) 日付ピッカー
-    reportDatePicker = document.getElementById('report-date-picker'); // (★AI対応★) IDを変更
+    reportDatePicker = document.getElementById('report-date-picker'); 
     if(reportDatePicker) {
         currentReportDate = new Date();
         reportDatePicker.value = currentReportDate.toISOString().split('T')[0];
@@ -664,20 +735,15 @@ document.addEventListener('DOMContentLoaded', () => {
     aiReportModal = document.getElementById('ai-report-modal');
     aiReportContent = document.getElementById('ai-report-content');
     
-    headerStoreName = document.getElementById('header-store-name'); // (★要望4★)
-    
-    // (★削除★) 伝票関連モーダルのDOM取得を削除
-    
-    // ===== 初期化処理 =====
-    // (★削除★) 初回描画は onSnapshot に任せる
+    headerStoreName = document.getElementById('header-store-name'); 
     
     // ===== イベントリスナーの設定 =====
 
     // (★変更★) モーダルを閉じるボタン
     if (modalCloseBtns) {
         modalCloseBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => { // (★動的表示 変更★)
-                const modal = e.target.closest('.modal-backdrop'); // (★動的表示 変更★)
+            btn.addEventListener('click', (e) => { 
+                const modal = e.target.closest('.modal-backdrop'); 
                 if (modal) {
                     closeModal(modal);
                 }
@@ -700,7 +766,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(reportDatePicker) {
         reportDatePicker.addEventListener('change', (e) => {
-            // (★修正★) タイムゾーンの問題を避けるため、UTCとして解釈されないよう new Date() に渡す
             const dateParts = e.target.value.split('-').map(Number);
             currentReportDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
             updateAllReports();
@@ -739,7 +804,4 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // (★削除★) 伝票関連のリスナーをすべて削除
-    // (slipSelectionList, createNewSlipBtn, confirmCreateSlipBtn)
-
 });

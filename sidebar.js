@@ -1,6 +1,5 @@
-// (★新規★) 共通サイドバーコンポーネント
-// (★変更★) db, getDoc, doc をインポート
-import { auth, signOut, db, getDoc, doc } from './firebase-init.js';
+// (★変更★) db, getDoc, doc, collection, query, where, onSnapshot をインポート
+import { auth, signOut, db, getDoc, doc, collection, query, where, onSnapshot } from './firebase-init.js';
 
 /**
  * サイドバーのHTMLを生成する
@@ -10,11 +9,14 @@ import { auth, signOut, db, getDoc, doc } from './firebase-init.js';
 const createSidebarHTML = (currentPage) => {
     
     // どのリンクをアクティブにするか定義
+    // (★変更★) 「コール管理」を追加
     const navLinks = [
         { href: 'index.html', icon: 'fa-chart-pie', text: 'ダッシュボード' },
         { href: 'tables.html', icon: 'fa-border-all', text: 'テーブル管理' },
         { href: 'all-slips.html', icon: 'fa-file-invoice', text: '伝票一覧' },
         { href: 'customers.html', icon: 'fa-users', text: '顧客管理' },
+        // (★新規★) コール管理ページへのリンクを追加
+        { href: 'call-management.html', icon: 'fa-champagne-glasses', text: 'コール管理', id: 'nav-call-management' },
         { href: 'menu.html', icon: 'fa-book-open', text: 'メニュー管理' },
         { href: 'inventory.html', icon: 'fa-boxes-stacked', text: '在庫管理' },
         { href: 'reports.html', icon: 'fa-chart-line', text: '売上分析' },
@@ -24,10 +26,12 @@ const createSidebarHTML = (currentPage) => {
     ];
 
     // リンクHTMLを生成
+    // (★変更★) 通知バッジ用のspanを追加
     const navLinksHTML = navLinks.map(link => `
         <a href="${link.href}" class="nav-link ${currentPage === link.href ? 'active' : ''}">
             <i class="fa-solid ${link.icon} fa-fw w-6 text-center"></i>
             <span>${link.text}</span>
+            ${link.id ? `<span id="${link.id}-badge" class="ml-auto inline-flex items-center justify-center h-5 w-5 rounded-full bg-red-500 text-xs font-bold text-white" style="display:none;"></span>` : ''}
         </a>
     `).join('');
 
@@ -164,7 +168,15 @@ export const renderSidebar = (containerId, currentPage) => {
     // 認証情報が読み込まれたら、ユーザー名を更新する
     // (※ firebase-init.js が先に読み込まれ、イベントが発火する前提)
     document.addEventListener('firebaseReady', async (e) => {
-        const { auth, db, currentUserRole, currentCastId, castsCollectionRef } = e.detail;
+        // (★変更★) champagneCallsCollectionRef を追加
+        const { 
+            auth, 
+            db, 
+            currentUserRole, 
+            currentCastId, 
+            castsCollectionRef,
+            champagneCallsCollectionRef // (★新規★)
+        } = e.detail;
         
         const userNameEl = document.getElementById('sidebar-user-name');
         const userRoleEl = document.getElementById('sidebar-user-role');
@@ -197,6 +209,28 @@ export const renderSidebar = (containerId, currentPage) => {
         } catch (error) {
             console.error("Error fetching user name for sidebar: ", error);
             userNameEl.textContent = (auth.currentUser && auth.currentUser.email) ? auth.currentUser.email : 'エラー';
+        }
+        
+        // (★新規★) コール管理の通知バッジリスナーを設定
+        if (champagneCallsCollectionRef) {
+            const badgeEl = document.getElementById('nav-call-management-badge');
+            if (badgeEl) {
+                // (★新規★) 'pending' (未対応) ステータスのコールのみをクエリ
+                const q = query(champagneCallsCollectionRef, where("status", "==", "pending"));
+                
+                onSnapshot(q, (snapshot) => {
+                    const pendingCount = snapshot.size;
+                    if (pendingCount > 0) {
+                        badgeEl.textContent = pendingCount > 9 ? '9+' : pendingCount;
+                        badgeEl.style.display = 'inline-flex';
+                    } else {
+                        badgeEl.style.display = 'none';
+                    }
+                }, (error) => {
+                    console.error("Error listening to champagne call notifications: ", error);
+                    badgeEl.style.display = 'none';
+                });
+            }
         }
     });
 };

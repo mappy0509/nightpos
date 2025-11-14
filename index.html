@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale-1.0">
     <title>NPS.AI - ダッシュボード</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -88,32 +88,45 @@
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto pr-2" id="dashboard-slips">
                                 </div>
                         </div>
-                        <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
-                            <div class="flex justify-between items-center mb-4">
-                                <h3 class="text-lg font-semibold">Ranking</h3>
-                                <div class="relative">
-                                    <select id="ranking-period-select" class="text-sm font-medium border border-slate-300 rounded-lg bg-white hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 py-1 pl-3 pr-8 appearance-none">
-                                        <option value="monthly">今月</option>
-                                        <option value="weekly">今週</option>
-                                        <option value="daily">当日</option>
-                                    </select>
-                                    <i class="fa-solid fa-chevron-down absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+
+                        <div class="lg:col-span-1 space-y-8">
+                        
+                            <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-lg font-semibold">Ranking</h3>
+                                    <div class="relative">
+                                        <select id="ranking-period-select" class="text-sm font-medium border border-slate-300 rounded-lg bg-white hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 py-1 pl-3 pr-8 appearance-none">
+                                            <option value="monthly">今月</option>
+                                            <option value="weekly">今週</option>
+                                            <option value="daily">当日</option>
+                                        </select>
+                                        <i class="fa-solid fa-chevron-down absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="border-b responsive-tabs-container">
-                                <div class="flex space-x-2" id="ranking-type-tabs">
-                                    <button class="ranking-type-btn active" data-type="nominations">
-                                        <i class="fa-solid fa-star mr-1"></i> 指名
-                                    </button>
-                                    <button class="ranking-type-btn" data-type="sales">
-                                        <i class="fa-solid fa-yen-sign mr-1"></i> 売上
-                                    </button>
+                                <div class="border-b responsive-tabs-container">
+                                    <div class="flex space-x-2" id="ranking-type-tabs">
+                                        <button class="ranking-type-btn active" data-type="nominations">
+                                            <i class="fa-solid fa-star mr-1"></i> 指名
+                                        </button>
+                                        <button class="ranking-type-btn" data-type="sales">
+                                            <i class="fa-solid fa-yen-sign mr-1"></i> 売上
+                                        </button>
+                                    </div>
                                 </div>
+                                <ul id="cast-ranking-list" class="space-y-4 mt-4">
+                                    </ul>
                             </div>
-                            <ul id="cast-ranking-list" class="space-y-4 mt-4">
+                            
+                            <div class="bg-white p-4 lg:p-6 rounded-xl shadow-lg border border-slate-200">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-lg font-semibold">マイク担当 (期間連動)</h3>
+                                </div>
+                                <ul id="mic-ranking-list" class="space-y-4 mt-4 max-h-80 overflow-y-auto pr-2">
+                                    <p id="mic-ranking-loading" class="text-sm text-slate-500">集計中...</p>
                                 </ul>
-                        </div>
-                    </div>
+                            </div>
+                            
+                        </div> </div>
                 </div>
                 
             </div>
@@ -543,6 +556,7 @@
                     </div>
                 </div>
             </div>
+
             <div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center p-5 border-t bg-slate-50 rounded-b-lg space-x-3 gap-2 non-printable">
                 <button id="reopen-slip-btn" class="px-4 py-2 rounded-lg bg-yellow-500 text-white font-semibold hover:bg-yellow-600">
                     <i class="fa-solid fa-undo mr-2"></i>伝票を復活させる
