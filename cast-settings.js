@@ -1,7 +1,7 @@
 // (★新規★) サイドバーコンポーネントをインポート
 import { renderSidebar } from './sidebar.js';
 
-// (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
+// (★変更★) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
 import { 
     db, 
     auth, 
@@ -11,9 +11,9 @@ import {
     deleteDoc, 
     doc,
     collection,
-    query, // (★新規★)
-    where, // (★新規★)
-    getDocs // (★新規★)
+    query, 
+    where, 
+    getDocs
 } from './firebase-init.js';
 
 // (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
@@ -123,7 +123,7 @@ const saveRoles = async () => {
     if (updatePromises.length === 0) {
          if (settingsFeedback) {
             settingsFeedback.textContent = "変更された項目はありません。";
-            settingsFeedback.className = "text-sm text-slate-500";
+            settingsFeedback.className = "text-sm text-slate-500 mt-3"; // (★修正★)
             setTimeout(() => {
                 settingsFeedback.textContent = "";
             }, 3000);
@@ -136,7 +136,7 @@ const saveRoles = async () => {
         
         if (settingsFeedback) {
             settingsFeedback.textContent = "権限設定を保存しました。";
-            settingsFeedback.className = "text-sm text-green-600";
+            settingsFeedback.className = "text-sm text-green-600 mt-3"; // (★修正★)
             setTimeout(() => {
                 settingsFeedback.textContent = "";
             }, 3000);
@@ -145,7 +145,7 @@ const saveRoles = async () => {
         console.error("Error saving cast roles: ", e);
         if (settingsFeedback) {
             settingsFeedback.textContent = "権限の保存に失敗しました。";
-            settingsFeedback.className = "text-sm text-red-600";
+            settingsFeedback.className = "text-sm text-red-600 mt-3"; // (★修正★)
         }
     }
 };
@@ -226,7 +226,7 @@ const openInviteModal = async () => {
             used: false
         });
         
-        // 招待URLを生成
+        // (★修正★) signup.js のロジックに合わせ、storeId と token を渡す
         const inviteUrl = `${window.location.origin}/signup.html?storeId=${currentStoreId}&token=${token}`;
         
         // QRコードを生成
@@ -368,7 +368,8 @@ const deleteCast = async () => {
 const renderHeaderStoreName = () => {
     if (!headerStoreName || !settings || !currentStoreId) return;
 
-    const currentStoreName = settings.storeInfo.name || "店舗";
+    // (★修正★) settings.storeInfo が存在しない可能性に対応
+    const currentStoreName = (settings.storeInfo && settings.storeInfo.name) ? settings.storeInfo.name : "店舗";
     
     // (★変更★) loading... を店舗名で上書き
     headerStoreName.textContent = currentStoreName;
@@ -459,6 +460,9 @@ document.addEventListener('firebaseReady', (e) => {
         const script = document.createElement('script');
         script.id = 'qrcode-script';
         script.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+        script.onload = () => {
+            console.log("qrcode.min.js loaded successfully.");
+        };
         script.onerror = () => {
              console.error("Failed to load qrcode.min.js");
              if(castSettingsError) castSettingsError.textContent = "QRコードライブラリの読み込みに失敗しました。";

@@ -78,6 +78,9 @@ let /* navLinks, (★削除★) */ pageTitle, dashboardSlips,
     slipServiceChargeEl, slipTaxEl, slipPaidAmountEl, slipTotalEl, castRankingList,
     rankingPeriodSelect, rankingTypeBtns,
     
+    // (★修正★) マイクランキング用のDOMを追加
+    micRankingList, micRankingLoading,
+
     // (★要望1, 4, 5★) HTML側で変更したID
     summaryTotalSales, summarySalesComparison,
     summaryTableRate, summaryTableDetail,
@@ -188,19 +191,13 @@ const calculateSlipTotal = (slip) => {
 
 
 /**
- * ページを切り替える (dashboard.js では不要)
- */
-// const switchPage = (targetPageId) => { ... };
-
-/**
- * (新規) キャストIDからキャスト名を取得する
+ * (★修正★) キャストIDからキャスト名を取得する (reports.js から移植)
  * @param {string | null} castId
  * @returns {string} キャスト名
  */
 const getCastNameById = (castId) => {
-    // (★変更★) casts を参照
     if (!casts) return '不明'; 
-    if (!castId) return 'フリー';
+    if (!castId || castId === 'none') return '（未割り当て）'; // (★reports.jsから修正★)
     const cast = casts.find(c => c.id === castId);
     return cast ? cast.name : '不明';
 };
@@ -218,13 +215,6 @@ const getActiveSlipCount = (tableId) => {
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     ).length;
 };
-
-
-/**
- * (変更) テーブル管理画面を描画する (dashboard.jsでは不要)
- */
-// (★削除★)
-// const renderTableGrid = () => { ... };
 
 
 // =================================================
@@ -321,12 +311,15 @@ const getSlipsForPeriod = (period, baseDate) => {
     });
 
     const cancelledSlips = slips.filter(slip => {
-        // (注意) ボツ伝の日時は paidTimestamp がないため、仮で startTime を使う (要件次第)
-        // 本来はボツにした日時 (cancelledTimestamp) が必要
         if (slip.status !== 'cancelled') return false; 
         
         // (★勤怠機能修正★) 営業日ベースで判定
-        if (slip.startTime) {
+        // (★reports.jsからコピー★)
+        if (slip.paidTimestamp) { // (★修正★) ボツ伝の日時を paidTimestamp (ボツ確定時) で見る
+             const cancelledTime = new Date(slip.paidTimestamp).getTime();
+             return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
+        }
+        if (slip.startTime) { // (★フォールバック★)
              const cancelledTime = new Date(slip.startTime).getTime();
              return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
         }
@@ -523,12 +516,6 @@ const renderDashboardSlips = () => {
         elapsedTimeTimer = setInterval(updateElapsedTimes, 10000); // 10秒ごとに更新
     }
 };
-
-/**
- * (新規) 「伝票一覧」ページを描画する (dashboard.jsでは不要)
- */
-// (★削除★)
-// const renderAllSlipsPage = () => { ... };
 
 
 /**
@@ -1592,6 +1579,94 @@ const renderCastRanking = () => {
 };
 
 /**
+ * (★修正★) マイク担当回数ランキングを描画する (reports.js から移植)
+ */
+const renderMicRanking = () => {
+    if (!micRankingList || !champagneCalls || !settings || !casts) {
+        if (micRankingList) micRankingList.innerHTML = '<li class="text-slate-500">...</li>';
+        if (micRankingLoading) micRankingLoading.style.display = 'none';
+        return;
+    }
+
+    // 1. 現在の期間（設定と連動）
+    const currentRankingPeriod = (settings && settings.ranking && settings.ranking.period) ? settings.ranking.period : 'monthly';
+    
+    const { range } = getSlipsForPeriod(currentRankingPeriod, new Date()); 
+    const startTimestamp = range.start.getTime();
+    const endTimestamp = range.end.getTime();
+
+    // 2. 期間内に「完了」したコールをフィルタリング
+    const completedCalls = champagneCalls.filter(call => {
+        if (call.status !== 'completed' || !call.completedAt) return false;
+        try {
+            const completedTime = new Date(call.completedAt).getTime();
+            return completedTime >= startTimestamp && completedTime <= endTimestamp;
+        } catch (e) {
+            return false;
+        }
+    });
+
+    // 3. キャストごとにマイク回数を集計
+    const micStats = new Map();
+    
+    // 集計用のヘルパー関数
+    const getStats = (castId) => {
+        if (!castId || castId === 'none') return null;
+        let stats = micStats.get(castId);
+        if (!stats) {
+            stats = {
+                id: castId,
+                name: getCastNameById(castId), 
+                mainCount: 0,
+                subCount: 0,
+                totalCount: 0
+            };
+            micStats.set(castId, stats);
+        }
+        return stats;
+    };
+
+    completedCalls.forEach(call => {
+        const mainStats = getStats(call.mainMicCastId);
+        if (mainStats) {
+            mainStats.mainCount++;
+            mainStats.totalCount++;
+        }
+        
+        const subStats = getStats(call.subMicCastId);
+        if (subStats) {
+            subStats.subCount++;
+            subStats.totalCount++;
+        }
+    });
+
+    // 4. メインマイクの回数順にソート
+    const sortedStats = [...micStats.values()].sort((a, b) => b.mainCount - a.mainCount);
+
+    // 5. HTMLを描画
+    micRankingList.innerHTML = '';
+    if (micRankingLoading) micRankingLoading.style.display = 'none';
+    
+    if (sortedStats.length === 0) {
+        micRankingList.innerHTML = '<li class="text-slate-500">データがありません</li>';
+        return;
+    }
+
+    sortedStats.forEach((cast, index) => {
+        micRankingList.innerHTML += `
+            <li class="flex justify-between items-center py-2 border-b">
+                <span class="font-medium">${index + 1}. ${cast.name}</span>
+                <span class="font-bold text-blue-600 text-xs text-right">
+                    メイン: ${cast.mainCount}回<br>
+                    サブ: ${cast.subCount}回
+                </span>
+            </li>
+        `;
+    });
+};
+
+
+/**
  * (★コール管理 変更★) デフォルトの state を定義する関数
  */
 const getDefaultSettings = () => {
@@ -1671,7 +1746,7 @@ const getDefaultMenu = () => {
 const renderHeaderStoreName = () => {
     if (!headerStoreName || !settings || !currentStoreId) return;
 
-    const currentStoreName = settings.storeInfo.name || "店舗";
+    const currentStoreName = (settings.storeInfo && settings.storeInfo.name) ? settings.storeInfo.name : "店舗";
     
     headerStoreName.textContent = currentStoreName;
 };
@@ -1780,7 +1855,8 @@ document.addEventListener('firebaseReady', (e) => {
             console.log("All data loaded. Rendering UI.");
             renderDashboardSummary();
             renderCastRanking();
-            renderDashboardSlips();
+            renderDashboardSlips(); // (★エラー修正★) renderAllSlipsPage() -> renderDashboardSlips()
+            renderMicRanking(); // (★修正★) マイクランキングを呼び出し
             updateModalCommonInfo(); 
             renderHeaderStoreName(); 
         }
@@ -1860,9 +1936,8 @@ document.addEventListener('firebaseReady', (e) => {
         checkAndRenderAll(); 
     }, (error) => {
         console.error("Error listening to slips: ", error);
-        if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
-             document.body.innerHTML = `<div class="p-8 text-center text-red-600">データベースへのアクセスに失敗しました。Firestoreのセキュリティルール（slipsコレクション）が正しく設定されているか、または必要なインデックスが作成されているか確認してください。</div>`;
-        }
+        slipsLoaded = true; // (★修正★) エラーでも続行
+        checkAndRenderAll();
     });
 
     // 7. Attendances 
@@ -1929,6 +2004,7 @@ document.addEventListener('DOMContentLoaded', () => {
     openSlipPreviewBtn = document.getElementById('open-slip-preview-btn');
     processPaymentBtn = document.getElementById('process-payment-btn');
     
+    // (★要望5★) 領収書印刷ボタンのIDを変更
     printReceiptBtn = document.getElementById('print-receipt-btn'); 
     
     goToCheckoutBtn = document.getElementById('go-to-checkout-btn');
@@ -1992,6 +2068,11 @@ document.addEventListener('DOMContentLoaded', () => {
     slipPaidAmountEl = document.getElementById('slip-paid-amount');
     slipTotalEl = document.getElementById('slip-total');
     castRankingList = document.getElementById('cast-ranking-list');
+    
+    // (★修正★) マイクランキング用のDOMを取得
+    micRankingList = document.getElementById('mic-ranking-list');
+    micRankingLoading = document.getElementById('mic-ranking-loading');
+
     rankingPeriodSelect = document.getElementById('ranking-period-select');
     rankingTypeBtns = document.querySelectorAll('.ranking-type-btn');
     
@@ -2205,6 +2286,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // (★修正★) printSlipBtn は index.html に存在しない
+    // if (printSlipBtn) { ... }
+    
     if (printReceiptBtn) {
         printReceiptBtn.addEventListener('click', () => {
             updateReceiptPreview(); 

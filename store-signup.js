@@ -26,6 +26,7 @@ const getUUID = () => {
  * @returns {object}
  */
 const getDefaultSettings = (storeName) => {
+    // (★call-management.js の getDefaultSettings からコピー)
     return {
         slipTagsMaster: [
             { id: getUUID(), name: '指名' }, { id: getUUID(), name: '初指名' },
@@ -42,6 +43,15 @@ const getDefaultSettings = (storeName) => {
             zip: "" 
         },
         rates: { tax: 0.10, service: 0.20 },
+        // (★all-slips.js からコピー)
+        rounding: { type: 'none', unit: 1 }, 
+        receiptSettings: {
+            storeName: storeName,
+            address: "（未設定）",
+            tel: "（未設定）",
+            invoiceNumber: "", // (★新規★) デフォルトは空
+            defaultDescription: "お飲食代として"
+        },
         dayChangeTime: "05:00",
         performanceSettings: {
             castPriceCategoryId: null, // (★変更★) menu.js側で設定される
@@ -50,7 +60,18 @@ const getDefaultSettings = (storeName) => {
             tax: { salesType: 'percentage', salesValue: 0 },
             sideCustomer: { salesValue: 100, countNomination: true }
         },
-        ranking: { period: 'monthly', type: 'nominations' }
+        ranking: { period: 'monthly', type: 'nominations' },
+        // (★call-management.js からコピー)
+        champagneCallBorders: [
+            { callName: "シャンパンコール", borderAmount: 50000 },
+            { callName: "ロングコール", borderAmount: 150000 },
+            { callName: "オールコール", borderAmount: 750000 }
+        ],
+        // (★cast-attendance.js からコピー)
+        nfcTagIds: {
+            clockIn: null,
+            clockOut: null
+        }
     };
 };
 
@@ -62,19 +83,28 @@ const getDefaultSettings = (storeName) => {
 const getDefaultMenu = () => {
     const catSetId = getUUID();
     const catDrinkId = getUUID();
+    const catBottleId = getUUID(); // (★menu.jsからコピー★)
+    const catFoodId = getUUID(); // (★menu.jsからコピー★)
     const catCastId = getUUID(); 
+    const catOtherId = getUUID(); // (★menu.jsからコピー★)
     
     return {
         categories: [
-            { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false },
-            { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false },
-            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true }, 
+            // (★menu.jsからコピー★)
+            { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false, order: 0 },
+            { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false, order: 1 },
+            { id: catBottleId, name: 'ボトル', isSetCategory: false, isCastCategory: false, order: 2 },
+            { id: catFoodId, name: 'フード', isSetCategory: false, isCastCategory: false, order: 3 },
+            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true, order: 4 }, 
+            { id: catOtherId, name: 'その他', isSetCategory: false, isCastCategory: false, order: 5 },
         ],
         items: [
-            { id: getUUID(), categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60 },
-            { id: getUUID(), categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60 },
-            { id: getUUID(), categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null },
-            { id: getUUID(), categoryId: catCastId, name: '本指名料', price: 3000, duration: null }, 
+            // (★menu.jsからコピー★)
+            { id: getUUID(), categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, inventoryItemId: null, inventoryConsumption: null, order: 0, isCallTarget: false },
+            { id: getUUID(), categoryId: catSetId, name: '基本セット (フリー)', price: 8000, duration: 60, inventoryItemId: null, inventoryConsumption: null, order: 1, isCallTarget: false },
+            { id: getUUID(), categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, inventoryItemId: null, inventoryConsumption: null, order: 0, isCallTarget: false },
+            { id: getUUID(), categoryId: catCastId, name: '本指名料', price: 3000, duration: null, inventoryItemId: null, inventoryConsumption: null, order: 0, isCallTarget: false },
+            { id: getUUID(), categoryId: catBottleId, name: 'ドン・ペリニヨン', price: 80000, duration: null, inventoryItemId: null, inventoryConsumption: null, order: 1, isCallTarget: true },
         ],
         currentActiveMenuCategoryId: catSetId,
     };

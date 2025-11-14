@@ -1,7 +1,9 @@
-// (★新規★) firebase-init.js から必要なモジュールをインポート
+// (★修正★) firebase/app から initializeApp をインポート
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
+// (★修正★) firebase/auth から getAuth, onAuthStateChanged などをインポート
 import { 
-    db, 
-    auth, 
+    getAuth, // (★追加★)
+    onAuthStateChanged, // (★追加★)
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
     signOut,
@@ -18,11 +20,12 @@ import {
     deleteDoc, 
     onSnapshot,
     setLogLevel,
-    query, // (★新規★)
-    where, // (★新規★)
-    getDoc, // (★新規★)
-    getDocs, // (★新規★)
-    serverTimestamp // (★エラー修正★)
+    query,
+    where,
+    getDoc,
+    getDocs,
+    serverTimestamp,
+    orderBy // (★修正★) orderBy をインポート
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
 // Your web app's Firebase configuration (お客様から提供された設定)
@@ -38,10 +41,10 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const auth = getAuth(app);
+const auth = getAuth(app); // (★修正★) getAuth(app) を使用
 
-// (新規) Firestoreのデバッグログを有効にする
-setLogLevel('debug');
+// (新規) Firestoreのデバッグログを有効にする (v9+では setLogLevel をインポートして使用)
+// setLogLevel('debug'); // (★コメントアウト★) 必要に応じて有効化
 
 // (★変更★) 
 // 認証されたユーザーのストアIDとキャストID（または管理者ロール）を保持する
@@ -69,6 +72,7 @@ const redirectToLogin = () => {
 
 // (★新規★) 認証状態の監視とストア情報の取得
 const initializeFirebase = () => {
+    // (★修正★) onAuthStateChanged を使用
     onAuthStateChanged(auth, async (user) => {
         
         // (★修正★) 登録ページ（signup, store-signup）にいる間は、
@@ -111,7 +115,7 @@ const initializeFirebase = () => {
                 }
 
                 // (★新規★) 2. ロールに応じて admin か cast かを判定
-                let currentCastDocId = null; // Firestoreの /stores/{storeId}/casts/{docId}
+                // let currentCastDocId = null; // (★修正★) この行は不要
                 if (currentUserRole === 'cast') {
                     // (★新規★) 3. キャストの場合、Auth UID を使って casts コ_レクションから自分のドキュメントIDを取得
                     const castsQuery = query(collection(db, "stores", currentStoreId, "casts"), where("authUid", "==", user.uid));
@@ -213,5 +217,6 @@ export {
     where,
     getDoc,
     getDocs,
-    serverTimestamp // (★エラー修正★)
+    serverTimestamp,
+    orderBy // (★修正★) orderBy をエクスポート
 };

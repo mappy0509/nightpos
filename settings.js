@@ -1,308 +1,527 @@
+// (★新規★) サイドバーコンポーネントをインポート
+import { renderSidebar } from './sidebar.js';
+
+// (★新規★) firebase-init.js から必要なモジュールをインポート
 import { 
-    setDoc, 
-    doc,
-    getDoc
-} from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
-import { 
+    db, 
     auth,
+    onSnapshot,
+    doc,
+    getDoc,
+    setDoc,
+    addDoc,
+    deleteDoc,
+    collection,
     signOut
-} from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
+} from './firebase-init.js';
 
-
+// ===== グローバル変数 =====
 let settingsRef;
-let invitesCollectionRef;
+let invitesCollectionRef; // (★注意★) このファイルでは invitesCollectionRef は使われていません
 let currentStoreId;
 
-// ★新規★ シャンパンコール設定用変数
-let currentCallBorders = []; // UIで編集中のコールルールリスト
+let settings = {}; // (★新規★)
+let currentTables = []; // (★新規★)
+let currentCallBorders = []; // (★新規★)
+let ndefReader = null; // (★新規★) NFCリーダー
 
-document.addEventListener('firebaseReady', (e) => {
-    // Firestore参照の取得
-    settingsRef = e.detail.settingsRef;
-    invitesCollectionRef = e.detail.invitesCollectionRef;
-    currentStoreId = e.detail.currentStoreId;
+// ===== DOM要素 =====
+// (★新規★) 新しい settings.html に合わせたDOM
+let settingsTabs, tabContents,
+    storeInfoForm, storeName, storeZip, storeAddress, storeTel, saveStoreInfoBtn, storeInfoFeedback,
+    ratesForm, taxRate, serviceRate, dayChangeTime, roundingType, roundingUnit, saveRatesBtn, ratesFeedback,
+    receiptForm, receiptStoreName, receiptAddress, receiptTel, receiptInvoiceNumber, receiptDefaultDescription, saveReceiptBtn, receiptFeedback,
+    newTableForm, newTableNameInput, addTableBtn, currentTablesList, tableFeedback,
+    newCallBorderForm, newCallName, newCallBorder, addCallBorderBtn, callBorderList, callFeedback,
+    nfcForm, nfcClockInTagId, scanNfcClockInBtn, nfcClockOutTagId, scanNfcClockOutBtn, nfcScanFeedback, saveNfcBtn, nfcFeedback,
+    logoutBtn,
+    headerStoreName;
 
-    // 一般設定フォームのリスナー
-    document.getElementById('generalSettingsForm').addEventListener('submit', (e) => saveSettings(e, 'general'));
-    
-    // キャスト設定フォームのリスナー
-    document.getElementById('castSettingsForm').addEventListener('submit', (e) => saveSettings(e, 'cast'));
-    document.getElementById('generateInviteLinkBtn').addEventListener('click', generateInviteLink);
+// --- (★新規★) 共通関数 ---
 
-    // 在庫設定フォームのリスナー
-    document.getElementById('inventorySettingsForm').addEventListener('submit', (e) => saveSettings(e, 'inventory'));
+/**
+ * モーダルを開く
+ * @param {HTMLElement} modalElement 
+ */
+const openModal = (modalElement) => {
+    if (modalElement) {
+        modalElement.classList.add('active');
+    }
+};
 
-    // (★新規★) コール設定タブのイベントリスナー
-    document.getElementById('addCallBorderBtn').addEventListener('click', addCallBorder);
-    document.getElementById('saveCallBordersBtn').addEventListener('click', saveCallBorders);
+/**
+ * モーダルを閉じる
+ * @param {HTMLElement} modalElement 
+ */
+const closeModal = (modalElement) => {
+    if (modalElement) {
+        modalElement.classList.remove('active');
+    }
+};
 
-    loadSettings();
-});
+/**
+ * (★新規★) フィードバックメッセージを表示
+ * @param {HTMLElement} el 
+ * @param {string} message 
+ * @param {boolean} isError 
+ */
+const showFeedback = (el, message, isError = false) => {
+    if (!el) return;
+    el.textContent = message;
+    el.className = `text-sm ${isError ? 'text-red-600' : 'text-green-600'}`;
+    setTimeout(() => {
+        el.textContent = '';
+    }, 3000);
+};
 
-// 設定の読み込み
+// --- (★新規★) タブ切り替え ---
+const openTab = (targetTabId) => {
+    // すべてのタブコンテンツを非表示
+    tabContents.forEach(tab => {
+        tab.classList.add('hidden');
+        tab.classList.remove('active');
+    });
+    // すべてのタブボタンの active クラスを削除
+    settingsTabs.querySelectorAll('button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    // 対象のタブコンテンツを表示
+    const content = document.getElementById(targetTabId);
+    if (content) {
+        content.classList.remove('hidden');
+        content.classList.add('active');
+    }
+    // 対象のタブボタンを active に
+    const button = settingsTabs.querySelector(`button[data-tab="${targetTabId}"]`);
+    if (button) {
+        button.classList.add('active');
+    }
+};
+
+// --- (★新規★) 設定の読み込み・保存 ---
+
+/**
+ * (★新規★) Firestoreから設定を読み込み、全フォームに反映
+ */
 const loadSettings = async () => {
+    if (!settingsRef) return;
     try {
         const docSnap = await getDoc(settingsRef);
-
         if (docSnap.exists()) {
-            const data = docSnap.data();
+            settings = docSnap.data();
             
-            // --- 一般設定 ---
-            document.getElementById('storeName').value = data.storeName || '';
-            document.getElementById('taxRate').value = data.taxRate !== undefined ? data.taxRate : 10;
-            document.getElementById('serviceChargeRate').value = data.serviceChargeRate !== undefined ? data.serviceChargeRate : 0;
-            document.getElementById('cutOffTime').value = data.cutOffTime || '04:00';
-
-            // --- キャスト設定 ---
-            document.getElementById('defaultCastRank').value = data.defaultCastRank || 'レギュラー';
-
-            // --- 在庫設定 ---
-            document.getElementById('inventoryEnabled').checked = !!data.inventoryEnabled;
-            document.getElementById('lowStockThreshold').value = data.lowStockThreshold !== undefined ? data.lowStockThreshold : 5;
-
-            // --- (★新規★) シャンパンコール設定 ---
-            if (data.champagneCallBorders) {
-                // DBに保存されている円単位の金額を、UI表示用に万円単位 (10000で割る) に変換
-                currentCallBorders = data.champagneCallBorders.map(rule => ({
-                    ...rule,
-                    borderAmount: rule.borderAmount / 10000 // 円 -> 万円
-                }));
-                // 金額の低い順にソート (UI表示用)
-                currentCallBorders.sort((a, b) => a.borderAmount - b.borderAmount);
-            } else {
-                currentCallBorders = [];
+            // 1. 店舗情報
+            if (settings.storeInfo) {
+                storeName.value = settings.storeInfo.name || '';
+                storeZip.value = settings.storeInfo.zip || '';
+                storeAddress.value = settings.storeInfo.address || '';
+                storeTel.value = settings.storeInfo.tel || '';
             }
+            
+            // 2. 料金・税
+            if (settings.rates) {
+                taxRate.value = (settings.rates.tax || 0.1) * 100;
+                serviceRate.value = (settings.rates.service || 0.2) * 100;
+            }
+            dayChangeTime.value = settings.dayChangeTime || '05:00';
+            if (settings.rounding) {
+                roundingType.value = settings.rounding.type || 'none';
+                roundingUnit.value = settings.rounding.unit || 10;
+            }
+
+            // 3. 領収書
+            if (settings.receiptSettings) {
+                receiptStoreName.value = settings.receiptSettings.storeName || '';
+                receiptAddress.value = settings.receiptSettings.address || '';
+                receiptTel.value = settings.receiptSettings.tel || '';
+                receiptInvoiceNumber.value = settings.receiptSettings.invoiceNumber || '';
+                receiptDefaultDescription.value = settings.receiptSettings.defaultDescription || 'お飲食代として';
+            }
+            
+            // 4. テーブル
+            currentTables = settings.tables || [];
+            renderTableList();
+
+            // 5. コール管理
+            currentCallBorders = settings.champagneCallBorders || [];
             renderCallBorders();
+
+            // 6. NFC
+            if (settings.nfcTagIds) {
+                nfcClockInTagId.value = settings.nfcTagIds.clockIn || '';
+                nfcClockOutTagId.value = settings.nfcTagIds.clockOut || '';
+            }
+            
+            // (★要望4★) ヘッダーのストア名も更新
+            if (headerStoreName) {
+                headerStoreName.textContent = (settings.storeInfo && settings.storeInfo.name) ? settings.storeInfo.name : "店舗";
+            }
 
         } else {
             console.log("No settings document found. Using defaults.");
-            // 初期デフォルト値を設定（新規ストア向け）
         }
     } catch (error) {
         console.error("Error loading settings:", error);
     }
 };
 
-// 設定の保存（一般、キャスト、在庫）
-const saveSettings = async (event, section) => {
-    event.preventDefault();
-    const statusDisplay = document.getElementById(`${section}-settings-status`);
-    statusDisplay.textContent = '保存中...';
-    statusDisplay.className = 'mt-3 text-info';
-
-    try {
-        let dataToSave = {};
-        
-        if (section === 'general') {
-            const storeName = document.getElementById('storeName').value.trim();
-            const taxRate = parseFloat(document.getElementById('taxRate').value);
-            const serviceChargeRate = parseFloat(document.getElementById('serviceChargeRate').value);
-            const cutOffTime = document.getElementById('cutOffTime').value;
-
-            dataToSave = {
-                storeName,
-                taxRate,
-                serviceChargeRate,
-                cutOffTime
-            };
-        } else if (section === 'cast') {
-            const defaultCastRank = document.getElementById('defaultCastRank').value.trim();
-            dataToSave = {
-                defaultCastRank
-            };
-        } else if (section === 'inventory') {
-            const inventoryEnabled = document.getElementById('inventoryEnabled').checked;
-            const lowStockThreshold = parseInt(document.getElementById('lowStockThreshold').value);
-
-            dataToSave = {
-                inventoryEnabled,
-                lowStockThreshold: isNaN(lowStockThreshold) ? 5 : lowStockThreshold // デフォルト値
-            };
+/**
+ * (★新規★) 店舗情報 (storeInfo) のみ保存
+ */
+const saveStoreInfo = async (e) => {
+    e.preventDefault();
+    const dataToSave = {
+        storeInfo: {
+            name: storeName.value.trim(),
+            zip: storeZip.value.trim(),
+            address: storeAddress.value.trim(),
+            tel: storeTel.value.trim()
         }
-
-        // settingsドキュメントにマージで更新
+    };
+    try {
         await setDoc(settingsRef, dataToSave, { merge: true });
-
-        statusDisplay.textContent = '設定が保存されました。';
-        statusDisplay.className = 'mt-3 text-success';
+        showFeedback(storeInfoFeedback, '店舗情報を保存しました。');
     } catch (error) {
-        console.error(`Error saving ${section} settings:`, error);
-        statusDisplay.textContent = `保存に失敗しました: ${error.message}`;
-        statusDisplay.className = 'mt-3 text-danger';
+        showFeedback(storeInfoFeedback, `保存エラー: ${error.message}`, true);
     }
 };
 
-// (★新規★) コールルールリストのレンダリング
-const renderCallBorders = () => {
-    const listBody = document.getElementById('call-border-list');
-    listBody.innerHTML = '';
+/**
+ * (★新規★) 料金・税 (rates, dayChangeTime, rounding) のみ保存
+ */
+const saveRates = async (e) => {
+    e.preventDefault();
+    const dataToSave = {
+        rates: {
+            tax: parseFloat(taxRate.value) / 100,
+            service: parseFloat(serviceRate.value) / 100
+        },
+        dayChangeTime: dayChangeTime.value,
+        rounding: {
+            type: roundingType.value,
+            unit: parseInt(roundingUnit.value) || 10
+        }
+    };
+    try {
+        await setDoc(settingsRef, dataToSave, { merge: true });
+        showFeedback(ratesFeedback, '料金・税設定を保存しました。');
+    } catch (error) {
+        showFeedback(ratesFeedback, `保存エラー: ${error.message}`, true);
+    }
+};
+
+/**
+ * (★新規★) 領収書 (receiptSettings) のみ保存
+ */
+const saveReceipt = async (e) => {
+    e.preventDefault();
+    const dataToSave = {
+        receiptSettings: {
+            storeName: receiptStoreName.value.trim(),
+            address: receiptAddress.value.trim(),
+            tel: receiptTel.value.trim(),
+            invoiceNumber: receiptInvoiceNumber.value.trim(),
+            defaultDescription: receiptDefaultDescription.value.trim()
+        }
+    };
+    try {
+        await setDoc(settingsRef, dataToSave, { merge: true });
+        showFeedback(receiptFeedback, '領収書設定を保存しました。');
+    } catch (error) {
+        showFeedback(receiptFeedback, `保存エラー: ${error.message}`, true);
+    }
+};
+
+/**
+ * (★新規★) NFC (nfcTagIds) のみ保存
+ */
+const saveNfc = async (e) => {
+    e.preventDefault();
+    const dataToSave = {
+        nfcTagIds: {
+            clockIn: nfcClockInTagId.value.trim(),
+            clockOut: nfcClockOutTagId.value.trim()
+        }
+    };
+    try {
+        await setDoc(settingsRef, dataToSave, { merge: true });
+        showFeedback(nfcFeedback, 'NFC設定を保存しました。');
+    } catch (error) {
+        showFeedback(nfcFeedback, `保存エラー: ${error.message}`, true);
+    }
+};
+
+// --- (★新規★) テーブル管理 ---
+
+const renderTableList = () => {
+    if (!currentTablesList) return;
+    currentTablesList.innerHTML = '';
+    currentTables.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
     
-    if (currentCallBorders.length === 0) {
-        document.getElementById('call-list-empty-message').style.display = 'block';
+    currentTables.forEach(table => {
+        currentTablesList.innerHTML += `
+            <div class="flex items-center justify-between bg-slate-100 px-4 py-2 rounded-lg">
+                <span class="font-semibold">${table.id}</span>
+                <button type="button" class="delete-table-btn text-red-500 hover:text-red-700" data-table-id="${table.id}">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+        `;
+    });
+};
+
+const addTable = async (e) => {
+    e.preventDefault();
+    const newName = newTableNameInput.value.trim();
+    if (newName === "") {
+        showFeedback(tableFeedback, "テーブル名を入力してください。", true);
         return;
     }
-    document.getElementById('call-list-empty-message').style.display = 'none';
+    if (currentTables.some(t => t.id === newName)) {
+        showFeedback(tableFeedback, "そのテーブル名は既に使用されています。", true);
+        return;
+    }
 
-    // 金額の低い順にソートして表示
+    currentTables.push({ id: newName, status: 'available' }); // (★修正★) statusは不要かも
+    
+    try {
+        await setDoc(settingsRef, { tables: currentTables }, { merge: true });
+        showFeedback(tableFeedback, `テーブル「${newName}」を追加しました。`);
+        newTableNameInput.value = '';
+        renderTableList(); // UIを即時更新
+    } catch (error) {
+        showFeedback(tableFeedback, `追加エラー: ${error.message}`, true);
+        currentTables.pop(); // 失敗したらローカルからも削除
+    }
+};
+
+const deleteTable = async (e) => {
+    const btn = e.target.closest('.delete-table-btn');
+    if (!btn) return;
+    
+    const tableId = btn.dataset.tableId;
+    if (!confirm(`テーブル「${tableId}」を削除しますか？\n(注意: 関連する伝票には影響しません)`)) {
+        return;
+    }
+
+    currentTables = currentTables.filter(t => t.id !== tableId);
+    
+    try {
+        await setDoc(settingsRef, { tables: currentTables }, { merge: true });
+        showFeedback(tableFeedback, `テーブル「${tableId}」を削除しました。`);
+        renderTableList(); // UIを即時更新
+    } catch (error) {
+        showFeedback(tableFeedback, `削除エラー: ${error.message}`, true);
+        // (★簡易的★) 失敗したらリロード
+        loadSettings();
+    }
+};
+
+// --- (★新規★) コール管理 ---
+
+const renderCallBorders = () => {
+    if (!callBorderList) return;
+    callBorderList.innerHTML = '';
     currentCallBorders.sort((a, b) => a.borderAmount - b.borderAmount);
 
-    currentCallBorders.forEach((rule, index) => {
-        const row = listBody.insertRow();
-        
-        // 金額ボーダー (万円)
-        // toLocaleStringで3桁区切りにする
-        row.insertCell().textContent = rule.borderAmount.toLocaleString(); 
-        
-        // コール名
-        row.insertCell().textContent = rule.callName;
-        
-        // 操作ボタン
-        const actionCell = row.insertCell();
-        const deleteBtn = document.createElement('button');
-        deleteBtn.textContent = '削除';
-        deleteBtn.className = 'btn btn-danger btn-sm';
-        deleteBtn.dataset.index = index;
-        deleteBtn.addEventListener('click', removeCallBorder);
-        actionCell.appendChild(deleteBtn);
+    currentCallBorders.forEach(rule => {
+        callBorderList.innerHTML += `
+            <div class="flex items-center justify-between bg-slate-100 px-4 py-2 rounded-lg">
+                <div>
+                    <span class="font-semibold">${rule.callName}</span>
+                    <span class="text-sm text-slate-600 ml-2">(¥${rule.borderAmount.toLocaleString()} 以上)</span>
+                </div>
+                <button type="button" class="delete-call-btn text-red-500 hover:text-red-700" data-amount="${rule.borderAmount}">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+        `;
     });
 };
 
-// (★新規★) 新しいコールルールを追加
-const addCallBorder = (event) => {
-    event.preventDefault();
-    const callNameInput = document.getElementById('newCallName');
-    const callBorderInput = document.getElementById('newCallBorder');
-    const errorDisplay = document.getElementById('call-settings-error');
-    
-    errorDisplay.style.display = 'none';
+const addCallBorder = async (e) => {
+    e.preventDefault();
+    const name = newCallName.value.trim();
+    const amount = parseInt(newCallBorder.value);
 
-    const callName = callNameInput.value.trim();
-    // 小数点も許可するためparseFloatを使用
-    const borderAmount = parseFloat(callBorderInput.value); 
-
-    if (!callName || isNaN(borderAmount) || borderAmount <= 0) {
-        errorDisplay.textContent = 'コール名と有効な金額ボーダー（0より大きい数値）を入力してください。';
-        errorDisplay.style.display = 'block';
+    if (name === "" || isNaN(amount) || amount <= 0) {
+        showFeedback(callFeedback, "コール名と有効な金額 (円) を入力してください。", true);
+        return;
+    }
+    if (currentCallBorders.some(r => r.borderAmount === amount)) {
+        showFeedback(callFeedback, `金額 (¥${amount.toLocaleString()}) は既に使用されています。`, true);
         return;
     }
     
-    // 既に同じ金額ボーダーが存在しないかチェック
-    if (currentCallBorders.some(rule => rule.borderAmount === borderAmount)) {
-        errorDisplay.textContent = `既に${borderAmount.toLocaleString()}万円以上のボーダーが設定されています。`;
-        errorDisplay.style.display = 'block';
-        return;
-    }
-
-    currentCallBorders.push({
-        callName: callName,
-        borderAmount: borderAmount // 万円単位
-    });
-
-    // フォームをクリア
-    callNameInput.value = '';
-    callBorderInput.value = '';
+    currentCallBorders.push({ callName: name, borderAmount: amount });
     
-    renderCallBorders();
-};
-
-// (★新規★) コールルールを削除
-const removeCallBorder = (event) => {
-    const indexToRemove = parseInt(event.target.dataset.index);
-    if (!isNaN(indexToRemove) && indexToRemove >= 0 && indexToRemove < currentCallBorders.length) {
-        currentCallBorders.splice(indexToRemove, 1);
+    try {
+        await setDoc(settingsRef, { champagneCallBorders: currentCallBorders }, { merge: true });
+        showFeedback(callFeedback, `コール「${name}」を追加しました。`);
+        newCallName.value = '';
+        newCallBorder.value = '';
         renderCallBorders();
-    }
-};
-
-// (★新規★) シャンパンコール設定をFirestoreに保存
-const saveCallBorders = async () => {
-    const statusDisplay = document.getElementById('champagne-call-settings-status');
-    statusDisplay.textContent = '保存中...';
-    statusDisplay.className = 'mt-3 text-info';
-
-    try {
-        // Firestoreに保存する前に、万円 -> 円 (10000倍) に戻す
-        const dataToSave = currentCallBorders.map(rule => ({
-            callName: rule.callName,
-            borderAmount: Math.round(rule.borderAmount * 10000) // 万円 -> 円 (丸め処理)
-        }));
-        
-        // 金額の低い順にソートして保存する
-        dataToSave.sort((a, b) => a.borderAmount - b.borderAmount);
-
-        // settingsドキュメントにマージで更新
-        await setDoc(settingsRef, {
-            champagneCallBorders: dataToSave
-        }, { merge: true });
-
-        statusDisplay.textContent = 'シャンパンコール設定が保存されました。';
-        statusDisplay.className = 'mt-3 text-success';
-        
-        // 保存後に念のためロードし直す（今回はrenderCallBordersで対応可能だが、ロジックとして堅牢にする）
-        loadSettings();
-
     } catch (error) {
-        console.error("Error saving champagne call settings:", error);
-        statusDisplay.textContent = `保存に失敗しました: ${error.message}`;
-        statusDisplay.className = 'mt-3 text-danger';
+        showFeedback(callFeedback, `追加エラー: ${error.message}`, true);
+        currentCallBorders.pop();
     }
 };
 
+const deleteCallBorder = async (e) => {
+    const btn = e.target.closest('.delete-call-btn');
+    if (!btn) return;
 
-// 招待リンク生成機能 (既存)
-// （Firestoreから招待リンクを発行し、キャストに送信するためのもの）
-const generateInviteLink = async () => {
-    const linkArea = document.getElementById('inviteLinkArea');
-    const linkInput = document.getElementById('inviteLinkInput');
-    const expirySpan = document.getElementById('inviteLinkExpiry');
+    const amount = parseInt(btn.dataset.amount);
+    const rule = currentCallBorders.find(r => r.borderAmount === amount);
+    if (!rule) return;
+
+    if (!confirm(`コール「${rule.callName} (¥${rule.borderAmount.toLocaleString()})」を削除しますか？`)) {
+        return;
+    }
+
+    currentCallBorders = currentCallBorders.filter(r => r.borderAmount !== amount);
     
     try {
-        const docRef = await addDoc(invitesCollectionRef, {
-            storeId: currentStoreId,
-            createdAt: new Date(),
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24時間後に期限切れ
-            used: false
-        });
-
-        const inviteId = docRef.id;
-        const inviteLink = `${window.location.origin}/signup.html?inviteId=${inviteId}`;
-        
-        linkInput.value = inviteLink;
-        expirySpan.textContent = new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleString('ja-JP');
-        linkArea.style.display = 'block';
-
+        await setDoc(settingsRef, { champagneCallBorders: currentCallBorders }, { merge: true });
+        showFeedback(callFeedback, `コール「${rule.callName}」を削除しました。`);
+        renderCallBorders();
     } catch (error) {
-        console.error("Error generating invite link:", error);
-        alert('招待リンクの生成に失敗しました。');
+        showFeedback(callFeedback, `削除エラー: ${error.message}`, true);
+        loadSettings(); // (★簡易的★) 失敗したらリロード
     }
 };
 
-// 招待リンクコピー機能 (既存)
-function copyInviteLink() {
-    const linkInput = document.getElementById('inviteLinkInput');
-    linkInput.select();
-    linkInput.setSelectionRange(0, 99999); // Mobile compatibility
-    document.execCommand("copy");
-    alert("招待リンクがクリップボードにコピーされました！");
-}
+// --- (★新規★) NFCスキャン ---
 
-// ログアウト機能 (既存)
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-    try {
-        await signOut(auth);
-        window.location.href = 'login.html';
-    } catch (error) {
-        console.error("Logout failed:", error);
-        alert("ログアウトに失敗しました。");
+const scanNfcTag = async (targetInput) => {
+    if (!('NDEFReader' in window)) {
+        nfcScanFeedback.textContent = "お使いのブラウザは Web NFC に対応していません。";
+        return;
     }
+
+    if (!ndefReader) {
+        ndefReader = new NDEFReader();
+    }
+
+    try {
+        await ndefReader.scan();
+        nfcScanFeedback.textContent = "NFCタグをスキャン待機中...";
+
+        ndefReader.onreading = (event) => {
+            const serialNumber = event.serialNumber;
+            targetInput.value = serialNumber;
+            nfcScanFeedback.textContent = `タグ (ID: ${serialNumber}) を読み取りました。`;
+            // (★注意★) `scan()` は一度しか読み取らない
+        };
+        ndefReader.onreadingerror = (event) => {
+            nfcScanFeedback.textContent = "NFCタグの読み取りに失敗しました。";
+        };
+
+    } catch (error) {
+        console.error("NFC scan error:", error);
+        nfcScanFeedback.textContent = `NFCスキャンを開始できませんでした: ${error.message}`;
+    }
+};
+
+
+// --- (★新規★) DOMContentLoaded & firebaseReady ---
+
+document.addEventListener('firebaseReady', (e) => {
+    // Firestore参照の取得
+    settingsRef = e.detail.settingsRef;
+    invitesCollectionRef = e.detail.invitesCollectionRef;
+    currentStoreId = e.detail.currentStoreId;
+    
+    // (★新規★) 必要なDOMを取得
+    headerStoreName = document.getElementById('header-store-name');
+    settingsTabs = document.getElementById('settings-tabs');
+    tabContents = document.querySelectorAll('#settings-tab-content .tab-content');
+    
+    storeInfoForm = document.getElementById('store-info-form');
+    storeName = document.getElementById('storeName');
+    storeZip = document.getElementById('storeZip');
+    storeAddress = document.getElementById('storeAddress');
+    storeTel = document.getElementById('storeTel');
+    saveStoreInfoBtn = document.getElementById('save-store-info-btn');
+    storeInfoFeedback = document.getElementById('store-info-feedback');
+
+    ratesForm = document.getElementById('rates-form');
+    taxRate = document.getElementById('taxRate');
+    serviceRate = document.getElementById('serviceRate');
+    dayChangeTime = document.getElementById('dayChangeTime');
+    roundingType = document.getElementById('roundingType');
+    roundingUnit = document.getElementById('roundingUnit');
+    saveRatesBtn = document.getElementById('save-rates-btn');
+    ratesFeedback = document.getElementById('rates-feedback');
+    
+    receiptForm = document.getElementById('receipt-form');
+    receiptStoreName = document.getElementById('receiptStoreName');
+    receiptAddress = document.getElementById('receiptAddress');
+    receiptTel = document.getElementById('receiptTel');
+    receiptInvoiceNumber = document.getElementById('receiptInvoiceNumber');
+    receiptDefaultDescription = document.getElementById('receiptDefaultDescription');
+    saveReceiptBtn = document.getElementById('save-receipt-btn');
+    receiptFeedback = document.getElementById('receipt-feedback');
+
+    newTableForm = document.getElementById('new-table-form');
+    newTableNameInput = document.getElementById('new-table-name-input');
+    addTableBtn = document.getElementById('add-table-btn');
+    currentTablesList = document.getElementById('current-tables-list');
+    tableFeedback = document.getElementById('table-feedback');
+
+    newCallBorderForm = document.getElementById('new-call-border-form');
+    newCallName = document.getElementById('newCallName');
+    newCallBorder = document.getElementById('newCallBorder');
+    addCallBorderBtn = document.getElementById('addCallBorderBtn');
+    callBorderList = document.getElementById('call-border-list');
+    callFeedback = document.getElementById('call-feedback');
+
+    nfcForm = document.getElementById('nfc-form');
+    nfcClockInTagId = document.getElementById('nfcClockInTagId');
+    scanNfcClockInBtn = document.getElementById('scanNfcClockInBtn');
+    nfcClockOutTagId = document.getElementById('nfcClockOutTagId');
+    scanNfcClockOutBtn = document.getElementById('scanNfcClockOutBtn');
+    nfcScanFeedback = document.getElementById('nfc-scan-feedback');
+    saveNfcBtn = document.getElementById('save-nfc-btn');
+    nfcFeedback = document.getElementById('nfc-feedback');
+
+    logoutBtn = document.getElementById('logoutBtn');
+
+    // (★新規★) イベントリスナーを設定
+    settingsTabs.addEventListener('click', (e) => {
+        const btn = e.target.closest('button.ranking-type-btn');
+        if (btn && btn.dataset.tab) {
+            openTab(btn.dataset.tab);
+        }
+    });
+
+    saveStoreInfoBtn.addEventListener('click', saveStoreInfo);
+    saveRatesBtn.addEventListener('click', saveRates);
+    saveReceiptBtn.addEventListener('click', saveReceipt);
+    addTableBtn.addEventListener('click', addTable);
+    currentTablesList.addEventListener('click', deleteTable);
+    addCallBorderBtn.addEventListener('click', addCallBorder);
+    callBorderList.addEventListener('click', deleteCallBorder);
+    saveNfcBtn.addEventListener('click', saveNfc);
+
+    scanNfcClockInBtn.addEventListener('click', () => scanNfcTag(nfcClockInTagId));
+    scanNfcClockOutBtn.addEventListener('click', () => scanNfcTag(nfcClockOutTagId));
+
+    logoutBtn.addEventListener('click', async () => {
+        try {
+            await signOut(auth);
+            window.location.href = 'login.html';
+        } catch (error) {
+            console.error("Logout failed:", error);
+        }
+    });
+
+    // (★新規★) データをロード
+    loadSettings();
 });
 
-// UI helper function (既存)
-function updateStatus(elementId, message, isError = false) {
-    const statusElement = document.getElementById(elementId);
-    statusElement.textContent = message;
-    statusElement.className = isError ? 'mt-3 text-danger' : 'mt-3 text-success';
-}
-
-// グローバルスコープに関数を公開 (settings.htmlから参照するため)
-window.copyInviteLink = copyInviteLink;
+document.addEventListener('DOMContentLoaded', () => {
+    // サイドバーを描画
+    renderSidebar('sidebar-container', 'settings.html');
+});

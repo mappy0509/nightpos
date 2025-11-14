@@ -1,4 +1,4 @@
-// (★新規★) firebase-init.js から必要なモジュールをインポート
+// (★変更★) firebase-init.js から必要なモジュールをインポート
 import { 
     db, 
     auth, 
@@ -9,13 +9,14 @@ import {
     where, 
     getDocs, 
     setDoc,
-    addDoc
+    addDoc,
+    getDoc // (★念のため getDoc もインポート)
 } from './firebase-init.js';
 
 // --- グローバル変数 ---
 let validStoreId = null;
-let validInviteTokenId = null;
-let validInviteRole = 'cast'; // デフォルト
+let validInviteTokenId = null; // (★変更★) ドキュメントIDを保持
+let validInviteRole = 'cast'; 
 
 // --- DOM要素 ---
 let loadingContainer, signupForm, successContainer, invalidTokenContainer;
@@ -28,6 +29,10 @@ let signupEmailInput, signupPasswordInput, signupPasswordConfirmInput,
  * @param {'loading' | 'form' | 'success' | 'invalid'} state 
  */
 const setSignupState = (state) => {
+    if (!loadingContainer || !signupForm || !successContainer || !invalidTokenContainer) {
+        console.error("Signup DOM elements not found.");
+        return;
+    }
     loadingContainer.classList.add('hidden');
     signupForm.classList.add('hidden');
     successContainer.classList.add('hidden');
@@ -50,11 +55,13 @@ const setSignupState = (state) => {
 };
 
 /**
- * (★新規★) URLから招待トークンを検証する
+ * (★変更★) URLから招待トークンを検証する
+ * (cast-settings.js の openInviteModal で生成されるURLを想定)
  */
 const validateInviteToken = async () => {
     try {
         const params = new URLSearchParams(window.location.search);
+        // (★修正★) storeId と token を取得
         const storeId = params.get('storeId');
         const token = params.get('token');
 
@@ -66,6 +73,7 @@ const validateInviteToken = async () => {
 
         // 1. invites コレクションからトークンを検索
         const invitesRef = collection(db, "stores", storeId, "invites");
+        // (★修正★) 'token' フィールドでクエリ
         const q = query(invitesRef, where("token", "==", token), where("used", "==", false));
         
         const querySnapshot = await getDocs(q);
@@ -80,6 +88,7 @@ const validateInviteToken = async () => {
         const inviteData = inviteDoc.data();
 
         // 2. 有効期限をチェック
+        // (★修正★) cast-settings.js (L218) は 'expires' を使用
         const expires = new Date(inviteData.expires);
         if (expires < new Date()) {
             console.warn("Token expired.");
@@ -90,8 +99,8 @@ const validateInviteToken = async () => {
         // 3. トークンが有効
         console.log("Token validated successfully.");
         validStoreId = storeId;
-        validInviteTokenId = inviteDoc.id;
-        validInviteRole = inviteData.role || 'cast'; // 招待ドキュメントにroleがあればそれを使う
+        validInviteTokenId = inviteDoc.id; // (★修正★) 更新用のドキュメントID
+        validInviteRole = inviteData.role || 'cast';
         
         setSignupState('form');
 
@@ -157,7 +166,7 @@ const handleSignup = async (e) => {
             name: displayName,
             realName: realName,
             role: validInviteRole,
-            hireDate: new Date().toISOString().split('T')[0],
+            hireDate: new Date().toISOString().split('T')[0], // (★修正★)
             phone: "",
             address: "",
         };

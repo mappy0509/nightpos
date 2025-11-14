@@ -14,7 +14,7 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "https://cd
 // (★重要★) 
 // (★修正★) Google AI Studio ( https://aistudio.google.com/ ) で取得した
 // (★修正★) APIキーを以下の "YOUR_API_KEY_HERE" と置き換えてください。
-const API_KEY = ""; 
+const API_KEY = ""; // (★ひとまずこのままにします)
 
 // --- 初期設定 ---
 let genAI;
@@ -49,10 +49,11 @@ const initializeAI = () => {
     if (isInitialized) return;
     
     // (★修正★) APIキーがダミーのままでないかチェック
+    // (★修正★) ユーザー指示に基づき、エラーをスローせず警告を出す
     if (!API_KEY || API_KEY === "YOUR_API_KEY_HERE" || API_KEY === "ここにAPIキーを入力しましょう") {
-        console.error("APIキーが ai-service.js に設定されていません。");
-        // (★修正★) エラーメッセージをスローして、呼び出し元で検知できるようにする
-        throw new Error("APIキーが ai-service.js に設定されていません。");
+        console.warn("APIキーが ai-service.js に設定されていません。AI機能は無効になります。");
+        isInitialized = false; // (★追加★)
+        return; // (★修正★) エラーをスローしない
     }
     
     try {
@@ -76,8 +77,9 @@ const initializeAI = () => {
         console.log("AI Service Initialized.");
     } catch (error) {
         console.error("AI Service Initialization Failed: ", error);
-        // (★修正★) 初期化失敗時もエラーをスロー
-        throw new Error(`AI Service Initialization Failed: ${error.message}`);
+        isInitialized = false; // (★追加★)
+        // (★修正★) 初期化失敗時もエラーをスローしない
+        // throw new Error(`AI Service Initialization Failed: ${error.message}`);
     }
 };
 
@@ -88,15 +90,15 @@ const initializeAI = () => {
  * @returns {Promise<string>} AIからの応答テキスト
  */
 const generateText = async (modelType, prompt) => {
-    // (★修正★) 初期化処理を try-catch で囲む
-    try {
-        if (!isInitialized) initializeAI();
-    } catch (initError) {
-        console.error(initError);
-        return initError.message; // "APIキーが設定されていません。" などのエラーを返す
+    // (★修正★) 呼び出し時に毎回初期化（またはチェック）
+    if (!isInitialized) {
+        initializeAI();
     }
     
-    if (!isInitialized) return "AIの初期化に失敗しました。";
+    // (★修正★) 初期化（APIキーチェック含む）に失敗した場合は、ダミーメッセージを返す
+    if (!isInitialized) {
+        return "AI機能は現在無効です (APIキー未設定)";
+    }
 
     const model = (modelType === 'pro') ? proModel : flashModel;
 
@@ -166,7 +168,7 @@ export const getUpsellSuggestion = async (slipData, customer, customerSlips) => 
     try {
         const suggestion = await generateText('flash', prompt);
         
-        if (suggestion.toLowerCase().includes('null') || suggestion.trim() === "" || suggestion.includes('APIキー')) {
+        if (suggestion.toLowerCase().includes('null') || suggestion.trim() === "" || suggestion.includes('APIキー') || suggestion.includes('AI機能は無効')) {
             return null;
         }
         return suggestion.trim();
@@ -202,7 +204,7 @@ export const getCustomerFollowUpAdvice = async (customer, stats) => {
     // (★修正★) エラー時も考慮
     try {
         const advice = await generateText('flash', prompt);
-        if (advice.includes('APIキー') || advice.includes('エラー')) {
+        if (advice.includes('APIキー') || advice.includes('エラー') || advice.includes('AI機能は無効')) {
             return "AIアドバイスの取得に失敗しました。";
         }
         return advice;

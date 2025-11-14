@@ -1,4 +1,4 @@
-// (★新規★) firebase-init.js から必要なモジュールをインポート
+// (★変更★) firebase-init.js から必要なモジュールをインポート
 import { 
     auth, 
     signInWithEmailAndPassword, 
@@ -52,7 +52,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else {
                         // (★新規★) 万が一ロールがない場合
                         console.warn("User logged in, but role is undefined.");
-                        window.location.href = 'login.html'; // ログインページに留まる
+                        // (★修正★) ログインページではなく、ロールがない場合の待機ページやエラーページが望ましいが、一旦 login.html に戻す
+                        loginError.textContent = "ユーザーロールが設定されていません。";
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'ログイン';
                     }
                 } else {
                     // (★新規★) Auth ユーザーは存在するが、DBにプロファイルがない（＝異常）

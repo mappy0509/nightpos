@@ -95,8 +95,57 @@ let allSlipsList,
     transferTableGrid, transferError;
 
 
-// --- (★新規★) 営業日計算ヘルパー関数 ---
-// (all-slips.js / dashboard.js からコピー)
+// --- (★修正★) ヘルパー関数群 (呼び出し元より前に定義) ---
+
+/**
+ * 通貨形式（例: ¥10,000）にフォーマットする
+ * @param {number} amount 金額
+ * @returns {string} フォーマットされた通貨文字列
+ */
+const formatCurrency = (amount) => {
+    return `¥${amount.toLocaleString()}`;
+};
+
+/**
+ * Dateオブジェクトを 'YYYY-MM-DDTHH:MM' 形式の文字列に変換する
+ * @param {Date} date 
+ * @returns {string}
+ */
+const formatDateTimeLocal = (date) => {
+    const YYYY = date.getFullYear();
+    const MM = String(date.getMonth() + 1).padStart(2, '0');
+    const DD = String(date.getDate()).padStart(2, '0');
+    const HH = String(date.getHours()).padStart(2, '0');
+    const MIN = String(date.getMinutes()).padStart(2, '0');
+    return `${YYYY}-${MM}-${DD}T${HH}:${MIN}`;
+};
+
+/**
+ * 経過時間を HH:MM 形式でフォーマットする
+ * @param {number} ms - ミリ秒
+ * @returns {string} HH:MM 形式の文字列
+ */
+const formatElapsedTime = (ms) => {
+    if (ms < 0) ms = 0;
+    const totalMinutes = Math.floor(ms / (1000 * 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const hh = String(hours).padStart(2, '0');
+    const mm = String(minutes).padStart(2, '0');
+    return `${hh}:${mm}`;
+};
+
+/**
+ * キャストIDからキャスト名を取得する
+ * @param {string | null} castId
+ * @returns {string} キャスト名
+ */
+const getCastNameById = (castId) => {
+    if (!casts) return '不明'; 
+    if (!castId) return 'フリー';
+    const cast = casts.find(c => c.id === castId); 
+    return cast ? cast.name : '不明';
+};
 
 /**
  * 営業日付の開始時刻を取得する
@@ -157,7 +206,8 @@ const renderCallList = () => {
         filteredCalls = champagneCalls.filter(c => {
             if (c.status !== 'completed' || !c.completedAt) return false;
             try {
-                const completedTime = new Date(c.completedAt).getTime();
+                // (★修正★) serverTimestamp は .toDate() が必要
+                const completedTime = c.completedAt.toDate ? c.completedAt.toDate().getTime() : new Date(c.completedAt).getTime();
                 return completedTime >= todayBusinessStart.getTime() && completedTime <= todayBusinessEnd.getTime();
             } catch (e) {
                 return false;
@@ -166,7 +216,11 @@ const renderCallList = () => {
     }
 
     // 2. 発生時刻の降順 (新しいものが上) にソート
-    filteredCalls.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    filteredCalls.sort((a, b) => {
+        const timeA = a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime();
+        const timeB = b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime();
+        return timeB - timeA;
+    });
 
     // 3. リストが空の場合のメッセージ
     if (filteredCalls.length === 0) {
@@ -178,7 +232,8 @@ const renderCallList = () => {
 
     // 4. HTMLを生成
     filteredCalls.forEach(call => {
-        const callTime = new Date(call.createdAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        const callTime = (call.createdAt.toDate ? call.createdAt.toDate() : new Date(call.createdAt))
+            .toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
         
         // コール種別のドロップダウンHTMLを生成
         const callTypeOptions = (settings.champagneCallBorders || [])
@@ -238,7 +293,7 @@ const renderCallList = () => {
                     
                     ${isCompleted ? `
                         <span class="text-sm font-semibold text-green-700">
-                            <i class="fa-solid fa-check-double mr-1"></i> 対応完了 (${new Date(call.completedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })})
+                            <i class="fa-solid fa-check-double mr-1"></i> 対応完了 (${(call.completedAt.toDate ? call.completedAt.toDate() : new Date(call.completedAt)).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })})
                         </span>
                     ` : `
                         <button class="px-6 py-2 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 complete-call-btn" data-call-id="${call.id}">
@@ -322,41 +377,6 @@ const completeCall = async (callId) => {
 // --- (★新規★) all-slips.js から伝票モーダル用ロジックを移植 ---
 // (※ 必要な関数のみを抜粋・コピー)
 
-/**
- * 通貨形式（例: ¥10,000）にフォーマットする
- * @param {number} amount 金額
- * @returns {string} フォーマットされた通貨文字列
- */
-// (★重複★) const formatCurrency = (amount) => { ... }; (上部で定義済み)
-
-/**
- * Dateオブジェクトを 'YYYY-MM-DDTHH:MM' 形式の文字列に変換する
- * @param {Date} date 
- * @returns {string}
- */
-const formatDateTimeLocal = (date) => {
-    const YYYY = date.getFullYear();
-    const MM = String(date.getMonth() + 1).padStart(2, '0');
-    const DD = String(date.getDate()).padStart(2, '0');
-    const HH = String(date.getHours()).padStart(2, '0');
-    const MIN = String(date.getMinutes()).padStart(2, '0');
-    return `${YYYY}-${MM}-${DD}T${HH}:${MIN}`;
-};
-
-/**
- * 経過時間を HH:MM 形式でフォーマットする
- * @param {number} ms - ミリ秒
- * @returns {string} HH:MM 形式の文字列
- */
-const formatElapsedTime = (ms) => {
-    if (ms < 0) ms = 0;
-    const totalMinutes = Math.floor(ms / (1000 * 60));
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    const hh = String(hours).padStart(2, '0');
-    const mm = String(minutes).padStart(2, '0');
-    return `${hh}:${mm}`;
-};
 
 /**
  * 伝票の合計金額（割引前）を計算する
@@ -392,18 +412,6 @@ const calculateSlipTotal = (slip) => {
         total = Math.round(total);
     }
     return total;
-};
-
-/**
- * キャストIDからキャスト名を取得する
- * @param {string | null} castId
- * @returns {string} キャスト名
- */
-const getCastNameById = (castId) => {
-    if (!casts) return '不明'; 
-    if (!castId) return 'フリー';
-    const cast = casts.find(c => c.id === castId); 
-    return cast ? cast.name : '不明';
 };
 
 /**
@@ -826,7 +834,8 @@ const handleSlipClick = (slipId) => {
     
     // (★重要★) call-management.js では編集不可にする
     orderModal.querySelectorAll('input, select, button').forEach(el => {
-        if (!el.classList.contains('modal-close-btn')) {
+        // (★修正★) .modal-close-btn 以外を無効化
+        if (!el.closest('.modal-close-btn') && !el.classList.contains('modal-close-btn')) {
             el.disabled = true;
         }
     });

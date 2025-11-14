@@ -13,18 +13,7 @@ import {
     collection 
 } from './firebase-init.js';
 
-// (★削除★) エラーの原因となった以下の参照(Ref)のインポートを削除
-/*
-import {
-    settingsRef,
-    // menuRef, (★不要★)
-    // slipCounterRef, (★不要★)
-    castsCollectionRef,
-    customersCollectionRef,
-    slipsCollectionRef
-} from './firebase-init.js';
-*/
-
+// (★削除★) エラーの原因となった参照のインポートは不要
 
 // ===== グローバル定数・変数 =====
 
@@ -122,6 +111,30 @@ const closeModal = (modalElement) => {
 // ===================================
 
 /**
+ * (★新規★) 営業日付の開始時刻を取得する
+ * @param {Date} date 対象の日付
+ * @returns {Date} 営業開始日時
+ */
+const getBusinessDayStart = (date) => {
+    if (!settings || !settings.dayChangeTime) { 
+        const startDate = new Date(date);
+        startDate.setHours(0, 0, 0, 0);
+        return startDate;
+    }
+    
+    const [hours, minutes] = settings.dayChangeTime.split(':').map(Number);
+    const startDate = new Date(date);
+    startDate.setHours(hours, minutes, 0, 0);
+    
+    if (date.getTime() < startDate.getTime()) {
+        startDate.setDate(startDate.getDate() - 1);
+    }
+    
+    return startDate;
+};
+
+
+/**
  * (★新規★) 顧客に関連する伝票データを集計する
  * @param {string} customerId - 顧客ID
  * @param {string} customerName - 顧客名 (※古い伝票はIDがないため名前で照合)
@@ -138,7 +151,11 @@ const getCustomerStats = (customerId, customerName) => {
         
         // (★変更★) IDと名前の両方で照合
         // (IDは addDoc で自動生成されるため、古いデータには customerId がない想定)
-        if (slip.customerId === customerId) return true; 
+        // (★修正★) ID が 'id' ではなく 'customerId' として伝票に保存されているか確認
+        // (★修正★) `saveCustomer` (L234) は `customerId` を伝票に保存していない。
+        // (★修正★) よって `slip.name === customerName` のみで照合する
+        
+        // if (slip.customerId === customerId) return true; 
         if (slip.name === customerName) return true;
         
         return false;
@@ -413,7 +430,8 @@ const openCustomerDetailModal = (customerId) => {
 const renderHeaderStoreName = () => {
     if (!headerStoreName || !settings || !currentStoreId) return;
 
-    const currentStoreName = settings.storeInfo.name || "店舗";
+    // (★修正★)
+    const currentStoreName = (settings.storeInfo && settings.storeInfo.name) ? settings.storeInfo.name : "店舗";
     
     // (★変更★) loading... を店舗名で上書き
     headerStoreName.textContent = currentStoreName;
@@ -462,7 +480,7 @@ document.addEventListener('firebaseReady', (e) => {
             settings = docSnap.data();
         } else {
             console.warn("No settings document found. Using fallback.");
-            settings = { rates: { tax: 0.1, service: 0.2 }, dayChangeTime: "05:00" };
+            settings = { rates: { tax: 0.1, service: 0.2 }, dayChangeTime: "05:00", storeInfo: { name: "店舗" } }; // (★修正★)
         }
         settingsLoaded = true;
         checkAndRenderAll();

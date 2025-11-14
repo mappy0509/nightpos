@@ -29,13 +29,13 @@ const getUUID = () => {
 // (★変更★) state を分割して管理
 let settings = null;
 let menu = null;
-let casts = [];
+// (★削除★) let casts = [];
 let slips = [];
-let champagneCalls = []; // (★コール管理 追加★)
+// (★削除★) let champagneCalls = [];
 
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
-let settingsRef, menuRef, castsCollectionRef, slipsCollectionRef,
-    champagneCallsCollectionRef, // (★コール管理 追加★)
+let settingsRef, menuRef, /* (★削除★) castsCollectionRef, */ slipsCollectionRef,
+    // (★削除★) champagneCallsCollectionRef,
     currentStoreId; 
 
 
@@ -44,7 +44,7 @@ let settingsRef, menuRef, castsCollectionRef, slipsCollectionRef,
 let modalCloseBtns, 
     reportsSummaryCards, reportTotalSales, reportTotalSlips, reportAvgSales, reportCancelledSlips,
     reportsPeriodTabs, reportsChartCanvas, reportsRankingList, 
-    micRankingList, // (★コール管理 追加★)
+    // (★削除★) micRankingList, 
     exportJpgBtn,
     reportContentArea,
     // (★新規★) 日付選択
@@ -72,18 +72,7 @@ const formatCurrency = (amount) => {
     return `¥${amount.toLocaleString()}`;
 };
 
-/**
- * (★コール管理 追加★) キャストIDからキャスト名を取得する
- * @param {string | null} castId
- * @returns {string} キャスト名
- */
-const getCastNameById = (castId) => {
-    if (!casts) return '不明'; 
-    if (!castId || castId === 'none') return '（未割り当て）';
-    const cast = casts.find(c => c.id === castId);
-    return cast ? cast.name : '不明';
-};
-
+// (★削除★) getCastNameById 関数を削除
 
 /**
  * モーダルを閉じる
@@ -111,26 +100,30 @@ const openModal = (modalElement) => {
  * @returns {string}
  */
 const parseMarkdownReport = (text) => {
-    return text
-        .split('\n')
-        .map(line => {
-            line = line.trim();
-            if (line.startsWith('## ')) {
-                return `<h3>${line.substring(3).trim()}</h3>`;
-            } else if (line.startsWith('##')) {
-                return `<h3>${line.substring(2).trim()}</h3>`;
-            } else if (line.startsWith('* ')) {
-                return `<li>${line.substring(2).trim()}</li>`;
-            } else if (line.startsWith('- ')) {
-                return `<li>${line.substring(2).trim()}</li>`;
-            } else if (line.length > 0) {
-                return `<p>${line}</p>`;
-            }
-            return '';
-        })
-        .join('')
-        .replace(/<\/li><p>/g, '</li><ul><p>') 
-        .replace(/<\/p><li>/g, '</p></ul><li>'); 
+    // (★修正★) 箇条書きがネストしないように修正
+    let html = text.split('\n').map(line => {
+        line = line.trim();
+        if (line.startsWith('## ')) {
+            return `<h3>${line.substring(3).trim()}</h3>`;
+        } else if (line.startsWith('##')) {
+            return `<h3>${line.substring(2).trim()}</h3>`;
+        } else if (line.startsWith('* ')) {
+            return `<li>${line.substring(2).trim()}</li>`;
+        } else if (line.startsWith('- ')) {
+            return `<li>${line.substring(2).trim()}</li>`;
+        } else if (line.length > 0) {
+            return `<p>${line}</p>`;
+        }
+        return '';
+    }).join('');
+    
+    // (★修正★) <ul>タグで正しく囲む
+    html = html.replace(/<li>/g, '<ul><li>');
+    html = html.replace(/<\/li>/g, '</li></ul>');
+    // (★修正★) 連続する ul をまとめる
+    html = html.replace(/<\/ul><ul>/g, ''); 
+    
+    return html;
 };
 
 
@@ -221,10 +214,12 @@ const getSlipsForPeriod = (period, baseDate) => {
     const cancelledSlips = slips.filter(slip => {
         if (slip.status !== 'cancelled') return false; 
         
+        // (★修正★) ボツ伝の日時は paidTimestamp (ボツ確定時) を使う
         if (slip.paidTimestamp) {
              const cancelledTime = new Date(slip.paidTimestamp).getTime();
              return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
         }
+        // (★フォールバック★)
         if (slip.startTime) {
              const cancelledTime = new Date(slip.startTime).getTime();
              return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
@@ -297,87 +292,7 @@ const renderReportsRanking = () => {
     });
 };
 
-/**
- * (★コール管理 追加★) マイク担当回数ランキングを描画する
- */
-const renderMicRanking = () => {
-    if (!micRankingList || !champagneCalls || !settings || !casts) {
-        if (micRankingList) micRankingList.innerHTML = '<li class="text-slate-500">...</li>';
-        return;
-    }
-
-    // 1. 現在の期間（日次/週次/月次）の範囲を取得
-    const { range } = getSlipsForPeriod(currentReportPeriod, currentReportDate);
-    const startTimestamp = range.start.getTime();
-    const endTimestamp = range.end.getTime();
-
-    // 2. 期間内に「完了」したコールをフィルタリング
-    const completedCalls = champagneCalls.filter(call => {
-        if (call.status !== 'completed' || !call.completedAt) return false;
-        try {
-            const completedTime = new Date(call.completedAt).getTime();
-            return completedTime >= startTimestamp && completedTime <= endTimestamp;
-        } catch (e) {
-            return false;
-        }
-    });
-
-    // 3. キャストごとにマイク回数を集計
-    const micStats = new Map();
-    
-    // 集計用のヘルパー関数
-    const getStats = (castId) => {
-        if (!castId || castId === 'none') return null;
-        let stats = micStats.get(castId);
-        if (!stats) {
-            stats = {
-                id: castId,
-                name: getCastNameById(castId), // 外部関数
-                mainCount: 0,
-                subCount: 0,
-                totalCount: 0
-            };
-            micStats.set(castId, stats);
-        }
-        return stats;
-    };
-
-    completedCalls.forEach(call => {
-        const mainStats = getStats(call.mainMicCastId);
-        if (mainStats) {
-            mainStats.mainCount++;
-            mainStats.totalCount++;
-        }
-        
-        const subStats = getStats(call.subMicCastId);
-        if (subStats) {
-            subStats.subCount++;
-            subStats.totalCount++;
-        }
-    });
-
-    // 4. メインマイクの回数順にソート
-    const sortedStats = [...micStats.values()].sort((a, b) => b.mainCount - a.mainCount);
-
-    // 5. HTMLを描画
-    micRankingList.innerHTML = '';
-    if (sortedStats.length === 0) {
-        micRankingList.innerHTML = '<li class="text-slate-500">データがありません</li>';
-        return;
-    }
-
-    sortedStats.forEach((cast, index) => {
-        micRankingList.innerHTML += `
-            <li class="flex justify-between items-center py-2 border-b">
-                <span class="font-medium">${index + 1}. ${cast.name}</span>
-                <span class="font-bold text-blue-600 text-xs text-right">
-                    メイン: ${cast.mainCount}回<br>
-                    サブ: ${cast.subCount}回
-                </span>
-            </li>
-        `;
-    });
-};
+// (★削除★) renderMicRanking() 関数を削除
 
 
 /**
@@ -447,7 +362,9 @@ const renderSalesChart = () => {
         paidSlips.forEach(slip => {
             const paidDate = new Date(slip.paidTimestamp);
             const weekIndex = Math.floor((paidDate.getDate() - 1) / 7); 
-            data[weekIndex] += (slip.paidAmount || 0); 
+            // (★修正★) 5週目 (インデックス4) に収める
+            const safeIndex = Math.min(weekIndex, 4); 
+            data[safeIndex] += (slip.paidAmount || 0); 
         });
     }
 
@@ -505,11 +422,12 @@ const renderSalesChart = () => {
  * (★コール管理 変更★) 全レポートを更新する
  */
 const updateAllReports = () => {
-    if (!settings || !slips || !menu || !casts || !champagneCalls) return; // (★コール管理 変更★)
+    // (★削除★) casts, champagneCalls を削除
+    if (!settings || !slips || !menu) return; 
     renderReportsSummary();
     renderReportsRanking();
     renderSalesChart();
-    renderMicRanking(); // (★コール管理 追加★)
+    // (★削除★) renderMicRanking();
 };
 
 /**
@@ -585,7 +503,7 @@ const getDefaultMenu = () => {
 const renderHeaderStoreName = () => {
     if (!headerStoreName || !settings || !currentStoreId) return;
 
-    const currentStoreName = settings.storeInfo.name || "店舗";
+    const currentStoreName = (settings.storeInfo && settings.storeInfo.name) ? settings.storeInfo.name : "店舗";
     
     // (★変更★) loading... を店舗名で上書き
     headerStoreName.textContent = currentStoreName;
@@ -600,30 +518,30 @@ document.addEventListener('firebaseReady', (e) => {
     const { 
         settingsRef: sRef, 
         menuRef: mRef,
-        castsCollectionRef: cRef, 
+        // (★削除★) castsCollectionRef: cRef, 
         slipsCollectionRef: slRef,
-        champagneCallsCollectionRef: ccRef, // (★コール管理 追加★)
-        currentStoreId: csId // (★動的表示 追加★)
+        // (★削除★) champagneCallsCollectionRef: ccRef,
+        currentStoreId: csId
     } = e.detail;
 
     // (★変更★) グローバル変数に参照をセット
     settingsRef = sRef;
     menuRef = mRef;
-    castsCollectionRef = cRef;
+    // (★削除★) castsCollectionRef = cRef;
     slipsCollectionRef = slRef;
-    champagneCallsCollectionRef = ccRef; // (★コール管理 追加★)
-    currentStoreId = csId; // (★動的表示 追加★)
+    // (★削除★) champagneCallsCollectionRef = ccRef;
+    currentStoreId = csId;
 
     let settingsLoaded = false;
     let menuLoaded = false;
-    let castsLoaded = false;
+    // (★削除★) let castsLoaded = false;
     let slipsLoaded = false;
-    let callsLoaded = false; // (★コール管理 追加★)
+    // (★削除★) let callsLoaded = false;
 
     // (★コール管理 変更★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
-        // (★変更★) reports.js は updateAllReports を呼ぶ
-        if (settingsLoaded && menuLoaded && castsLoaded && slipsLoaded && callsLoaded) { // (★コール管理 変更★)
+        // (★変更★) castsLoaded, callsLoaded を削除
+        if (settingsLoaded && menuLoaded && slipsLoaded) { 
             console.log("All data loaded. Rendering UI for reports.js");
             updateAllReports();
             renderHeaderStoreName(); // (★要望4★)
@@ -658,16 +576,8 @@ document.addEventListener('firebaseReady', (e) => {
         checkAndRenderAll();
     }, (error) => console.error("Error listening to menu: ", error));
 
-    // 3. Casts
-    onSnapshot(castsCollectionRef, (querySnapshot) => {
-        casts = [];
-        querySnapshot.forEach((doc) => {
-            casts.push({ ...doc.data(), id: doc.id });
-        });
-        console.log("Casts loaded: ", casts.length);
-        castsLoaded = true;
-        checkAndRenderAll();
-    }, (error) => console.error("Error listening to casts: ", error));
+    // 3. (★削除★) Casts
+    // ...
 
     // 4. Slips
     onSnapshot(slipsCollectionRef, (querySnapshot) => {
@@ -684,20 +594,8 @@ document.addEventListener('firebaseReady', (e) => {
         checkAndRenderAll();
     });
     
-    // 5. (★コール管理 追加★) Champagne Calls
-    onSnapshot(champagneCallsCollectionRef, (querySnapshot) => {
-        champagneCalls = [];
-        querySnapshot.forEach((doc) => {
-            champagneCalls.push({ ...doc.data(), id: doc.id });
-        });
-        console.log("Champagne calls loaded (for reports): ", champagneCalls.length);
-        callsLoaded = true; 
-        checkAndRenderAll();
-    }, (error) => {
-        console.error("Error listening to champagne calls: ", error);
-        callsLoaded = true; // エラーでも続行
-        checkAndRenderAll();
-    });
+    // 5. (★削除★) Champagne Calls
+    // ...
 });
 
 
@@ -719,7 +617,7 @@ document.addEventListener('DOMContentLoaded', () => {
     reportsPeriodTabs = document.getElementById('reports-period-tabs');
     reportsChartCanvas = document.getElementById('reports-chart');
     reportsRankingList = document.getElementById('reports-ranking-list');
-    micRankingList = document.getElementById('mic-ranking-list'); // (★コール管理 追加★)
+    // (★削除★) micRankingList = document.getElementById('mic-ranking-list');
     exportJpgBtn = document.getElementById('export-jpg-btn');
     reportContentArea = document.getElementById('reports-content-area'); 
     
@@ -766,6 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(reportDatePicker) {
         reportDatePicker.addEventListener('change', (e) => {
+            // (★修正★) タイムゾーンを考慮して Date オブジェクトを生成
             const dateParts = e.target.value.split('-').map(Number);
             currentReportDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
             updateAllReports();
