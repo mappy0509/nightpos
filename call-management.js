@@ -136,13 +136,13 @@ const formatElapsedTime = (ms) => {
 };
 
 /**
- * キャストIDからキャスト名を取得する
+ * (★修正★) キャストIDからキャスト名を取得する
  * @param {string | null} castId
  * @returns {string} キャスト名
  */
 const getCastNameById = (castId) => {
     if (!casts) return '不明'; 
-    if (!castId) return 'フリー';
+    if (!castId || castId === 'null' || castId === 'none') return 'フリー'; // (★修正★)
     const cast = casts.find(c => c.id === castId); 
     return cast ? cast.name : '不明';
 };
@@ -217,6 +217,7 @@ const renderCallList = () => {
 
     // 2. 発生時刻の降順 (新しいものが上) にソート
     filteredCalls.sort((a, b) => {
+        // (★修正★) .toDate() で ServerTimestamp を Date に変換
         const timeA = a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime();
         const timeB = b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime();
         return timeB - timeA;
@@ -238,7 +239,7 @@ const renderCallList = () => {
         // コール種別のドロップダウンHTMLを生成
         const callTypeOptions = (settings.champagneCallBorders || [])
             .filter(rule => call.totalAmount >= rule.borderAmount) // 金額ボーダーを満たすもののみ
-            .map(rule => `<option value="${rule.callName}" ${call.callType === rule.callName ? 'selected' : ''}>${rule.callName} (¥${(rule.borderAmount/10000).toLocaleString()}万〜)</option>`)
+            .map(rule => `<option value="${rule.callName}">${rule.callName} (¥${(rule.borderAmount/10000).toLocaleString()}万〜)</option>`) // (★修正★) selected を削除
             .join('');
         
         // キャストのドロップダウンHTMLを生成
@@ -246,6 +247,10 @@ const renderCallList = () => {
 
         const isCompleted = (call.status === 'completed');
         const cardBorderColor = isCompleted ? 'border-green-300' : 'border-yellow-300';
+        // (★修正★) 完了時刻の .toDate() チェック
+        const completedTimeStr = isCompleted ?
+            (call.completedAt.toDate ? call.completedAt.toDate() : new Date(call.completedAt)).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) :
+            '';
 
         const itemHTML = `
             <div class="bg-white p-4 rounded-xl shadow-lg border ${cardBorderColor}">
@@ -257,7 +262,7 @@ const renderCallList = () => {
                     <span class="text-2xl font-bold text-red-600">${formatCurrency(call.totalAmount)}</span>
                 </div>
                 <p class="text-sm text-slate-600 mb-3">
-                    ${call.items.map(item => `${item.name} x ${item.qty}`).join(', ')}
+                    ${(call.items || []).map(item => `${item.name} x ${item.qty}`).join(', ')}
                 </p>
                 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -293,7 +298,7 @@ const renderCallList = () => {
                     
                     ${isCompleted ? `
                         <span class="text-sm font-semibold text-green-700">
-                            <i class="fa-solid fa-check-double mr-1"></i> 対応完了 (${(call.completedAt.toDate ? call.completedAt.toDate() : new Date(call.completedAt)).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })})
+                            <i class="fa-solid fa-check-double mr-1"></i> 対応完了 (${completedTimeStr})
                         </span>
                     ` : `
                         <button class="px-6 py-2 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 complete-call-btn" data-call-id="${call.id}">
@@ -306,12 +311,15 @@ const renderCallList = () => {
         callListContainer.innerHTML += itemHTML;
         
         // (★重要★) HTMLを挿入した *後* で、ドロップダウンの選択値を設定する
-        if (isCompleted) {
-            const mainMicSelect = callListContainer.querySelector(`.call-main-mic-select[data-call-id="${call.id}"]`);
-            const subMicSelect = callListContainer.querySelector(`.call-sub-mic-select[data-call-id="${call.id}"]`);
-            if (mainMicSelect) mainMicSelect.value = call.mainMicCastId || 'none';
-            if (subMicSelect) subMicSelect.value = call.subMicCastId || 'none';
-        }
+        // (★修正★) 完了済み (isCompleted) だけでなく、未対応 (pending) の場合も
+        // (★修正★) 以前保存された値を復元する必要がある
+        const callTypeSelect = callListContainer.querySelector(`.call-type-select[data-call-id="${call.id}"]`);
+        const mainMicSelect = callListContainer.querySelector(`.call-main-mic-select[data-call-id="${call.id}"]`);
+        const subMicSelect = callListContainer.querySelector(`.call-sub-mic-select[data-call-id="${call.id}"]`);
+        
+        if (callTypeSelect) callTypeSelect.value = call.callType || 'none';
+        if (mainMicSelect) mainMicSelect.value = call.mainMicCastId || 'none';
+        if (subMicSelect) subMicSelect.value = call.subMicCastId || 'none';
     });
 };
 
@@ -399,9 +407,9 @@ const calculateSlipTotal = (slip) => {
         subtotal = Math.floor(subtotal / rounding.unit) * rounding.unit;
     }
 
-    const serviceCharge = subtotal * settings.rates.service;
+    const serviceCharge = subtotal * (settings.rates.service || 0); // (★修正★)
     const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * settings.rates.tax;
+    const tax = subtotalWithService * (settings.rates.tax || 0); // (★修正★)
     let total = subtotalWithService + tax;
     
     if (rounding.type === 'round_up_total') {
@@ -1024,7 +1032,7 @@ document.addEventListener('firebaseReady', (e) => {
         });
         console.log("Champagne calls loaded: ", champagneCalls.length);
         callsLoaded = true;
-        checkAndRenderAll();
+        checkAndRenderAll(); // (★修正★) 完了後に checkAndRenderAll を呼ぶ
     }, (error) => {
         console.error("Error listening to champagne calls: ", error);
         callsLoaded = true; // エラーでも続行

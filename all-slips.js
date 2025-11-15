@@ -601,7 +601,10 @@ const updateSlipInfo = async () => {
     }
 };
 
-// (★コール管理 新規★) シャンパンコールをトリガー/更新する
+/**
+ * (★コール管理 修正★) シャンパンコールをトリガー/更新する
+ * (完了済みコールのアイテムを除外するロジックを追加)
+ */
 const checkAndTriggerChampagneCall = async (slipData) => {
     // 設定、メニュー、またはコール管理コレクションの参照がない場合は何もしない
     if (!settings || !settings.champagneCallBorders || settings.champagneCallBorders.length === 0 || !menu || !menu.items || !champagneCallsCollectionRef) {
@@ -609,38 +612,52 @@ const checkAndTriggerChampagneCall = async (slipData) => {
         return;
     }
 
-    // 1. この伝票の「シャンパンコール対象」アイテムとその小計を計算
+    // (★新規★) 1. この伝票で既に「完了 (completed)」したコールに含まれるアイテムIDをリストアップ
+    const completedCalls = champagneCalls.filter(c => c.slipId === slipData.slipId && c.status === 'completed');
+    const completedItemIds = new Set();
+    completedCalls.forEach(call => {
+        (call.items || []).forEach(item => {
+            if(item.id) completedItemIds.add(item.id); // (★重要★) item.id を参照
+        });
+    });
+    console.log("Completed item IDs for this slip:", completedItemIds);
+
+    // 2. この伝票の「シャンパンコール対象」アイテムのうち、
+    // (★変更★) 「未完了」のアイテムのみを合計する
     let callSubtotal = 0;
     const callItems = [];
     for (const item of slipData.items) {
         const menuItem = menu.items.find(m => m.id === item.id);
-        if (menuItem && menuItem.isCallTarget) { 
+        
+        // (★変更★) 完了済みリストに含まれて *いない* アイテムのみを対象
+        if (menuItem && menuItem.isCallTarget && !completedItemIds.has(item.id)) { 
             callSubtotal += item.price * item.qty;
-            callItems.push({ name: menuItem.name, qty: item.qty });
+            // (★変更★) callItems にも item.id (メニューID) を含める
+            callItems.push({ id: item.id, name: menuItem.name, qty: item.qty });
         }
     }
 
-    // 2. 適用される最高の金額ボーダーを見つける
+    // 3. 適用される最高の金額ボーダーを見つける
     const applicableBorders = settings.champagneCallBorders
         .filter(rule => callSubtotal >= rule.borderAmount)
         .sort((a, b) => b.borderAmount - a.borderAmount); // 金額が高い順 (降順)
 
-    // 3. 適用されるボーダーがない場合
+    // 4. 適用されるボーダーがない場合
     if (applicableBorders.length === 0) {
-        console.log("No champagne call border met.");
+        console.log("No champagne call border met for pending items.");
         return;
     }
 
     const highestBorder = applicableBorders[0];
 
-    // 4. この伝票 (slipId) で、まだ「未対応 (pending)」のコールが既に存在するか確認
+    // 5. この伝票 (slipId) で、まだ「未対応 (pending)」のコールが既に存在するか確認
     const existingPendingCall = champagneCalls.find(call => call.slipId === slipData.slipId && call.status === 'pending');
 
     const callData = {
         slipId: slipData.slipId,
         tableId: slipData.tableId,
-        totalAmount: callSubtotal, // コール対象アイテムの合計小計
-        items: callItems,
+        totalAmount: callSubtotal, // (★変更★) 未完了アイテムの合計小計
+        items: callItems, // (★変更★) 未完了アイテムのリスト
         borderAmount: highestBorder.borderAmount, // 達成したボーダー金額
         callType: highestBorder.callName, // 設定されたデフォルトのコール名
         status: 'pending',
@@ -652,12 +669,12 @@ const checkAndTriggerChampagneCall = async (slipData) => {
 
     try {
         if (existingPendingCall) {
-            // 5. 既存の「未対応」コールを更新する
+            // 6. 既存の「未対応」コールを更新する
             console.log(`Updating existing pending call ${existingPendingCall.id}`);
             const callRef = doc(champagneCallsCollectionRef, existingPendingCall.id);
             await setDoc(callRef, callData); 
         } else {
-            // 6. 新規に「未対応」コールを作成する
+            // 7. 新規に「未対応」コールを作成する
             console.log("Creating new pending champagne call.");
             await addDoc(champagneCallsCollectionRef, callData);
         }
