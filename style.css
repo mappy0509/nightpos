@@ -266,7 +266,8 @@ body.sidebar-mobile-open #sidebar-overlay {
 #process-payment-btn:disabled,
 #login-btn:disabled,
 #signup-btn:disabled,
-#save-password-btn:disabled {
+#save-password-btn:disabled,
+#confirm-bulk-checkout-btn:disabled { /* (★一括会計★) 追加 */
     opacity: 0.5;
     cursor: not-allowed;
     background-color: #94a3b8; /* bg-slate-400 */
@@ -274,7 +275,8 @@ body.sidebar-mobile-open #sidebar-overlay {
 #process-payment-btn:disabled:hover,
 #login-btn:disabled:hover,
 #signup-btn:disabled:hover,
-#save-password-btn:disabled:hover {
+#save-password-btn:disabled:hover,
+#confirm-bulk-checkout-btn:disabled:hover { /* (★一括会計★) 追加 */
     background-color: #94a3b8; /* hover時も色を変えない */
 }
 
@@ -577,4 +579,28 @@ body.sidebar-mobile-open #sidebar-overlay {
 }
 .nfc-blink {
     animation: nfcBlinking 1.5s infinite ease-in-out;
+}
+
+/* (★初回管理★) 初回管理モーダル・キャスト選択モーダル用 */
+.fv-drag-handle {
+    cursor: move;
+    color: #94a3b8; /* text-slate-400 */
+}
+.fv-remove-btn {
+    color: #ef4444; /* text-red-500 */
+}
+.fv-remove-btn:hover {
+    color: #b91c1c; /* hover:text-red-700 */
+}
+.fv-cast-select-btn {
+    /* .menu-order-btn と同様のスタイル */
+    padding: 0.75rem; /* p-3 */
+    background-color: #ffffff; /* bg-white */
+    border-radius: 0.5rem; /* rounded-lg */
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* shadow */
+    border: 1px solid var(--border-primary);
+    text-align: left;
+}
+.fv-cast-select-btn:hover {
+    background-color: #f8fafc; /* hover:bg-slate-50 */
 }

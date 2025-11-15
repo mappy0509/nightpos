@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NPS.AI - 初回管理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
+
+</head>
+<body class="text-slate-800">
+
+    <div class="flex h-screen bg-slate-50">
+        <aside id="sidebar-container" class="w-72 lg:w-64 bg-white shadow-md flex-shrink-0 flex flex-col non-printable fixed inset-y-0 left-0 z-40 transform -translate-x-full lg:static lg:translate-x-0 transition-transform duration-300 ease-in-out">
+            <div class="flex-grow flex items-center justify-center">
+                <i class="fa-solid fa-spinner fa-spin text-blue-500"></i>
+            </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col overflow-hidden non-printable admin-main">
+            <header class="h-16 bg-white border-b flex items-center justify-between px-4 lg:px-6 shadow-sm">
+                
+                <button id="sidebar-toggle-btn" class="lg:hidden text-slate-600 hover:text-slate-800">
+                    <i class="fa-solid fa-bars fa-lg"></i>
+                </button>
+
+                <h2 id="page-title" class="text-xl font-semibold text-slate-700 hidden lg:block">初回管理</h2>
+                <h2 class="text-xl font-semibold text-slate-700 lg:hidden absolute left-1/2 -translate-x-1/2">
+                    初回管理
+                </h2>
+
+                <div class="hidden lg:flex items-center space-x-4">
+                    <div class="flex items-center space-x-2 px-3 py-2 rounded-lg bg-slate-100 border border-slate-200">
+                        <i class="fa-solid fa-store text-slate-500"></i>
+                        <span id="header-store-name" class="text-sm font-semibold text-slate-700">loading...</span>
+                    </div>
+                    <button class="text-slate-500 hover:text-blue-600">
+                        <i class="fa-regular fa-bell fa-lg"></i>
+                    </button>
+                </div>
+                
+                <div class="lg:hidden w-8"></div>
+            </header>
+            
+            <div class="flex-1 overflow-y-auto p-4 lg:p-8">
+                
+                <div id="first-visit-page">
+                    <div class="mb-4">
+                        <h3 class="text-xl font-semibold">初回・枝 伝票一覧</h3>
+                        <p class="text-sm text-slate-500">現在「初回」または「枝」タグが付いている伝票の一覧です。</p>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="first-visit-list">
+                        
+                        <p id="first-visit-loading" class="text-slate-500 md:col-span-3 text-center p-8">
+                            <i class="fa-solid fa-spinner fa-spin fa-xl"></i><br>
+                            初回伝票を読み込み中...
+                        </p>
+                        
+                        </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+    
+    <div id="first-visit-editor-modal" class="modal-backdrop">
+        <div class="modal-content w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold" id="fv-modal-title">初回管理</h3>
+                <button type="button" class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <div class="flex-1 p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-y-auto">
+                
+                <div class="lg:col-span-1 space-y-4">
+                    <div class="bg-slate-50 p-4 rounded-lg border">
+                        <label for="fv-host-select" class="text-sm font-semibold text-slate-600">担当ホスト (内勤)</label>
+                        <select id="fv-host-select" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="none">--- 担当者を選択 ---</option>
+                        </select>
+                    </div>
+                    
+                    <div class="bg-slate-50 p-4 rounded-lg border">
+                        <div class="flex justify-between items-center">
+                            <label class="text-sm font-semibold text-slate-600">写真指名</label>
+                            <button type="button" id="fv-add-photo-btn" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                                <i class="fa-solid fa-plus"></i> 追加
+                            </button>
+                        </div>
+                        <div id="fv-photo-list" class="mt-2 space-y-2">
+                            </div>
+                    </div>
+                    
+                    <div class="bg-slate-50 p-4 rounded-lg border">
+                        <div class="flex justify-between items-center">
+                            <label class="text-sm font-semibold text-slate-600">送り指名</label>
+                            <button type="button" id="fv-add-send-btn" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                                <i class="fa-solid fa-plus"></i> 追加
+                            </button>
+                        </div>
+                        <div id="fv-send-list" class="mt-2 space-y-2">
+                            </div>
+                    </div>
+                </div>
+                
+                <div class="lg:col-span-2">
+                    <h4 class="text-lg font-semibold mb-3">つけ回しキャスト (ドラッグで順序変更)</h4>
+                    <div id="fv-sequence-list" class="space-y-2 min-h-[200px] p-2 bg-slate-100 rounded-lg">
+                        </div>
+                    <button type="button" id="fv-add-sequence-btn" class="w-full mt-4 px-4 py-2 rounded-lg bg-white text-blue-600 font-semibold border border-blue-300 hover:bg-blue-50">
+                        <i class="fa-solid fa-plus mr-2"></i>つけ回しキャストを追加
+                    </button>
+                </div>
+                
+            </div>
+
+            <div class="flex justify-between items-center p-5 border-t bg-slate-50 rounded-b-lg">
+                <p id="fv-modal-error" class="text-sm text-red-600"></p>
+                <div class="flex space-x-3">
+                    <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                        閉じる
+                    </button>
+                    </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="cast-select-modal" class="modal-backdrop">
+        <div class="modal-content w-full max-w-2xl max-h-[70vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold" id="cast-select-modal-title">キャスト選択</h3>
+                <button type="button" class="modal-close-btn text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark fa-xl"></i>
+                </button>
+            </div>
+            
+            <div class="p-4">
+                <input type="text" id="fv-cast-search" placeholder="キャスト名で検索..." class="w-full p-2 border border-slate-300 rounded-lg">
+            </div>
+            
+            <div class="flex-1 p-4 overflow-y-auto">
+                <div id="fv-cast-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    </div>
+            </div>
+
+            <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg">
+                <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
+                    キャンセル
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module" src="sidebar.js"></script>
+    <script type="module" src="first-visit.js"></script>
+</body>
+</html>

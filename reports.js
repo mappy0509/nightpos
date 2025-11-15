@@ -29,13 +29,11 @@ const getUUID = () => {
 // (★変更★) state を分割して管理
 let settings = null;
 let menu = null;
-// (★削除★) let casts = [];
+let casts = []; // (★初回管理★) キャスト名を引くために必要
 let slips = [];
-// (★削除★) let champagneCalls = [];
 
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
-let settingsRef, menuRef, /* (★削除★) castsCollectionRef, */ slipsCollectionRef,
-    // (★削除★) champagneCallsCollectionRef,
+let settingsRef, menuRef, castsCollectionRef, slipsCollectionRef, // (★初回管理★) castsCollectionRef を追加
     currentStoreId; 
 
 
@@ -44,7 +42,11 @@ let settingsRef, menuRef, /* (★削除★) castsCollectionRef, */ slipsCollecti
 let modalCloseBtns, 
     reportsSummaryCards, reportTotalSales, reportTotalSlips, reportAvgSales, reportCancelledSlips,
     reportsPeriodTabs, reportsChartCanvas, reportsRankingList, 
-    // (★削除★) micRankingList, 
+    
+    // (★初回管理★) 写真指名・送り指名ランキングのDOM
+    reportsPhotoRankingList, reportsPhotoLoading,
+    reportsSendRankingList, reportsSendLoading,
+    
     exportJpgBtn,
     reportContentArea,
     // (★新規★) 日付選択
@@ -72,7 +74,14 @@ const formatCurrency = (amount) => {
     return `¥${amount.toLocaleString()}`;
 };
 
-// (★削除★) getCastNameById 関数を削除
+// (★初回管理★) キャストIDからキャスト名を取得する
+const getCastNameById = (castId) => {
+    if (!casts) return '不明'; 
+    if (!castId || castId === 'none') return '（未割り当て）';
+    const cast = casts.find(c => c.id === castId);
+    return cast ? cast.name : '不明';
+};
+
 
 /**
  * モーダルを閉じる
@@ -232,16 +241,16 @@ const getSlipsForPeriod = (period, baseDate) => {
 
 
 // ===================================
-// (★修正★) 売上集計ロジック (ダミーデータ -> 実データ)
+// (★修正★) 売上集計ロジック (リファクタリング)
 // ===================================
 
 /**
- * (★修正★) 売上分析サマリーを計算・表示する
+ * (★初回管理 変更★) 売上分析サマリーを計算・表示する
+ * @param {Array} paidSlips
+ * @param {Array} cancelledSlips
  */
-const renderReportsSummary = () => {
-    if (!reportsSummaryCards || !slips) return; 
-    
-    const { paidSlips, cancelledSlips } = getSlipsForPeriod(currentReportPeriod, currentReportDate);
+const renderReportsSummary = (paidSlips, cancelledSlips) => {
+    if (!reportsSummaryCards) return; 
     
     let totalSales = 0;
     paidSlips.forEach(slip => {
@@ -259,12 +268,12 @@ const renderReportsSummary = () => {
 };
 
 /**
- * (★修正★) 売れ筋商品ランキングを計算・表示する
+ * (★初回管理 変更★) 売れ筋商品ランキングを計算・表示する
+ * @param {Array} paidSlips
  */
-const renderReportsRanking = () => {
-    if (!reportsRankingList || !slips) return; 
+const renderReportsRanking = (paidSlips) => {
+    if (!reportsRankingList) return; 
     
-    const { paidSlips } = getSlipsForPeriod(currentReportPeriod, currentReportDate);
     const itemMap = new Map();
 
     paidSlips.forEach(slip => {
@@ -292,19 +301,92 @@ const renderReportsRanking = () => {
     });
 };
 
-// (★削除★) renderMicRanking() 関数を削除
+/**
+ * (★初回管理★) 写真指名・送り指名ランキングを描画する
+ * @param {'photo' | 'send'} type 
+ * @param {Array} paidSlips
+ */
+const renderFirstVisitRankings = (type, paidSlips) => {
+    let container, loadingEl, title;
+    
+    if (type === 'photo') {
+        container = reportsPhotoRankingList;
+        loadingEl = reportsPhotoLoading;
+        title = "写真指名";
+    } else { // 'send'
+        container = reportsSendRankingList;
+        loadingEl = reportsSendLoading;
+        title = "送り指名";
+    }
+
+    if (!container || !casts) return;
+    
+    const rankingMap = new Map();
+
+    paidSlips.forEach(slip => {
+        // 伝票に firstVisitData があり、かつ該当のリストがあるか
+        if (!slip.firstVisitData) return;
+        
+        let nominationList = [];
+        if (type === 'photo' && slip.firstVisitData.photoNominations) {
+            nominationList = slip.firstVisitData.photoNominations;
+        } else if (type === 'send' && slip.firstVisitData.sendNominations) {
+            nominationList = slip.firstVisitData.sendNominations;
+        }
+        
+        // リスト内のキャストIDをカウント
+        nominationList.forEach(cast => {
+            if (cast.id) {
+                const current = rankingMap.get(cast.id) || { id: cast.id, name: getCastNameById(cast.id), count: 0 };
+                current.count++;
+                rankingMap.set(cast.id, current);
+            }
+        });
+    });
+
+    const sortedData = [...rankingMap.values()].sort((a, b) => b.count - a.count);
+
+    if (loadingEl) loadingEl.style.display = 'none';
+    container.innerHTML = '';
+    
+    if (sortedData.length === 0) {
+        container.innerHTML = '<li class="text-slate-500">データがありません</li>';
+        return;
+    }
+
+    sortedData.slice(0, 5).forEach((cast, index) => {
+        const rank = index + 1;
+        let rankColor = 'text-slate-400';
+        if (rank === 1) rankColor = 'text-yellow-500';
+        if (rank === 2) rankColor = 'text-gray-400';
+        if (rank === 3) rankColor = 'text-amber-700';
+        
+        container.innerHTML += `
+            <li class="flex items-center space-x-2">
+                <span class="font-bold text-lg w-6 text-center ${rankColor}">
+                    ${rank}
+                </span>
+                <div class="flex-1 ml-2">
+                    <p class="font-semibold">${cast.name}</p>
+                </div>
+                <div class="text-right">
+                    <p class="font-bold text-sm text-blue-600">${cast.count} 回</p>
+                </div>
+            </li>
+        `;
+    });
+};
 
 
 /**
- * (★修正★) 売上推移グラフを描画する
+ * (★初回管理 変更★) 売上推移グラフを描画する
+ * @param {Array} paidSlips
+ * @param {object} range { start: Date, end: Date }
  */
-const renderSalesChart = () => {
-    if (!reportsChartCanvas || !slips) return;
+const renderSalesChart = (paidSlips, range) => {
+    if (!reportsChartCanvas) return;
     
     const period = currentReportPeriod;
-    const baseDate = currentReportDate;
-    const { paidSlips, range } = getSlipsForPeriod(period, baseDate);
-    
     const ctx = reportsChartCanvas.getContext('2d');
     
     let labels = [];
@@ -362,7 +444,6 @@ const renderSalesChart = () => {
         paidSlips.forEach(slip => {
             const paidDate = new Date(slip.paidTimestamp);
             const weekIndex = Math.floor((paidDate.getDate() - 1) / 7); 
-            // (★修正★) 5週目 (インデックス4) に収める
             const safeIndex = Math.min(weekIndex, 4); 
             data[safeIndex] += (slip.paidAmount || 0); 
         });
@@ -419,15 +500,22 @@ const renderSalesChart = () => {
 
 
 /**
- * (★コール管理 変更★) 全レポートを更新する
+ * (★初回管理 変更★) 全レポートを更新する
  */
 const updateAllReports = () => {
-    // (★削除★) casts, champagneCalls を削除
-    if (!settings || !slips || !menu) return; 
-    renderReportsSummary();
-    renderReportsRanking();
-    renderSalesChart();
-    // (★削除★) renderMicRanking();
+    if (!settings || !slips || !menu || !casts) return; // (★初回管理★) casts も待つ
+    
+    // データを取得
+    const { paidSlips, cancelledSlips, range } = getSlipsForPeriod(currentReportPeriod, currentReportDate);
+
+    // 各セクションをレンダリング
+    renderReportsSummary(paidSlips, cancelledSlips);
+    renderReportsRanking(paidSlips);
+    renderSalesChart(paidSlips, range);
+    
+    // (★初回管理★) 新しいランキングを描画
+    renderFirstVisitRankings('photo', paidSlips);
+    renderFirstVisitRankings('send', paidSlips);
 };
 
 /**
@@ -444,7 +532,7 @@ const handleAiReport = async () => {
             AIがデータを分析中です... (Gemini Pro)
         </p>`;
 
-    // データを準備
+    // データを準備 (★初回管理 変更★ リファクタリングに合わせて修正)
     const { paidSlips, range } = getSlipsForPeriod(currentReportPeriod, currentReportDate);
     
     // 期間のテキストを生成
@@ -514,34 +602,31 @@ const renderHeaderStoreName = () => {
  */
 document.addEventListener('firebaseReady', (e) => {
     
-    // (★変更★) 必要な参照のみ取得
+    // (★初回管理 変更★) castsCollectionRef を追加
     const { 
         settingsRef: sRef, 
         menuRef: mRef,
-        // (★削除★) castsCollectionRef: cRef, 
+        castsCollectionRef: cRef, // (★初回管理★) 追加
         slipsCollectionRef: slRef,
-        // (★削除★) champagneCallsCollectionRef: ccRef,
         currentStoreId: csId
     } = e.detail;
 
-    // (★変更★) グローバル変数に参照をセット
+    // (★初回管理 変更★) グローバル変数に参照をセット
     settingsRef = sRef;
     menuRef = mRef;
-    // (★削除★) castsCollectionRef = cRef;
+    castsCollectionRef = cRef; // (★初回管理★) 追加
     slipsCollectionRef = slRef;
-    // (★削除★) champagneCallsCollectionRef = ccRef;
     currentStoreId = csId;
 
     let settingsLoaded = false;
     let menuLoaded = false;
-    // (★削除★) let castsLoaded = false;
+    let castsLoaded = false; // (★初回管理★) 追加
     let slipsLoaded = false;
-    // (★削除★) let callsLoaded = false;
 
     // (★コール管理 変更★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
-        // (★変更★) castsLoaded, callsLoaded を削除
-        if (settingsLoaded && menuLoaded && slipsLoaded) { 
+        // (★初回管理 変更★) castsLoaded を追加
+        if (settingsLoaded && menuLoaded && castsLoaded && slipsLoaded) { 
             console.log("All data loaded. Rendering UI for reports.js");
             updateAllReports();
             renderHeaderStoreName(); // (★要望4★)
@@ -576,8 +661,17 @@ document.addEventListener('firebaseReady', (e) => {
         checkAndRenderAll();
     }, (error) => console.error("Error listening to menu: ", error));
 
-    // 3. (★削除★) Casts
-    // ...
+    // 3. (★初回管理★) Casts (名前参照用)
+    onSnapshot(castsCollectionRef, (querySnapshot) => {
+        casts = [];
+        querySnapshot.forEach((doc) => {
+            casts.push({ ...doc.data(), id: doc.id });
+        });
+        console.log("Casts loaded: ", casts.length);
+        castsLoaded = true;
+        checkAndRenderAll();
+    }, (error) => console.error("Error listening to casts: ", error));
+
 
     // 4. Slips
     onSnapshot(slipsCollectionRef, (querySnapshot) => {
@@ -593,9 +687,6 @@ document.addEventListener('firebaseReady', (e) => {
         slipsLoaded = true; // (★修正★) エラーでも続行
         checkAndRenderAll();
     });
-    
-    // 5. (★削除★) Champagne Calls
-    // ...
 });
 
 
@@ -617,7 +708,13 @@ document.addEventListener('DOMContentLoaded', () => {
     reportsPeriodTabs = document.getElementById('reports-period-tabs');
     reportsChartCanvas = document.getElementById('reports-chart');
     reportsRankingList = document.getElementById('reports-ranking-list');
-    // (★削除★) micRankingList = document.getElementById('mic-ranking-list');
+    
+    // (★初回管理★) ランキングDOM取得
+    reportsPhotoRankingList = document.getElementById('reports-photo-ranking-list');
+    reportsPhotoLoading = document.getElementById('reports-photo-loading');
+    reportsSendRankingList = document.getElementById('reports-send-ranking-list');
+    reportsSendLoading = document.getElementById('reports-send-loading');
+    
     exportJpgBtn = document.getElementById('export-jpg-btn');
     reportContentArea = document.getElementById('reports-content-area'); 
     

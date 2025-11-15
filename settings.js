@@ -34,6 +34,10 @@ let settingsTabs, tabContents,
     newTableForm, newTableNameInput, addTableBtn, currentTablesList, tableFeedback,
     newCallBorderForm, newCallName, newCallBorder, addCallBorderBtn, callBorderList, callFeedback,
     nfcForm, nfcClockInTagId, scanNfcClockInBtn, nfcClockOutTagId, scanNfcClockOutBtn, nfcScanFeedback, saveNfcBtn, nfcFeedback,
+    
+    // (★初回管理★) 初回設定フォームのDOMを追加
+    firstVisitForm, maxPhotoNominations, maxSendNominations, saveFirstVisitBtn, firstVisitFeedback,
+
     logoutBtn,
     headerStoreName;
 
@@ -102,7 +106,7 @@ const openTab = (targetTabId) => {
 // --- (★新規★) 設定の読み込み・保存 ---
 
 /**
- * (★新規★) Firestoreから設定を読み込み、全フォームに反映
+ * (★初回管理 変更★) Firestoreから設定を読み込み、全フォームに反映
  */
 const loadSettings = async () => {
     if (!settingsRef) return;
@@ -147,7 +151,12 @@ const loadSettings = async () => {
             currentCallBorders = settings.champagneCallBorders || [];
             renderCallBorders();
 
-            // 6. NFC
+            // 6. (★初回管理★) 初回設定
+            const firstVisit = settings.firstVisitSettings || { maxPhoto: 1, maxSend: 1 };
+            if (maxPhotoNominations) maxPhotoNominations.value = firstVisit.maxPhoto || 1;
+            if (maxSendNominations) maxSendNominations.value = firstVisit.maxSend || 1;
+
+            // 7. NFC
             if (settings.nfcTagIds) {
                 nfcClockInTagId.value = settings.nfcTagIds.clockIn || '';
                 nfcClockOutTagId.value = settings.nfcTagIds.clockOut || '';
@@ -230,6 +239,28 @@ const saveReceipt = async (e) => {
         showFeedback(receiptFeedback, '領収書設定を保存しました。');
     } catch (error) {
         showFeedback(receiptFeedback, `保存エラー: ${error.message}`, true);
+    }
+};
+
+/**
+ * (★初回管理★) 初回設定 (firstVisitSettings) のみ保存
+ */
+const saveFirstVisitSettings = async (e) => {
+    e.preventDefault();
+    const maxPhoto = parseInt(maxPhotoNominations.value) || 1;
+    const maxSend = parseInt(maxSendNominations.value) || 1;
+    
+    const dataToSave = {
+        firstVisitSettings: {
+            maxPhoto: maxPhoto,
+            maxSend: maxSend
+        }
+    };
+    try {
+        await setDoc(settingsRef, dataToSave, { merge: true });
+        showFeedback(firstVisitFeedback, '初回設定を保存しました。');
+    } catch (error) {
+        showFeedback(firstVisitFeedback, `保存エラー: ${error.message}`, true);
     }
 };
 
@@ -477,6 +508,13 @@ document.addEventListener('firebaseReady', (e) => {
     callBorderList = document.getElementById('call-border-list');
     callFeedback = document.getElementById('call-feedback');
 
+    // (★初回管理★) 初回設定フォームのDOMを取得
+    firstVisitForm = document.getElementById('first-visit-form');
+    maxPhotoNominations = document.getElementById('maxPhotoNominations');
+    maxSendNominations = document.getElementById('maxSendNominations');
+    saveFirstVisitBtn = document.getElementById('save-first-visit-btn');
+    firstVisitFeedback = document.getElementById('first-visit-feedback');
+
     nfcForm = document.getElementById('nfc-form');
     nfcClockInTagId = document.getElementById('nfcClockInTagId');
     scanNfcClockInBtn = document.getElementById('scanNfcClockInBtn');
@@ -503,6 +541,10 @@ document.addEventListener('firebaseReady', (e) => {
     currentTablesList.addEventListener('click', deleteTable);
     addCallBorderBtn.addEventListener('click', addCallBorder);
     callBorderList.addEventListener('click', deleteCallBorder);
+    
+    // (★初回管理★) 初回設定の保存ボタンリスナーを追加
+    saveFirstVisitBtn.addEventListener('click', saveFirstVisitSettings);
+    
     saveNfcBtn.addEventListener('click', saveNfc);
 
     scanNfcClockInBtn.addEventListener('click', () => scanNfcTag(nfcClockInTagId));

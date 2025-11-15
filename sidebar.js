@@ -9,11 +9,13 @@ import { auth, signOut, db, getDoc, doc, collection, query, where, onSnapshot } 
 const createSidebarHTML = (currentPage) => {
     
     // どのリンクをアクティブにするか定義
-    // (★変更★) 「コール管理」を追加
+    // (★変更★) 「初回管理」を追加
     const navLinks = [
         { href: 'index.html', icon: 'fa-chart-pie', text: 'ダッシュボード' },
         { href: 'tables.html', icon: 'fa-border-all', text: 'テーブル管理' },
         { href: 'all-slips.html', icon: 'fa-file-invoice', text: '伝票一覧' },
+        // (★新規★) 初回管理ページへのリンクを追加
+        { href: 'first-visit.html', icon: 'fa-user-check', text: '初回管理' },
         { href: 'customers.html', icon: 'fa-users', text: '顧客管理' },
         // (★新規★) コール管理ページへのリンクを追加
         { href: 'call-management.html', icon: 'fa-champagne-glasses', text: 'コール管理', id: 'nav-call-management' },

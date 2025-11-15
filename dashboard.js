@@ -17,6 +17,8 @@ import {
     where // (★コール管理 追加★)
 } from './firebase-init.js';
 
+// (★一括会計 修正★) ai-service.js の不要なインポートを削除
+
 // ===== グローバル定数・変数 =====
 
 /**
@@ -106,7 +108,12 @@ let /* navLinks, (★削除★) */ pageTitle, dashboardSlips,
     receiptForm, receiptCustomerNameInput, receiptDescriptionInput,
     receiptOptionDate, receiptOptionAmount,
     receiptPreviewArea, receiptDateDisplay, receiptCustomerNameDisplay,
-    receiptTotalDisplay, receiptDescriptionDisplay, printReceiptBtn;
+    receiptTotalDisplay, receiptDescriptionDisplay, printReceiptBtn,
+    
+    // (★一括会計★) 一括会計モーダル
+    bulkCheckoutBtn, bulkCheckoutModal, bulkCheckoutTitle, 
+    bulkCheckoutCount, bulkCheckoutList, bulkCheckoutError,
+    confirmBulkCheckoutBtn, bulkCheckoutBtnText;
 
 
 // --- 関数 ---
@@ -187,6 +194,44 @@ const calculateSlipTotal = (slip) => {
     }
     
     return total;
+};
+
+/**
+ * (★一括会計★) 伝票の *最終請求額* (割引・端数処理後) を計算する
+ * @param {object} slip 
+ * @returns {number} 最終請求額
+ */
+const calculateFinalBillingAmount = (slip) => {
+    if (!settings) return 0;
+    
+    const total = calculateSlipTotal(slip); // 割引前合計
+    const paidAmount = slip.paidAmount || 0; // 既払い金
+    const preDiscountTotal = total - paidAmount; 
+
+    const discount = slip.discount || { type: 'yen', value: 0 };
+    const discountAmount = discount.value || 0;
+    const discountType = discount.type || 'yen';
+    
+    let finalBillingAmount = preDiscountTotal;
+    if (discountType === 'yen') {
+        finalBillingAmount = preDiscountTotal - discountAmount;
+    } else if (discountType === 'percent') {
+        finalBillingAmount = preDiscountTotal * (1 - (discountAmount / 100));
+    }
+    
+    const rounding = settings.rounding || { type: 'none', unit: 1 };
+    if (rounding.type === 'round_up_total') {
+        finalBillingAmount = Math.ceil(finalBillingAmount / rounding.unit) * rounding.unit;
+    } else if (rounding.type === 'round_down_total') {
+        finalBillingAmount = Math.floor(finalBillingAmount / rounding.unit) * rounding.unit;
+    } else {
+        finalBillingAmount = Math.round(finalBillingAmount); 
+    }
+
+    if (finalBillingAmount < 0) {
+        finalBillingAmount = 0;
+    }
+    return finalBillingAmount;
 };
 
 
@@ -1304,13 +1349,13 @@ const createNewSlip = async (tableId, startTimeISO) => {
 };
 
 /**
- * (★在庫管理 変更★) 在庫を減算する
- * @param {object} slipData 
+ * (★一括会計 修正★) 在庫を減算する (エラーを throw するように変更)
+ * (★エラー修正★) 2重定義されていたため、片方を削除
  */
 const reduceStock = async (slipData) => {
     if (!menu || !menu.items || !inventoryItems || !inventoryItemsCollectionRef) {
         console.warn("Cannot reduce stock: menu or inventory data missing.");
-        return;
+        return; // (★変更★) エラーはスローせず、処理をスキップ
     }
 
     const updates = new Map();
@@ -1327,8 +1372,8 @@ const reduceStock = async (slipData) => {
     }
     
     if (updates.size === 0) {
-        console.log("No inventory items to update for this slip.");
-        return; 
+        console.log(`No inventory items to update for this slip (No.${slipData.slipNumber}).`);
+        return; // 在庫更新対象なし
     }
 
     const updatePromises = [];
@@ -1340,7 +1385,7 @@ const reduceStock = async (slipData) => {
         const currentStock = localItem ? (localItem.currentStock || 0) : 0;
         const newStock = currentStock - totalConsumption;
 
-        console.log(`Reducing stock for ${inventoryId}: ${currentStock} -> ${newStock}`);
+        console.log(`Reducing stock for ${inventoryId} (Slip No.${slipData.slipNumber}): ${currentStock} -> ${newStock}`);
 
         updatePromises.push(
             setDoc(itemDocRef, {
@@ -1352,10 +1397,11 @@ const reduceStock = async (slipData) => {
     
     try {
         await Promise.all(updatePromises);
-        console.log("Stock levels updated successfully.");
+        console.log(`Stock levels updated successfully for slip ${slipData.slipNumber}.`);
     } catch (error) {
-        console.error("Error updating stock levels: ", error);
-        alert(`会計処理中にエラーが発生しました: ${error.message}\n在庫が正しく減算されていない可能性があります。`);
+        console.error(`Error updating stock levels for slip ${slipData.slipNumber}: `, error);
+        // (★変更★) alert を削除し、エラーを throw して呼び出し元 (handleBulkCheckout) に伝える
+        throw new Error(`在庫更新失敗 (伝票No.${slipData.slipNumber}): ${error.message}`);
     }
 };
 
@@ -1686,6 +1732,7 @@ const renderMicRanking = () => {
  * (★コール管理 変更★) デフォルトの state を定義する関数
  */
 const getDefaultSettings = () => {
+    // (★一括会計 修正★) firstVisitSettings を追加
     return {
         slipTagsMaster: [
             { id: 'tag1', name: '指名' }, { id: 'tag2', name: '初指名' },
@@ -1709,6 +1756,11 @@ const getDefaultSettings = () => {
             defaultDescription: "お飲食代として"
         },
         dayChangeTime: "05:00",
+        // (★一括会計 修正★) firstVisitSettings を追加
+        firstVisitSettings: {
+            maxPhoto: 1,
+            maxSend: 1
+        },
         performanceSettings: {
             menuItems: {
                 'm14_default': { salesType: 'percentage', salesValue: 100, countNomination: true }
@@ -1821,6 +1873,93 @@ const handleTableTransfer = async (newTableId) => {
         if (transferError) transferError.textContent = "テーブルの移動に失敗しました。";
     }
 };
+
+// (★一括会計 修正★) 一括会計モーダルを描画する
+const renderBulkCheckoutModal = () => {
+    if (!slips || !bulkCheckoutModal) return;
+    
+    const slipsToCheckout = slips.filter(s => s.status === 'checkout');
+    
+    if (bulkCheckoutCount) bulkCheckoutCount.textContent = slipsToCheckout.length;
+    if (bulkCheckoutList) bulkCheckoutList.innerHTML = '';
+    if (bulkCheckoutError) bulkCheckoutError.textContent = '';
+
+    if (slipsToCheckout.length === 0) {
+        bulkCheckoutList.innerHTML = '<p class="text-sm text-slate-500 text-center p-4">現在「会計待ち」の伝票はありません。</p>';
+        if (confirmBulkCheckoutBtn) confirmBulkCheckoutBtn.disabled = true;
+    } else {
+        slipsToCheckout.forEach(slip => {
+            const finalAmount = calculateFinalBillingAmount(slip);
+            bulkCheckoutList.innerHTML += `
+                <div class="flex justify-between items-center text-sm p-2 bg-white rounded border">
+                    <span class="font-medium">T${slip.tableId} (No.${slip.slipNumber}) - ${slip.name}</span>
+                    <span class="font-semibold">${formatCurrency(finalAmount)}</span>
+                </div>
+            `;
+        });
+        if (confirmBulkCheckoutBtn) confirmBulkCheckoutBtn.disabled = false;
+    }
+    
+    if (bulkCheckoutBtnText) bulkCheckoutBtnText.textContent = '一括会計を実行';
+    openModal(bulkCheckoutModal);
+};
+
+// (★一括会計 修正★) 一括会計処理 (Promise.all に reduceStock を含める)
+const handleBulkCheckout = async () => {
+    if (!slips || !slipsCollectionRef || !confirmBulkCheckoutBtn) return;
+    
+    const slipsToCheckout = slips.filter(s => s.status === 'checkout');
+    if (slipsToCheckout.length === 0) {
+        bulkCheckoutError.textContent = '対象の伝票がありません。';
+        return;
+    }
+    
+    confirmBulkCheckoutBtn.disabled = true;
+    if (bulkCheckoutBtnText) bulkCheckoutBtnText.textContent = '処理中...';
+    bulkCheckoutError.textContent = '';
+    
+    const nowISO = new Date().toISOString();
+    const allPromises = []; // (★変更★) 在庫減算と伝票更新の両方を入れる
+    
+    for (const slip of slipsToCheckout) {
+        // 1. 在庫減算のPromiseを作成
+        // (★変更★) reduceStock の呼び出し自体を allPromises に追加
+        allPromises.push(reduceStock(slip)); 
+        
+        // 2. 伝票データ更新のPromiseを作成
+        const finalAmount = calculateFinalBillingAmount(slip);
+        
+        const updatedSlipData = {
+            paidAmount: finalAmount, 
+            paymentDetails: {
+                cash: finalAmount, // (★仮★) 一括会計は「現金」として処理
+                card: 0,
+                credit: 0
+            },
+            // discount は既に slip.discount に保存されているものをそのまま使う
+            status: 'paid',
+            paidTimestamp: nowISO
+        };
+
+        const slipRef = doc(slipsCollectionRef, slip.slipId);
+        allPromises.push(setDoc(slipRef, updatedSlipData, { merge: true }));
+    }
+    
+    try {
+        // (★変更★) 在庫減算と伝票更新をすべて待つ
+        await Promise.all(allPromises); 
+        console.log(`Bulk checkout successful for ${slipsToCheckout.length} slips.`);
+        closeModal(bulkCheckoutModal);
+        
+    } catch (error) {
+        // (★変更★) reduceStock から throw されたエラーをここでキャッチ
+        console.error("Error during bulk checkout: ", error);
+        bulkCheckoutError.textContent = `一括会計処理中にエラーが発生しました: ${error.message}`;
+        confirmBulkCheckoutBtn.disabled = false;
+        if (bulkCheckoutBtnText) bulkCheckoutBtnText.textContent = '一括会計を実行';
+    }
+};
+
 
 
 /**
@@ -2135,6 +2274,16 @@ document.addEventListener('DOMContentLoaded', () => {
     transferTableGrid = document.getElementById('transfer-table-grid');
     transferError = document.getElementById('transfer-error');
 
+    // (★一括会計★) 一括会計モーダルのDOMを取得
+    bulkCheckoutBtn = document.getElementById('bulk-checkout-btn');
+    bulkCheckoutModal = document.getElementById('bulk-checkout-modal');
+    bulkCheckoutTitle = document.getElementById('bulk-checkout-title');
+    bulkCheckoutCount = document.getElementById('bulk-checkout-count');
+    bulkCheckoutList = document.getElementById('bulk-checkout-list');
+    bulkCheckoutError = document.getElementById('bulk-checkout-error');
+    confirmBulkCheckoutBtn = document.getElementById('confirm-bulk-checkout-btn');
+    bulkCheckoutBtnText = document.getElementById('bulk-checkout-btn-text');
+
     
     // ===== イベントリスナーの設定 =====
 
@@ -2150,22 +2299,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     modalCloseBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            closeModal(orderModal);
-            closeModal(checkoutModal);
-            closeModal(receiptModal);
-            closeModal(slipPreviewModal);
-            closeModal(slipSelectionModal);
-            closeModal(newSlipConfirmModal);
-            closeModal(cancelSlipModal);
-            closeModal(menuEditorModal);
-            closeModal(tableTransferModal); 
+        btn.addEventListener('click', (e) => {
+            // (★一括会計★) bulkCheckoutModal も閉じる
+            const modal = e.target.closest('.modal-backdrop');
+            if(modal) {
+                closeModal(modal);
+            }
             
             if(discountAmountInput) discountAmountInput.value = '';
             if(discountTypeSelect) discountTypeSelect.value = 'yen';
         });
     });
     
+    // (★一括会計★) 一括会計ボタンのリスナー
+    if (bulkCheckoutBtn) {
+        bulkCheckoutBtn.addEventListener('click', () => {
+            renderBulkCheckoutModal();
+        });
+    }
+    
+    // (★一括会計★) 一括会計実行ボタンのリスナー
+    if (confirmBulkCheckoutBtn) {
+        confirmBulkCheckoutBtn.addEventListener('click', () => {
+            handleBulkCheckout();
+        });
+    }
+
     if (orderNominationSelect) {
         orderNominationSelect.addEventListener('change', (e) => {
             updateSlipInfo(); 
@@ -2363,6 +2522,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             try {
+                // (★一括会計 修正★) 個別会計でも在庫減算を await する
                 await reduceStock(slip);
 
                 const slipRef = doc(slipsCollectionRef, currentSlipId);
@@ -2374,7 +2534,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             } catch (e) {
                 console.error("Error processing payment: ", e);
-                alert(`会計処理中にエラーが発生しました: ${e.message}\n在庫が正しく減算されていない可能性があります。`);
+                // (★一括会計 修正★) エラーメッセージをアラート
+                alert(`会計処理中にエラーが発生しました: ${e.message}`);
             }
         });
     }
