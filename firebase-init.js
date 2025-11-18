@@ -166,7 +166,14 @@ const initializeFirebase = () => {
                         invitesCollectionRef,
                         attendancesCollectionRef,
                         inventoryItemsCollectionRef,
-                        champagneCallsCollectionRef // (★新規★)
+                        champagneCallsCollectionRef, // (★新規★)
+                        
+                        // (★エラー修正★) Firestore 関数をイベントで渡す
+                        query,
+                        where,
+                        orderBy,
+                        collection, // (★修正★) collection も渡す
+                        doc // (★修正★) doc も渡す
                     } 
                 }));
 
@@ -193,7 +200,7 @@ initializeFirebase();
 // --- 他ファイルへのエクスポート ---
 // (★変更★)
 // 認証メソッドと、基本的な db, auth のみエクスポート
-// 各種参照 (Ref) は `firebaseReady` イベントで渡す
+// (★エラー修正★) query, where, orderBy などを export から削除
 export { 
     db, 
     auth, 
@@ -206,7 +213,10 @@ export {
     EmailAuthProvider,
     reauthenticateWithCredential,
     
-    // Firestoreメソッド
+    // Firestoreメソッド (★エラー修正★)
+    // (★注意★) これらは `firebaseReady` で渡されるが、
+    // login.js, signup.js など `firebaseReady` を待たないファイルのために
+    // エクスポートも維持する
     doc, 
     collection,
     setDoc, 
@@ -218,5 +228,5 @@ export {
     getDoc,
     getDocs,
     serverTimestamp,
-    orderBy // (★修正★) orderBy をエクスポート
+    orderBy
 };

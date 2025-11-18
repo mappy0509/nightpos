@@ -5,13 +5,14 @@ import { renderSidebar } from './sidebar.js';
 import { 
     db, 
     auth, 
-    onSnapshot, 
-    setDoc, 
-    doc,
-    collection,
-    query,
-    where,
-    getDocs
+    onSnapshot
+    // (★エラー修正★) 以下の関数は firebaseReady イベント経由で受け取る
+    // setDoc, 
+    // doc,
+    // collection,
+    // query,
+    // where,
+    // getDocs
 } from './firebase-init.js';
 
 // ===== グローバル定数・変数 =====
@@ -23,6 +24,11 @@ let selectedDate = new Date(); // (★新規★) 選択中の日付
 
 // (★新規★) 参照(Ref)はグローバル変数として保持
 let settingsRef, castsCollectionRef, attendancesCollectionRef;
+
+// (★エラー修正★) firebaseReady から受け取る関数
+let fbDoc, fbSetDoc, fbCollection, fbQuery, fbWhere, fbGetDocs;
+// (★修正★) このファイルでは使わないが、一貫性のために定義
+let fbAddDoc, fbDeleteDoc, fbGetDoc, fbOrderBy, fbServerTimestamp;
 
 
 // ===== DOM要素 =====
@@ -120,7 +126,7 @@ const getStatusStyle = (status) => {
             return { text: '有給休暇', color: 'purple' };
         case 'unsubmitted':
         default:
-            return { text: '未提出', color: 'slate' };
+            return { text: '未提出', color: 'slate' }; 
     }
 };
 
@@ -234,7 +240,7 @@ const renderAttendanceList = () => {
         return;
     }
     
-    displayList.sort((a,b) => a.castName.localeCompare(b.castName));
+    displayList.sort((a,b) => (a.castName || "").localeCompare(b.castName || "")); // (★修正★)
 
     displayList.forEach(item => {
         const style = getStatusStyle(item.status);
@@ -307,7 +313,7 @@ const openAttendanceEditModal = (button) => {
  * (★新規★) 勤怠情報を保存する
  */
 const saveAttendance = async () => {
-    if (!attendanceEditForm || !attendancesCollectionRef) return;
+    if (!attendanceEditForm || !attendancesCollectionRef || !fbDoc || !fbSetDoc) return; // (★エラー修正★)
     
     const attendanceId = editAttendanceId.value; // "YYYY-MM-DD_CAST-ID"
     const castId = editCastId.value;
@@ -335,8 +341,8 @@ const saveAttendance = async () => {
     
     try {
         // ドキュメントID (attendanceId) を指定して保存 (新規作成または上書き)
-        const docRef = doc(attendancesCollectionRef, attendanceId);
-        await setDoc(docRef, attendanceData, { merge: true });
+        const docRef = fbDoc(attendancesCollectionRef, attendanceId); // (★エラー修正★)
+        await fbSetDoc(docRef, attendanceData, { merge: true }); // (★エラー修正★)
         
         closeModal(attendanceEditModal);
         
@@ -353,7 +359,7 @@ const saveAttendance = async () => {
 const renderHeaderStoreName = () => {
     if (!headerStoreName || !settings || !currentStoreId) return;
 
-    const currentStoreName = settings.storeInfo.name || "店舗";
+    const currentStoreName = (settings.storeInfo && settings.storeInfo.name) ? settings.storeInfo.name : "店舗";
     
     // (★変更★) loading... を店舗名で上書き
     headerStoreName.textContent = currentStoreName;
@@ -367,7 +373,9 @@ document.addEventListener('firebaseReady', (e) => {
         currentStoreId: sId,
         settingsRef: sRef, 
         castsCollectionRef: cRef, 
-        attendancesCollectionRef: aRef // (★新規★)
+        attendancesCollectionRef: aRef, // (★新規★)
+        query, where, orderBy, collection, doc, // (★エラー修正★)
+        setDoc, addDoc, deleteDoc, getDoc, serverTimestamp // (★エラー修正★)
     } = e.detail;
 
     // グローバル変数に参照をセット
@@ -375,6 +383,18 @@ document.addEventListener('firebaseReady', (e) => {
     settingsRef = sRef;
     castsCollectionRef = cRef;
     attendancesCollectionRef = aRef;
+
+    // (★エラー修正★) 関数をグローバル変数に割り当て
+    fbQuery = query;
+    fbWhere = where;
+    fbOrderBy = orderBy;
+    fbCollection = collection;
+    fbDoc = doc;
+    fbSetDoc = setDoc;
+    fbAddDoc = addDoc;
+    fbDeleteDoc = deleteDoc;
+    fbGetDoc = getDoc;
+    fbServerTimestamp = serverTimestamp;
 
     let settingsLoaded = false;
     let castsLoaded = false;
@@ -399,7 +419,11 @@ document.addEventListener('firebaseReady', (e) => {
         }
         settingsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to settings: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to settings: ", error);
+        settingsLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 2. Casts
     onSnapshot(castsCollectionRef, (querySnapshot) => {
@@ -410,7 +434,11 @@ document.addEventListener('firebaseReady', (e) => {
         console.log("Casts loaded: ", casts.length);
         castsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to casts: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to casts: ", error);
+        castsLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 3. Attendances (★新規★)
     // (★注意★) 本来は日付などで絞り込むべきだが、一旦すべて取得
@@ -478,7 +506,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // (★新規★) 日付ピッカー変更
     if (attendanceDatePicker) {
         attendanceDatePicker.addEventListener('change', (e) => {
-            selectedDate = new Date(e.target.value);
+            try { // (★修正★)
+                selectedDate = new Date(e.target.value);
+                if (isNaN(selectedDate.getTime())) { // (★修正★)
+                    selectedDate = new Date();
+                }
+            } catch (e) {
+                selectedDate = new Date();
+            }
             renderAttendanceList();
         });
     }

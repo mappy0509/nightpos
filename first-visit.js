@@ -5,13 +5,14 @@ import { renderSidebar } from './sidebar.js';
 import { 
     db, 
     auth, 
-    onSnapshot, 
-    setDoc, 
-    doc,
-    collection,
-    query, 
-    where, 
-    serverTimestamp
+    onSnapshot
+    // (★エラー修正★) 以下の関数は firebaseReady イベント経由で受け取る
+    // setDoc, 
+    // doc,
+    // collection,
+    // query, 
+    // where, 
+    // serverTimestamp
 } from './firebase-init.js';
 
 // ===== グローバル定数・変数 =====
@@ -22,6 +23,12 @@ let firstVisitSlips = []; // (★新規★) 絞り込んだ初回伝票リスト
 
 // (★新規★) 参照(Ref)はグローバル変数として保持
 let settingsRef, slipsCollectionRef, castsCollectionRef, currentStoreId;
+
+// (★エラー修正★) firebaseReady から受け取る関数
+let fbDoc, fbSetDoc, fbCollection, fbQuery, fbWhere, fbServerTimestamp;
+// (★修正★) このファイルでは使わないが、一貫性のために定義
+let fbAddDoc, fbDeleteDoc, fbGetDoc, fbOrderBy;
+
 
 // --- DOM要素 ---
 let pageTitle, firstVisitList, firstVisitLoading, headerStoreName,
@@ -90,13 +97,13 @@ const renderHeaderStoreName = () => {
  * @param {object} dataToSave - `firstVisitData` オブジェクト
  */
 const saveFirstVisitData = async (dataToSave) => {
-    if (!currentEditingSlipId || !slipsCollectionRef) return;
+    if (!currentEditingSlipId || !slipsCollectionRef || !fbDoc || !fbSetDoc || !fbServerTimestamp) return; // (★エラー修正★)
     
-    const slipRef = doc(slipsCollectionRef, currentEditingSlipId);
+    const slipRef = fbDoc(slipsCollectionRef, currentEditingSlipId); // (★エラー修正★)
     try {
-        await setDoc(slipRef, { 
+        await fbSetDoc(slipRef, { // (★エラー修正★)
             firstVisitData: dataToSave,
-            updatedAt: serverTimestamp() // (★任意★) 伝票の最終更新日を更新
+            updatedAt: fbServerTimestamp() // (★エラー修正★) 
         }, { merge: true });
         
         // (★任意★) 成功フィードバック (例: モーダル内に小さく表示)
@@ -183,6 +190,11 @@ const openFirstVisitModal = (slipId) => {
     renderCastList(sequenceList, fvData.sequence || [], 'sequence');
     
     // つけ回しリストの並び替えを有効化
+    if (typeof Sortable === 'undefined') { // (★修正★)
+        console.warn("Sortable.js not loaded. Drag-and-drop disabled.");
+        return;
+    }
+    
     if (sequenceSortable) {
         sequenceSortable.destroy();
     }
@@ -220,7 +232,7 @@ const renderCastSelectGrid = () => {
     
     const searchTerm = castSearch.value.toLowerCase();
     const filteredCasts = (casts || []).filter(cast => 
-        cast.name.toLowerCase().includes(searchTerm)
+        (cast.name || "").toLowerCase().includes(searchTerm) // (★修正★)
     );
     
     castGrid.innerHTML = '';
@@ -416,19 +428,19 @@ const renderFirstVisitList = () => {
         const sendHtml = sendNames ? `<p class="font-medium text-green-600">${sendNames}</p>` : `<p class="font-medium text-slate-400">（未選択）</p>`;
         
         // タグ (初回 or 枝)
-        const tag = slip.tags.includes("初回") ? "初回" : (slip.tags.includes("枝") ? "枝" : "他");
+        const tag = (slip.tags || []).includes("初回") ? "初回" : ((slip.tags || []).includes("枝") ? "枝" : "他"); // (★修正★)
         const tagColor = tag === "初回" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700";
 
         const cardHTML = `
             <div class="bg-white p-4 rounded-xl shadow-lg border border-slate-200">
                 <div class="flex justify-between items-center mb-3">
                     <div>
-                        <span class="text-xl font-bold text-blue-600">テーブル ${slip.tableId}</span>
-                        <span class="text-sm text-slate-500 ml-2">(No.${slip.slipNumber})</span>
+                        <span class="text-xl font-bold text-blue-600">テーブル ${slip.tableId || '?'}</span>
+                        <span class="text-sm text-slate-500 ml-2">(No.${slip.slipNumber || '?'})</span>
                     </div>
                     <span class="text-xs font-semibold px-2 py-1 ${tagColor} rounded-full">${tag}</span>
                 </div>
-                <p class="font-semibold mb-3">${slip.name}</p>
+                <p class="font-semibold mb-3">${slip.name || 'ゲスト'}</p>
                 
                 <div class="space-y-3">
                     <div>
@@ -463,13 +475,27 @@ document.addEventListener('firebaseReady', (e) => {
         settingsRef: sRef,
         castsCollectionRef: cRef, 
         slipsCollectionRef: slRef,
-        currentStoreId: csId
+        currentStoreId: csId,
+        query, where, orderBy, collection, doc, // (★エラー修正★)
+        setDoc, addDoc, deleteDoc, getDoc, serverTimestamp // (★エラー修正★)
     } = e.detail;
 
     settingsRef = sRef;
     castsCollectionRef = cRef;
     slipsCollectionRef = slRef;
     currentStoreId = csId;
+    
+    // (★エラー修正★) 関数をグローバル変数に割り当て
+    fbQuery = query;
+    fbWhere = where;
+    fbOrderBy = orderBy;
+    fbCollection = collection;
+    fbDoc = doc;
+    fbSetDoc = setDoc;
+    fbAddDoc = addDoc;
+    fbDeleteDoc = deleteDoc;
+    fbGetDoc = getDoc;
+    fbServerTimestamp = serverTimestamp;
 
     let settingsLoaded = false;
     let castsLoaded = false;
@@ -493,7 +519,11 @@ document.addEventListener('firebaseReady', (e) => {
         }
         settingsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to settings: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to settings: ", error);
+        settingsLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 2. Casts
     onSnapshot(castsCollectionRef, (querySnapshot) => {
@@ -504,7 +534,11 @@ document.addEventListener('firebaseReady', (e) => {
         console.log("Casts loaded: ", casts.length);
         castsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to casts: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to casts: ", error);
+        castsLoaded = true;
+        checkAndRenderAll();
+    });
     
     // 3. Slips
     onSnapshot(slipsCollectionRef, (querySnapshot) => {

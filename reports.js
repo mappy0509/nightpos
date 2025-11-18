@@ -1,16 +1,17 @@
 // (★新規★) サイドバーコンポーネントをインポート
 import { renderSidebar } from './sidebar.js';
 
-// (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
+// (変更) db, auth, onSnapshot のみ 'firebase-init.js' から直接インポート
 import { 
     db, 
     auth, 
-    onSnapshot, 
-    setDoc, 
-    doc,
-    collection, // (★コール管理 修正★) 'collection' は削除しない
-    query, // (★コール管理 追加★)
-    where // (★コール管理 追加★)
+    onSnapshot
+    // (★エラー修正★) 以下の関数は firebaseReady イベント経由で受け取る
+    // setDoc, 
+    // doc,
+    // collection,
+    // query,
+    // where
 } from './firebase-init.js';
 
 // (★新規★) AIサービスから関数をインポート
@@ -35,6 +36,10 @@ let slips = [];
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
 let settingsRef, menuRef, castsCollectionRef, slipsCollectionRef, // (★初回管理★) castsCollectionRef を追加
     currentStoreId; 
+
+// (★エラー修正★) firebaseReady から受け取る関数
+let fbQuery, fbWhere, fbOrderBy, fbCollection, fbDoc;
+let fbSetDoc, fbAddDoc, fbDeleteDoc, fbGetDoc, fbServerTimestamp;
 
 
 // ===== DOM要素 =====
@@ -71,13 +76,16 @@ let currentReportDate = new Date();
  * @returns {string} フォーマットされた通貨文字列
  */
 const formatCurrency = (amount) => {
+    if (typeof amount !== 'number' || isNaN(amount)) {
+        amount = 0;
+    }
     return `¥${amount.toLocaleString()}`;
 };
 
 // (★初回管理★) キャストIDからキャスト名を取得する
 const getCastNameById = (castId) => {
     if (!casts) return '不明'; 
-    if (!castId || castId === 'none') return '（未割り当て）';
+    if (!castId || castId === 'none' || castId === 'null') return '（未割り当て）'; // (★修正★)
     const cast = casts.find(c => c.id === castId);
     return cast ? cast.name : '不明';
 };
@@ -196,7 +204,8 @@ const getSlipsForPeriod = (period, baseDate) => {
     else if (period === 'weekly') {
         const dayOfWeek = businessDayStart.getDay(); 
         const diff = businessDayStart.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); 
-        startDate = new Date(businessDayStart.setDate(diff));
+        startDate = new Date(businessDayStart); // (★修正★)
+        startDate.setDate(diff); // (★修正★)
         startDate = getBusinessDayStart(startDate); 
 
         endDate = new Date(startDate);
@@ -216,23 +225,30 @@ const getSlipsForPeriod = (period, baseDate) => {
 
     const paidSlips = slips.filter(slip => { 
         if (slip.status !== 'paid' || !slip.paidTimestamp) return false;
-        const paidTime = new Date(slip.paidTimestamp).getTime();
-        return paidTime >= startTimestamp && paidTime <= endTimestamp;
+        try { // (★修正★)
+            const paidTime = new Date(slip.paidTimestamp).getTime();
+            if (isNaN(paidTime)) return false;
+            return paidTime >= startTimestamp && paidTime <= endTimestamp;
+        } catch(e) { return false; }
     });
 
     const cancelledSlips = slips.filter(slip => {
         if (slip.status !== 'cancelled') return false; 
         
-        // (★修正★) ボツ伝の日時は paidTimestamp (ボツ確定時) を使う
-        if (slip.paidTimestamp) {
-             const cancelledTime = new Date(slip.paidTimestamp).getTime();
-             return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
-        }
-        // (★フォールバック★)
-        if (slip.startTime) {
-             const cancelledTime = new Date(slip.startTime).getTime();
-             return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
-        }
+        try { // (★修正★)
+            // (★修正★) ボツ伝の日時は paidTimestamp (ボツ確定時) を使う
+            if (slip.paidTimestamp) {
+                 const cancelledTime = new Date(slip.paidTimestamp).getTime();
+                 if (isNaN(cancelledTime)) return false;
+                 return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
+            }
+            // (★フォールバック★)
+            if (slip.startTime) {
+                 const cancelledTime = new Date(slip.startTime).getTime();
+                 if (isNaN(cancelledTime)) return false;
+                 return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
+            }
+        } catch (e) { return false; }
         return false;
     });
 
@@ -277,9 +293,9 @@ const renderReportsRanking = (paidSlips) => {
     const itemMap = new Map();
 
     paidSlips.forEach(slip => {
-        slip.items.forEach(item => {
+        (slip.items || []).forEach(item => { // (★修正★)
             const currentQty = itemMap.get(item.name) || 0;
-            itemMap.set(item.name, currentQty + item.qty);
+            itemMap.set(item.name, currentQty + (item.qty || 0)); // (★修正★)
         });
     });
 
@@ -335,7 +351,7 @@ const renderFirstVisitRankings = (type, paidSlips) => {
         }
         
         // リスト内のキャストIDをカウント
-        nominationList.forEach(cast => {
+        (nominationList || []).forEach(cast => { // (★修正★)
             if (cast.id) {
                 const current = rankingMap.get(cast.id) || { id: cast.id, name: getCastNameById(cast.id), count: 0 };
                 current.count++;
@@ -409,8 +425,11 @@ const renderSalesChart = (paidSlips, range) => {
             
             const hourSales = paidSlips
                 .filter(slip => {
-                    const paidTime = new Date(slip.paidTimestamp).getTime();
-                    return paidTime >= hourStart.getTime() && paidTime < hourEnd.getTime();
+                    try { // (★修正★)
+                        const paidTime = new Date(slip.paidTimestamp).getTime();
+                        if (isNaN(paidTime)) return false;
+                        return paidTime >= hourStart.getTime() && paidTime < hourEnd.getTime();
+                    } catch(e) { return false; }
                 })
                 .reduce((total, slip) => total + (slip.paidAmount || 0), 0); 
             
@@ -429,8 +448,11 @@ const renderSalesChart = (paidSlips, range) => {
             
             const daySales = paidSlips
                 .filter(slip => {
-                    const paidTime = new Date(slip.paidTimestamp).getTime();
-                    return paidTime >= dayStart.getTime() && paidTime <= dayEnd.getTime();
+                    try { // (★修正★)
+                        const paidTime = new Date(slip.paidTimestamp).getTime();
+                        if (isNaN(paidTime)) return false;
+                        return paidTime >= dayStart.getTime() && paidTime <= dayEnd.getTime();
+                    } catch(e) { return false; }
                 })
                 .reduce((total, slip) => total + (slip.paidAmount || 0), 0); 
                 
@@ -442,10 +464,13 @@ const renderSalesChart = (paidSlips, range) => {
         data = [0, 0, 0, 0, 0];
         
         paidSlips.forEach(slip => {
-            const paidDate = new Date(slip.paidTimestamp);
-            const weekIndex = Math.floor((paidDate.getDate() - 1) / 7); 
-            const safeIndex = Math.min(weekIndex, 4); 
-            data[safeIndex] += (slip.paidAmount || 0); 
+            try { // (★修正★)
+                const paidDate = new Date(slip.paidTimestamp);
+                if (isNaN(paidDate.getTime())) return;
+                const weekIndex = Math.floor((paidDate.getDate() - 1) / 7); 
+                const safeIndex = Math.min(weekIndex, 4); 
+                data[safeIndex] += (slip.paidAmount || 0); 
+            } catch(e) {}
         });
     }
 
@@ -608,7 +633,9 @@ document.addEventListener('firebaseReady', (e) => {
         menuRef: mRef,
         castsCollectionRef: cRef, // (★初回管理★) 追加
         slipsCollectionRef: slRef,
-        currentStoreId: csId
+        currentStoreId: csId,
+        query, where, orderBy, collection, doc, // (★エラー修正★)
+        setDoc, addDoc, deleteDoc, getDoc, serverTimestamp // (★エラー修正★)
     } = e.detail;
 
     // (★初回管理 変更★) グローバル変数に参照をセット
@@ -617,6 +644,18 @@ document.addEventListener('firebaseReady', (e) => {
     castsCollectionRef = cRef; // (★初回管理★) 追加
     slipsCollectionRef = slRef;
     currentStoreId = csId;
+    
+    // (★エラー修正★) 関数をグローバル変数に割り当て
+    fbQuery = query;
+    fbWhere = where;
+    fbOrderBy = orderBy;
+    fbCollection = collection;
+    fbDoc = doc;
+    fbSetDoc = setDoc;
+    fbAddDoc = addDoc;
+    fbDeleteDoc = deleteDoc;
+    fbGetDoc = getDoc;
+    fbServerTimestamp = serverTimestamp;
 
     let settingsLoaded = false;
     let menuLoaded = false;
@@ -640,12 +679,16 @@ document.addEventListener('firebaseReady', (e) => {
         } else {
             console.log("No settings document found. Creating default settings...");
             const defaultSettings = getDefaultSettings();
-            await setDoc(settingsRef, defaultSettings);
+            await fbSetDoc(settingsRef, defaultSettings); // (★エラー修正★)
             settings = defaultSettings;
         }
         settingsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to settings: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to settings: ", error);
+        settingsLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 2. Menu
     onSnapshot(menuRef, async (docSnap) => {
@@ -654,12 +697,16 @@ document.addEventListener('firebaseReady', (e) => {
         } else {
             console.log("No menu document found. Creating default menu...");
             const defaultMenu = getDefaultMenu();
-            await setDoc(menuRef, defaultMenu);
+            await fbSetDoc(menuRef, defaultMenu); // (★エラー修正★)
             menu = defaultMenu;
         }
         menuLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to menu: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to menu: ", error);
+        menuLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 3. (★初回管理★) Casts (名前参照用)
     onSnapshot(castsCollectionRef, (querySnapshot) => {
@@ -670,7 +717,11 @@ document.addEventListener('firebaseReady', (e) => {
         console.log("Casts loaded: ", casts.length);
         castsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to casts: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to casts: ", error);
+        castsLoaded = true;
+        checkAndRenderAll();
+    });
 
 
     // 4. Slips
@@ -762,8 +813,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if(reportDatePicker) {
         reportDatePicker.addEventListener('change', (e) => {
             // (★修正★) タイムゾーンを考慮して Date オブジェクトを生成
-            const dateParts = e.target.value.split('-').map(Number);
-            currentReportDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+            try { // (★修正★)
+                const dateParts = e.target.value.split('-').map(Number);
+                currentReportDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+            } catch (e) {
+                console.error("Invalid date selected", e);
+                currentReportDate = new Date(); // (★修正★)
+            }
             updateAllReports();
         });
     }

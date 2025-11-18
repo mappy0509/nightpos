@@ -1,15 +1,16 @@
-// (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
+// (変更) db, auth, onSnapshot, signOut のみ 'firebase-init.js' から直接インポート
 import { 
     db, 
     auth, 
     onSnapshot, 
-    setDoc, 
-    // addDoc, (★削除★)
-    // deleteDoc, (★削除★)
-    doc,
-    collection,
-    getDoc, // (★新規★)
     signOut // (★新規★)
+    // (★エラー修正★) 以下の関数は firebaseReady イベント経由で受け取る
+    // setDoc, 
+    // doc,
+    // collection,
+    // getDoc, 
+    // query, 
+    // where 
 } from './firebase-init.js';
 
 // (★新規★) AIサービスから関数をインポート
@@ -17,6 +18,11 @@ import { getCustomerFollowUpAdvice } from './ai-service.js';
 
 // (★変更★) 参照は firebaseReady イベントで受け取る
 let settingsRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef;
+
+// (★エラー修正★) firebaseReady から受け取る関数
+let fbDoc, fbGetDoc, fbQuery, fbWhere, fbCollection;
+// (★修正★) このファイルでは使わないが、一貫性のために定義
+let fbSetDoc, fbAddDoc, fbDeleteDoc, fbOrderBy, fbServerTimestamp;
 
 
 // ===== グローバル定数・変数 =====
@@ -90,7 +96,8 @@ const getCustomerStats = (customerId, customerName) => {
         if (slip.status !== 'paid' || !slip.paidTimestamp) return false;
         
         // (★変更★) IDと名前の両方で照合
-        if (slip.customerId === customerId) return true; 
+        // (★修正★) customers.js と同様に、名前での照合のみ
+        // if (slip.customerId === customerId) return true; 
         if (slip.name === customerName) return true;
         
         return false;
@@ -100,18 +107,31 @@ const getCustomerStats = (customerId, customerName) => {
         return { slips: [], lastVisit: null, visitCount: 0, totalSpend: 0 };
     }
 
-    customerSlips.sort((a, b) => new Date(b.paidTimestamp).getTime() - new Date(a.paidTimestamp).getTime());
-    
-    const lastVisitDate = new Date(customerSlips[0].paidTimestamp);
-    
-    const totalSpend = customerSlips.reduce((total, slip) => total + (slip.paidAmount || 0), 0);
-    
-    return {
-        slips: customerSlips,
-        lastVisit: lastVisitDate,
-        visitCount: customerSlips.length,
-        totalSpend: totalSpend
-    };
+    try { // (★修正★)
+        customerSlips.sort((a, b) => {
+            try {
+                return new Date(b.paidTimestamp).getTime() - new Date(a.paidTimestamp).getTime();
+            } catch(e) { return 0; }
+        });
+        
+        let lastVisitDate = null; // (★修正★)
+        try {
+            lastVisitDate = new Date(customerSlips[0].paidTimestamp);
+            if (isNaN(lastVisitDate.getTime())) lastVisitDate = null; // (★修正★)
+        } catch(e) {}
+        
+        const totalSpend = customerSlips.reduce((total, slip) => total + (slip.paidAmount || 0), 0);
+        
+        return {
+            slips: customerSlips,
+            lastVisit: lastVisitDate,
+            visitCount: customerSlips.length,
+            totalSpend: totalSpend
+        };
+    } catch (e) {
+        console.error("Error in getCustomerStats sorting: ", e);
+        return { slips: [], lastVisit: null, visitCount: 0, totalSpend: 0 };
+    }
 };
 
 
@@ -129,20 +149,25 @@ const formatLastVisitDate = (lastVisitDate) => {
         return "来店履歴なし";
     }
 
-    const todayBusinessStart = getBusinessDayStart(new Date());
-    const lastVisitBusinessStart = getBusinessDayStart(lastVisitDate);
+    try { // (★修正★)
+        const todayBusinessStart = getBusinessDayStart(new Date());
+        const lastVisitBusinessStart = getBusinessDayStart(lastVisitDate);
 
-    const diffTime = todayBusinessStart.getTime() - lastVisitBusinessStart.getTime();
-    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-    
-    const dateStr = lastVisitDate.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        const diffTime = todayBusinessStart.getTime() - lastVisitBusinessStart.getTime();
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+        
+        const dateStr = lastVisitDate.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
 
-    if (diffDays === 0) {
-        return `最終来店: ${dateStr} (本日)`;
-    } else if (diffDays > 0 && diffDays <= 30) {
-        return `最終来店: ${dateStr} (${diffDays}日前)`;
-    } else {
-        return `最終来店: ${dateStr}`;
+        if (diffDays === 0) {
+            return `最終来店: ${dateStr} (本日)`;
+        } else if (diffDays > 0 && diffDays <= 30) {
+            return `最終来店: ${dateStr} (${diffDays}日前)`;
+        } else {
+            return `最終来店: ${dateStr}`;
+        }
+    } catch (e) {
+        console.error("Error formatting last visit date:", e);
+        return "日付エラー";
     }
 };
 
@@ -164,12 +189,12 @@ const renderCastCustomerList = (searchTerm = "") => {
     // (★新規★) 検索キーワードでフィルタリング
     if (lowerSearchTerm !== "") {
         myCustomers = myCustomers.filter(
-            cust => cust.name.toLowerCase().includes(lowerSearchTerm)
+            cust => (cust.name || "").toLowerCase().includes(lowerSearchTerm) // (★修正★)
         );
     }
     
     // (★仮★) 名前ソート
-    myCustomers.sort((a,b) => a.name.localeCompare(b.name));
+    myCustomers.sort((a,b) => (a.name || "").localeCompare(b.name || "")); // (★修正★)
     
     // (★変更★) ローディング表示を削除
     if(customerListLoading) customerListLoading.style.display = 'none';
@@ -257,8 +282,8 @@ const loadCastInfo = async () => {
     }
     
     try {
-        const castRef = doc(castsCollectionRef, currentCastId);
-        const castSnap = await getDoc(castRef);
+        const castRef = fbDoc(castsCollectionRef, currentCastId); // (★エラー修正★)
+        const castSnap = await fbGetDoc(castRef); // (★エラー修正★)
 
         if (castSnap.exists()) {
             currentCastName = castSnap.data().name || "キャスト";
@@ -283,7 +308,9 @@ document.addEventListener('firebaseReady', async (e) => {
         settingsRef: sRef,
         castsCollectionRef: cRef, 
         customersCollectionRef: cuRef, 
-        slipsCollectionRef: slRef
+        slipsCollectionRef: slRef,
+        query, where, orderBy, collection, doc, // (★エラー修正★)
+        setDoc, addDoc, deleteDoc, getDoc, serverTimestamp // (★エラー修正★)
     } = e.detail;
     
     // (★変更★) グローバル変数にセット
@@ -293,8 +320,22 @@ document.addEventListener('firebaseReady', async (e) => {
     customersCollectionRef = cuRef;
     slipsCollectionRef = slRef;
     
+    // (★エラー修正★) 関数をグローバル変数に割り当て
+    fbQuery = query;
+    fbWhere = where;
+    fbOrderBy = orderBy;
+    fbCollection = collection;
+    fbDoc = doc;
+    fbSetDoc = setDoc;
+    fbAddDoc = addDoc;
+    fbDeleteDoc = deleteDoc;
+    fbGetDoc = getDoc;
+    fbServerTimestamp = serverTimestamp;
+    
     // (★新規★) まずキャスト情報を読み込む
-    await loadCastInfo();
+    if (currentCastId) { // (★修正★)
+        await loadCastInfo();
+    }
 
     let settingsLoaded = false;
     let castsLoaded = false;
@@ -322,12 +363,17 @@ document.addEventListener('firebaseReady', async (e) => {
         } else {
             console.log("No settings document found. Creating default settings...");
             const defaultSettings = getDefaultSettings();
-            await setDoc(settingsRef, defaultSettings);
+            // (★修正★) setDoc は settings.js や store-signup.js が行う
+            // await fbSetDoc(settingsRef, defaultSettings);
             settings = defaultSettings;
         }
         settingsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to settings: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to settings: ", error);
+        settingsLoaded = true;
+        checkAndRenderAll();
+    });
 
     // (★削除★) 2. Menu
 
@@ -342,7 +388,11 @@ document.addEventListener('firebaseReady', async (e) => {
         console.log("Casts loaded: ", casts.length);
         castsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to casts: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to casts: ", error);
+        castsLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 5. Customers
     onSnapshot(customersCollectionRef, (querySnapshot) => {
@@ -353,7 +403,11 @@ document.addEventListener('firebaseReady', async (e) => {
         console.log("Customers loaded: ", customers.length);
         customersLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to customers: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to customers: ", error);
+        customersLoaded = true;
+        checkAndRenderAll();
+    });
     
     // 6. Slips
     onSnapshot(slipsCollectionRef, (querySnapshot) => {
@@ -382,7 +436,8 @@ document.addEventListener('DOMContentLoaded', () => {
     customerListContainer = document.getElementById('customer-list-container');
     customerListLoading = document.getElementById('customer-list-loading');
     
-    logoutButtonHeader = document.querySelector('header #cast-header-name + button'); // (★新規★)
+    // (★修正★) ID `logout-button-header` を使用
+    logoutButtonHeader = document.getElementById('logout-button-header');
     
     // (★削除★) モーダル関連のDOM取得を削除
     

@@ -1,20 +1,21 @@
 // (★新規★) サイドバーコンポーネントをインポート
 import { renderSidebar } from './sidebar.js';
 
-// (変更) db, auth, onSnapshot などを 'firebase-init.js' から直接インポート
+// (変更) db, auth, onSnapshot のみ 'firebase-init.js' から直接インポート
 import { 
     db, 
     auth, 
-    onSnapshot, 
-    setDoc, 
-    addDoc, 
-    deleteDoc, 
-    doc,
-    collection,
-    getDoc, 
-    serverTimestamp,
-    query, // (★コール管理 追加★)
-    where // (★コール管理 追加★)
+    onSnapshot
+    // (★エラー修正★) 以下の関数は firebaseReady イベント経由で受け取る
+    // setDoc, 
+    // addDoc, 
+    // deleteDoc, 
+    // doc,
+    // collection,
+    // getDoc, 
+    // serverTimestamp,
+    // query,
+    // where
 } from './firebase-init.js';
 
 // (★一括会計 修正★) ai-service.js の不要なインポートを削除
@@ -54,6 +55,10 @@ let settingsRef, menuRef, slipCounterRef, castsCollectionRef, customersCollectio
     inventoryItemsCollectionRef, // (★在庫管理 追加★)
     champagneCallsCollectionRef, // (★コール管理 追加★)
     currentStoreId; // (★動的表示 追加★)
+
+// (★エラー修正★) firebaseReady から受け取る関数
+let fbQuery, fbWhere, fbOrderBy, fbCollection, fbDoc;
+let fbSetDoc, fbAddDoc, fbDeleteDoc, fbGetDoc, fbServerTimestamp;
 
 
 // ===== DOM要素 =====
@@ -133,6 +138,9 @@ const formatDateISO = (date) => {
  * @returns {string} フォーマットされた通貨文字列
  */
 const formatCurrency = (amount) => {
+    if (typeof amount !== 'number' || isNaN(amount)) {
+        amount = 0;
+    }
     return `¥${amount.toLocaleString()}`;
 };
 
@@ -159,7 +167,7 @@ const formatDateTimeLocal = (date) => {
  */
 const calculateSlipTotal = (slip) => {
     // (★変更★) settings を参照
-    if (!settings) return 0; 
+    if (!settings || !settings.rates) return 0; // (★修正★) settings.rates もチェック
     
     // (★新規★) 端数処理
     const rounding = settings.rounding || { type: 'none', unit: 1 };
@@ -168,8 +176,9 @@ const calculateSlipTotal = (slip) => {
         return 0;
     }
     let subtotal = 0;
-    slip.items.forEach(item => {
-        subtotal += item.price * item.qty;
+    // (★修正★) slip.items が存在しない場合を考慮
+    (slip.items || []).forEach(item => {
+        subtotal += (item.price || 0) * (item.qty || 0);
     });
     
     // (★新規★) サービス料・税金計算前に小計を端数処理 (例: 10円単位に切り上げ)
@@ -179,9 +188,9 @@ const calculateSlipTotal = (slip) => {
         subtotal = Math.floor(subtotal / rounding.unit) * rounding.unit;
     }
 
-    const serviceCharge = subtotal * settings.rates.service;
+    const serviceCharge = subtotal * (settings.rates.service || 0); // (★修正★)
     const subtotalWithService = subtotal + serviceCharge;
-    const tax = subtotalWithService * settings.rates.tax;
+    const tax = subtotalWithService * (settings.rates.tax || 0); // (★修正★)
     let total = subtotalWithService + tax;
     
     // (★新規★) 最終合計金額の端数処理
@@ -242,7 +251,7 @@ const calculateFinalBillingAmount = (slip) => {
  */
 const getCastNameById = (castId) => {
     if (!casts) return '不明'; 
-    if (!castId || castId === 'none') return '（未割り当て）'; // (★reports.jsから修正★)
+    if (!castId || castId === 'none' || castId === 'null') return '（未割り当て）'; // (★reports.jsから修正★) (★修正★) 'null' も
     const cast = casts.find(c => c.id === castId);
     return cast ? cast.name : '不明';
 };
@@ -328,7 +337,8 @@ const getSlipsForPeriod = (period, baseDate) => {
         // 基準日の週の月曜日（の営業開始時刻）
         const dayOfWeek = businessDayStart.getDay(); // 0 (Sun) - 6 (Sat)
         const diff = businessDayStart.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // 月曜を週初めに
-        startDate = new Date(businessDayStart.setDate(diff));
+        startDate = new Date(businessDayStart); // (★修正★) 元の日付を変更しないようコピー
+        startDate.setDate(diff); // (★修正★) コピーに対して setDate
         startDate = getBusinessDayStart(startDate); // 念のため営業日補正
 
         // 7日後の営業終了時刻
@@ -351,8 +361,13 @@ const getSlipsForPeriod = (period, baseDate) => {
 
     const paidSlips = slips.filter(slip => {
         if (slip.status !== 'paid' || !slip.paidTimestamp) return false;
-        const paidTime = new Date(slip.paidTimestamp).getTime();
-        return paidTime >= startTimestamp && paidTime <= endTimestamp;
+        try { // (★修正★)
+            const paidTime = new Date(slip.paidTimestamp).getTime();
+            if (isNaN(paidTime)) return false;
+            return paidTime >= startTimestamp && paidTime <= endTimestamp;
+        } catch(e) {
+            return false;
+        }
     });
 
     const cancelledSlips = slips.filter(slip => {
@@ -360,13 +375,19 @@ const getSlipsForPeriod = (period, baseDate) => {
         
         // (★勤怠機能修正★) 営業日ベースで判定
         // (★reports.jsからコピー★)
-        if (slip.paidTimestamp) { // (★修正★) ボツ伝の日時を paidTimestamp (ボツ確定時) で見る
-             const cancelledTime = new Date(slip.paidTimestamp).getTime();
-             return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
-        }
-        if (slip.startTime) { // (★フォールバック★)
-             const cancelledTime = new Date(slip.startTime).getTime();
-             return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
+        try { // (★修正★)
+            if (slip.paidTimestamp) { // (★修正★) ボツ伝の日時を paidTimestamp (ボツ確定時) で見る
+                 const cancelledTime = new Date(slip.paidTimestamp).getTime();
+                 if (isNaN(cancelledTime)) return false;
+                 return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
+            }
+            if (slip.startTime) { // (★フォールバック★)
+                 const cancelledTime = new Date(slip.startTime).getTime();
+                 if (isNaN(cancelledTime)) return false;
+                 return cancelledTime >= startTimestamp && cancelledTime <= endTimestamp;
+            }
+        } catch (e) {
+            return false;
         }
         return false;
     });
@@ -385,7 +406,7 @@ const getSlipsForPeriod = (period, baseDate) => {
  */
 const renderDashboardSummary = () => {
     // (★変更★) settings, attendances, slips が必要
-    if (!settings || !attendances || !slips) return; 
+    if (!settings || !attendances || !slips || !settings.tables) return; // (★修正★) settings.tables もチェック
     
     // --- (★要望1★) 総売上 & 平均客単価 (注文ベース) ---
     const todayBusinessStart = getBusinessDayStart(new Date());
@@ -506,7 +527,7 @@ const renderDashboardSlips = () => {
         slip => slip.status === 'active' || slip.status === 'checkout'
     );
     
-    activeSlips.sort((a, b) => b.slipNumber - a.slipNumber);
+    activeSlips.sort((a, b) => (b.slipNumber || 0) - (a.slipNumber || 0)); // (★修正★) slipNumber がない場合
 
     if (activeSlips.length === 0) {
         dashboardSlips.innerHTML = '<p class="text-slate-500 text-sm md:col-span-2">現在、未会計の伝票はありません。</p>';
@@ -529,6 +550,10 @@ const renderDashboardSlips = () => {
                 statusColor = 'orange';
                 statusText = '会計待ち';
                 break;
+            default: // (★追加★)
+                statusColor = 'gray';
+                statusText = '不明';
+                break;
         }
         
         const nominationText = getCastNameById(slip.nominationCastId);
@@ -539,7 +564,7 @@ const renderDashboardSlips = () => {
                     data-slip-id="${slip.slipId}" data-status="${slip.status}">
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-xl font-bold">
-                        <i class="fa-solid fa-table fa-fw text-slate-400 mr-1"></i>${slip.tableId} (No.${slip.slipNumber})
+                        <i class="fa-solid fa-table fa-fw text-slate-400 mr-1"></i>${slip.tableId || '?'} (No.${slip.slipNumber || '?'})
                     </span>
                     <span class="text-xs font-semibold px-2 py-1 bg-${statusColor}-100 text-${statusColor}-700 border border-${statusColor}-300 rounded-full">${statusText}</span>
                 </div>
@@ -568,7 +593,7 @@ const renderDashboardSlips = () => {
  */
 const renderOrderModal = () => {
     // (★変更★) menu と settings を参照
-    if (!settings || !menu) return; 
+    if (!settings || !menu || !slips || !casts || !customers) return; // (★修正★)
     const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
     if (!slipData) return;
     
@@ -598,17 +623,19 @@ const renderOrderModal = () => {
     
     orderItemsList.innerHTML = '';
     let subtotal = 0;
-    slipData.items.forEach(item => {
-        subtotal += item.price * item.qty;
+    // (★修正★) slip.items が存在しない場合を考慮
+    (slipData.items || []).forEach(item => {
+        const itemTotal = (item.price || 0) * (item.qty || 0); // (★修正★)
+        subtotal += itemTotal;
         orderItemsList.innerHTML += `
             <div class="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border">
                 <div>
-                    <p class="font-semibold">${item.name}</p>
-                    <p class="text-sm text-slate-500">${formatCurrency(item.price)}</p>
+                    <p class="font-semibold">${item.name || '不明な商品'}</p>
+                    <p class="text-sm text-slate-500">${formatCurrency(item.price || 0)}</p>
                 </div>
                 <div class="flex items-center space-x-3">
-                    <input type="number" value="${item.qty}" class="w-16 p-1 border rounded text-center order-item-qty-input" data-item-id="${item.id}">
-                    <span class="font-semibold w-20 text-right">${formatCurrency(item.price * item.qty)}</span>
+                    <input type="number" value="${item.qty || 1}" class="w-16 p-1 border rounded text-center order-item-qty-input" data-item-id="${item.id}">
+                    <span class="font-semibold w-20 text-right">${formatCurrency(itemTotal)}</span>
                     <button class="remove-order-item-btn text-red-500 hover:text-red-700" data-item-id="${item.id}">
                         <i class="fa-solid fa-trash"></i>
                     </button>
@@ -628,7 +655,7 @@ const renderOrderModal = () => {
     
     // (★新規★) 選択中のカテゴリIDがなければ、先頭のカテゴリを選択
     if (!currentOrderModalCategoryId || !menu.categories.some(c => c.id === currentOrderModalCategoryId)) {
-        currentOrderModalCategoryId = menu.categories[0].id;
+        currentOrderModalCategoryId = menu.categories.length > 0 ? menu.categories[0].id : null; // (★修正★)
     }
     
     renderOrderCategoryTabs();
@@ -644,7 +671,10 @@ const renderOrderCategoryTabs = () => {
     if (!orderCategoryTabsContainer || !menu || !menu.categories) return;
     
     orderCategoryTabsContainer.innerHTML = '';
-    menu.categories.forEach(category => {
+    // (★修正★) order でソート
+    const sortedCategories = [...menu.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
+    
+    sortedCategories.forEach(category => {
         const tabHTML = `
             <button class="order-category-tab ${category.id === currentOrderModalCategoryId ? 'active' : ''}" 
                     data-category-id="${category.id}">
@@ -659,13 +689,16 @@ const renderOrderCategoryTabs = () => {
  * (★新規★) オーダーモーダルのメニューグリッド部分のみを描画する
  */
 const renderOrderMenuGrid = () => {
-    if (!menuOrderGrid || !menu || !menu.items || !currentOrderModalCategoryId) return;
+    if (!menuOrderGrid || !menu || !menu.items || !currentOrderModalCategoryId) {
+        if (menuOrderGrid) menuOrderGrid.innerHTML = '<p class="text-slate-500 text-sm col-span-3">カテゴリを選択してください。</p>'; // (★修正★)
+        return;
+    }
 
     menuOrderGrid.innerHTML = ''; 
     
     const filteredItems = (menu.items || [])
         .filter(item => item.categoryId === currentOrderModalCategoryId)
-        .sort((a,b) => a.name.localeCompare(b.name));
+        .sort((a,b) => (a.order || 0) - (b.order || 0)); // (★修正★) order でソート
     
     if (filteredItems.length === 0) {
         menuOrderGrid.innerHTML = '<p class="text-slate-500 text-sm col-span-3">このカテゴリにはメニューが登録されていません。</p>';
@@ -698,12 +731,12 @@ const switchOrderCategory = (categoryId) => {
  */
 const renderSlipTags = (slipData) => {
     const container = document.getElementById('order-tags-container');
-    if (!container || !settings) return; // (★変更★)
+    if (!container || !settings || !settings.slipTagsMaster) return; // (★変更★) (★修正★)
     container.innerHTML = '';
     
     // (★変更★) settings.slipTagsMaster を参照
     settings.slipTagsMaster.forEach(tag => {
-        const isSelected = slipData.tags.includes(tag.name);
+        const isSelected = (slipData.tags || []).includes(tag.name); // (★修正★) slipData.tags
         const tagClass = isSelected 
             ? 'bg-blue-600 text-white' 
             : 'bg-slate-200 text-slate-700 hover:bg-slate-300';
@@ -721,9 +754,11 @@ const renderSlipTags = (slipData) => {
  * @param {string} tagName 
  */
 const toggleSlipTag = async (tagName) => {
-    if (!slips) return;
+    if (!slips || !slipsCollectionRef) return; // (★修正★)
     const slipData = slips.find(s => s.slipId === currentSlipId);
     if (!slipData) return;
+    
+    if (!slipData.tags) slipData.tags = []; // (★修正★)
     
     const tagIndex = slipData.tags.indexOf(tagName);
     if (tagIndex > -1) {
@@ -734,8 +769,8 @@ const toggleSlipTag = async (tagName) => {
     
     // (★変更★) 伝票ドキュメントを直接更新
     try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { tags: slipData.tags }, { merge: true });
+        const slipRef = fbDoc(slipsCollectionRef, currentSlipId); // (★エラー修正★)
+        await fbSetDoc(slipRef, { tags: slipData.tags }, { merge: true }); // (★エラー修正★)
     } catch (e) {
         console.error("Error updating slip tags: ", e);
     }
@@ -774,7 +809,7 @@ const renderCustomerDropdown = (selectedCastId) => {
  * (変更) 伝票モーダルの顧客情報フォームの変更をstate.slipsに反映する
  */
 const updateSlipInfo = async () => {
-    if (!slips) return; // (★変更★)
+    if (!slips || !slipsCollectionRef) return; // (★変更★) (★修正★)
     const slipData = slips.find(s => s.slipId === currentSlipId); // (★変更★)
     if (!slipData) return;
 
@@ -790,8 +825,8 @@ const updateSlipInfo = async () => {
 
     // (★変更★) 伝票ドキュメントを直接更新
     try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { 
+        const slipRef = fbDoc(slipsCollectionRef, currentSlipId); // (★エラー修正★)
+        await fbSetDoc(slipRef, { // (★エラー修正★)
             name: newName,
             nominationCastId: nominationCastId
         }, { merge: true });
@@ -827,12 +862,12 @@ const checkAndTriggerChampagneCall = async (slipData) => {
     // (★変更★) 「未完了」のアイテムのみを合計する
     let callSubtotal = 0;
     const callItems = []; // 未完了のコール対象アイテムリスト
-    for (const item of slipData.items) {
+    for (const item of (slipData.items || [])) { // (★修正★)
         const menuItem = menu.items.find(m => m.id === item.id);
         
         // (★変更★) 完了済みリストに含まれて *いない* アイテムのみを対象
         if (menuItem && menuItem.isCallTarget && !completedItemIds.has(item.id)) { 
-            callSubtotal += item.price * item.qty;
+            callSubtotal += (item.price || 0) * (item.qty || 0); // (★修正★)
             // (★変更★) callItems にも item.id (メニューID) を含める
             callItems.push({ id: item.id, name: menuItem.name, qty: item.qty });
         }
@@ -862,7 +897,7 @@ const checkAndTriggerChampagneCall = async (slipData) => {
         borderAmount: highestBorder.borderAmount, // 達成したボーダー金額
         callType: highestBorder.callName, // 設定されたデフォルトのコール名
         status: 'pending',
-        createdAt: serverTimestamp(), // (★重要★) 常にサーバータイムスタンプで更新（リストの先頭に来るように）
+        createdAt: fbServerTimestamp(), // (★エラー修正★) 常にサーバータイムスタンプで更新（リストの先頭に来るように）
         mainMicCastId: null,
         subMicCastId: null,
         completedAt: null
@@ -872,12 +907,12 @@ const checkAndTriggerChampagneCall = async (slipData) => {
         if (existingPendingCall) {
             // 6. 既存の「未対応」コールを更新する
             console.log(`Updating existing pending call ${existingPendingCall.id}`);
-            const callRef = doc(champagneCallsCollectionRef, existingPendingCall.id);
-            await setDoc(callRef, callData); 
+            const callRef = fbDoc(champagneCallsCollectionRef, existingPendingCall.id); // (★エラー修正★)
+            await fbSetDoc(callRef, callData, { merge: true }); // (★エラー修正★)
         } else {
             // 7. 新規に「未対応」コールを作成する
             console.log("Creating new pending champagne call.");
-            await addDoc(champagneCallsCollectionRef, callData);
+            await fbAddDoc(champagneCallsCollectionRef, callData); // (★エラー修正★)
         }
     } catch (e) {
         console.error("Error triggering champagne call:", e);
@@ -892,9 +927,11 @@ const checkAndTriggerChampagneCall = async (slipData) => {
  * @param {number} price 価格
  */
 const addOrderItem = async (id, name, price) => {
-    if (!slips) return; 
+    if (!slips || !slipsCollectionRef) return; // (★修正★)
     const slipData = slips.find(s => s.slipId === currentSlipId); 
     if (!slipData) return;
+    
+    if (!slipData.items) slipData.items = []; // (★修正★)
 
     const existingItem = slipData.items.find(item => item.id === id);
     if (existingItem) {
@@ -904,8 +941,8 @@ const addOrderItem = async (id, name, price) => {
     }
     
     try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { items: slipData.items }, { merge: true });
+        const slipRef = fbDoc(slipsCollectionRef, currentSlipId); // (★エラー修正★)
+        await fbSetDoc(slipRef, { items: slipData.items }, { merge: true }); // (★エラー修正★)
         
         // (★コール管理 追加★) オーダー変更後にコールをチェック
         await checkAndTriggerChampagneCall(slipData);
@@ -914,7 +951,8 @@ const addOrderItem = async (id, name, price) => {
         console.error("Error adding order item: ", e);
     }
     
-    renderOrderModal();
+    // (★修正★) onSnapshot で自動描画
+    // renderOrderModal();
 };
 
 /**
@@ -922,15 +960,15 @@ const addOrderItem = async (id, name, price) => {
  * @param {string} id 商品ID
  */
 const removeOrderItem = async (id) => {
-    if (!slips) return; 
+    if (!slips || !slipsCollectionRef) return; // (★修正★)
     const slipData = slips.find(s => s.slipId === currentSlipId); 
-    if (!slipData) return;
+    if (!slipData || !slipData.items) return; // (★修正★)
 
     slipData.items = slipData.items.filter(item => item.id !== id);
     
     try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { items: slipData.items }, { merge: true });
+        const slipRef = fbDoc(slipsCollectionRef, currentSlipId); // (★エラー修正★)
+        await fbSetDoc(slipRef, { items: slipData.items }, { merge: true }); // (★エラー修正★)
         
         // (★コール管理 追加★) オーダー変更後にコールをチェック
         await checkAndTriggerChampagneCall(slipData);
@@ -938,8 +976,8 @@ const removeOrderItem = async (id) => {
     } catch (e) {
         console.error("Error removing order item: ", e);
     }
-
-    renderOrderModal();
+    // (★修正★) onSnapshot で自動描画
+    // renderOrderModal();
 };
 
 /**
@@ -948,9 +986,9 @@ const removeOrderItem = async (id) => {
  * @param {number} qty 数量
  */
 const updateOrderItemQty = async (id, qty) => {
-    if (!slips) return; 
+    if (!slips || !slipsCollectionRef) return; // (★修正★)
     const slipData = slips.find(s => s.slipId === currentSlipId); 
-    if (!slipData) return;
+    if (!slipData || !slipData.items) return; // (★修正★)
 
     const item = slipData.items.find(item => item.id === id);
     if (item) {
@@ -958,8 +996,8 @@ const updateOrderItemQty = async (id, qty) => {
     }
     
     try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { items: slipData.items }, { merge: true });
+        const slipRef = fbDoc(slipsCollectionRef, currentSlipId); // (★エラー修正★)
+        await fbSetDoc(slipRef, { items: slipData.items }, { merge: true }); // (★エラー修正★)
         
         // (★コール管理 追加★) オーダー変更後にコールをチェック
         await checkAndTriggerChampagneCall(slipData);
@@ -967,7 +1005,8 @@ const updateOrderItemQty = async (id, qty) => {
     } catch (e) {
         console.error("Error updating order item qty: ", e);
     }
-    renderOrderModal();
+    // (★修正★) onSnapshot で自動描画
+    // renderOrderModal();
 };
 
 
@@ -978,8 +1017,8 @@ const updateOrderItemQty = async (id, qty) => {
 const updateModalCommonInfo = () => {
     if (!settings) return; 
 
-    const store = settings.storeInfo; 
-    const rates = settings.rates; 
+    const store = settings.storeInfo || {}; // (★修正★)
+    const rates = settings.rates || { tax: 0.1, service: 0.2 }; // (★修正★)
     
     const receiptSettings = settings.receiptSettings || {
         storeName: store.name,
@@ -990,13 +1029,13 @@ const updateModalCommonInfo = () => {
 
     if (slipStoreName) slipStoreName.textContent = store.name;
     if (slipStoreTel) slipStoreTel.textContent = `TEL: ${store.tel}`;
-    if (slipServiceRate) slipServiceRate.textContent = `サービス料 (${rates.service * 100}%)`;
-    if (slipTaxRate) slipTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
+    if (slipServiceRate) slipServiceRate.textContent = `サービス料 (${(rates.service || 0) * 100}%)`; // (★修正★)
+    if (slipTaxRate) slipTaxRate.textContent = `消費税 (${(rates.tax || 0) * 100}%)`; // (★修正★)
 
     if (checkoutStoreName) checkoutStoreName.textContent = store.name;
     if (checkoutStoreTel) checkoutStoreTel.textContent = `TEL: ${store.tel}`;
-    if (checkoutServiceRate) checkoutServiceRate.textContent = `サービス料 (${rates.service * 100}%)`;
-    if (checkoutTaxRate) checkoutTaxRate.textContent = `消費税 (${rates.tax * 100}%)`;
+    if (checkoutServiceRate) checkoutServiceRate.textContent = `サービス料 (${(rates.service || 0) * 100}%)`; // (★修正★)
+    if (checkoutTaxRate) checkoutTaxRate.textContent = `消費税 (${(rates.tax || 0) * 100}%)`; // (★修正★)
 
     if (receiptStoreName) receiptStoreName.textContent = receiptSettings.storeName || store.name;
     if (receiptAddress) receiptAddress.innerHTML = receiptSettings.address || `〒${store.zip || ''}<br>${store.address || ''}`;
@@ -1017,17 +1056,18 @@ const updateModalCommonInfo = () => {
  * (変更) 伝票プレビューモーダルを描画する
  */
 const renderSlipPreviewModal = async () => {
-    if (!settings) return; 
+    if (!settings || !slips || !slipsCollectionRef) return; // (★修正★)
     const slipData = slips.find(s => s.slipId === currentSlipId); 
     if (!slipData) return;
     
     try {
-        const slipRef = doc(slipsCollectionRef, currentSlipId);
-        await setDoc(slipRef, { status: 'checkout' }, { merge: true });
+        const slipRef = fbDoc(slipsCollectionRef, currentSlipId); // (★エラー修正★)
+        await fbSetDoc(slipRef, { status: 'checkout' }, { merge: true }); // (★エラー修正★)
     } catch (e) {
         console.error("Error updating slip status: ", e);
     }
-    slipData.status = 'checkout';
+    // (★修正★) onSnapshot でローカルの slipData.status が 'checkout' に更新されるのを待つ
+    // slipData.status = 'checkout';
 
 
     document.getElementById('slip-preview-title').textContent = `伝票プレビュー (No.${slipData.slipNumber})`;
@@ -1043,12 +1083,13 @@ const renderSlipPreviewModal = async () => {
     const slipItemsList = document.getElementById('slip-items-list');
     slipItemsList.innerHTML = '';
     let subtotal = 0;
-    slipData.items.forEach(item => {
-        subtotal += item.price * item.qty;
+    (slipData.items || []).forEach(item => { // (★修正★)
+        const itemTotal = (item.price || 0) * (item.qty || 0); // (★修正★)
+        subtotal += itemTotal;
         slipItemsList.innerHTML += `
             <div class="flex justify-between">
                 <span>${item.name} x ${item.qty}</span>
-                <span class="font-medium">${formatCurrency(item.price * item.qty)}</span>
+                <span class="font-medium">${formatCurrency(itemTotal)}</span>
             </div>
         `;
     });
@@ -1057,10 +1098,10 @@ const renderSlipPreviewModal = async () => {
     const paidAmount = slipData.paidAmount || 0;
     const billingAmount = total - paidAmount;
     
-    const simpleSubtotal = slipData.items.reduce((acc, item) => acc + (item.price * item.qty), 0);
-    const serviceCharge = simpleSubtotal * settings.rates.service;
+    const simpleSubtotal = (slipData.items || []).reduce((acc, item) => acc + ((item.price || 0) * (item.qty || 0)), 0); // (★修正★)
+    const serviceCharge = simpleSubtotal * (settings.rates.service || 0); // (★修正★)
     const subtotalWithService = simpleSubtotal + serviceCharge;
-    const tax = subtotalWithService * settings.rates.tax;
+    const tax = subtotalWithService * (settings.rates.tax || 0); // (★修正★)
 
     slipSubtotalEl.textContent = formatCurrency(simpleSubtotal);
     slipServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
@@ -1075,7 +1116,7 @@ const renderSlipPreviewModal = async () => {
  * (★修正★) 会計モーダルを描画する (割引計算ロジック追加 + 端数処理)
  */
 const renderCheckoutModal = () => {
-    if (!settings) return; 
+    if (!settings || !slips) return; // (★変更★) (★修正★)
     const slipData = slips.find(s => s.slipId === currentSlipId); 
     if (!slipData) return;
 
@@ -1083,12 +1124,13 @@ const renderCheckoutModal = () => {
     
     let subtotal = 0;
     checkoutItemsList.innerHTML = '';
-    slipData.items.forEach(item => {
-        subtotal += item.price * item.qty;
+    (slipData.items || []).forEach(item => { // (★修正★)
+        const itemTotal = (item.price || 0) * (item.qty || 0); // (★修正★)
+        subtotal += itemTotal;
         checkoutItemsList.innerHTML += `
             <div class="flex justify-between">
                 <span>${item.name} x ${item.qty}</span>
-                <span class="font-medium">${formatCurrency(item.price * item.qty)}</span>
+                <span class="font-medium">${formatCurrency(itemTotal)}</span>
             </div>
         `;
     });
@@ -1122,8 +1164,8 @@ const renderCheckoutModal = () => {
 
     currentBillingAmount = finalBillingAmount; 
     
-    const serviceCharge = subtotal * settings.rates.service;
-    const tax = (subtotal + serviceCharge) * settings.rates.tax;
+    const serviceCharge = subtotal * (settings.rates.service || 0); // (★修正★)
+    const tax = (subtotal + serviceCharge) * (settings.rates.tax || 0); // (★修正★)
 
     checkoutSubtotalEl.textContent = formatCurrency(subtotal);
     checkoutServiceChargeEl.textContent = formatCurrency(Math.round(serviceCharge));
@@ -1225,7 +1267,7 @@ const updatePaymentStatus = () => {
  * (★要望5★) 領収書モーダルを描画・更新する
  */
 const renderReceiptModal = () => {
-    if (!settings) return;
+    if (!settings || !slips) return; // (★修正★)
     
     const slipData = slips.find(s => s.slipId === currentSlipId);
     if (!slipData) return;
@@ -1240,6 +1282,17 @@ const renderReceiptModal = () => {
     if (receiptOptionAmount) receiptOptionAmount.checked = true;
     
     updateReceiptPreview();
+
+    // (★要望5★ 変更) 担当キャスト名を「指名キャスト」または「ログインキャスト」にする
+    const receiptStaff = document.getElementById('receipt-staff');
+    if (receiptStaff) {
+        const nominatedCastName = getCastNameById(slipData.nominationCastId);
+        if (nominatedCastName !== 'フリー' && nominatedCastName !== '不明') {
+            receiptStaff.textContent = `担当: ${nominatedCastName}`;
+        } else {
+            receiptStaff.textContent = `担当: ${currentCastName}`; // (フォールバック)
+        }
+    }
 };
 
 /**
@@ -1271,8 +1324,8 @@ const updateReceiptPreview = () => {
  * (新規) ボツ伝理由入力モーダルを描画する
  */
 const renderCancelSlipModal = () => {
-    if (!slips) return; 
-    const slip = slips.find(s => s.slipId === currentSlipId); 
+    if (!slips) return; // (★変更★)
+    const slip = slips.find(s => s.slipId === currentSlipId); // (★変更★)
     if (!slip) return;
 
     cancelSlipNumber.textContent = slip.slipNumber;
@@ -1293,12 +1346,15 @@ const openModal = (modalElement) => {
 };
 
 /**
- * モーダルを閉じる
- * @param {HTMLElement} modalElement 
+ * (★AI対応★) モーダルを閉じる
  */
 const closeModal = (modalElement) => {
     if (modalElement) {
         modalElement.classList.remove('active');
+    }
+    // (★AI対応★) オーダーモーダルが閉じる場合、AIサジェストも隠す
+    if (modalElement && modalElement.id === 'order-modal' && aiSuggestionBox) {
+        aiSuggestionBox.classList.add('hidden');
     }
 };
 
@@ -1308,20 +1364,25 @@ const closeModal = (modalElement) => {
  * @param {string} startTimeISO (★変更★) 開始時刻のISO文字列
  */
 const createNewSlip = async (tableId, startTimeISO) => {
-    if (!settings) return; 
-    const table = settings.tables.find(t => t.id === tableId); 
+    if (!settings || !slipCounterRef || !slipsCollectionRef) return; // (★変更★)
+    const table = (settings.tables || []).find(t => t.id === tableId); // (★変更★) (★修正★)
     if (!table) return;
 
+    // (★変更★) slipCounter を settings から取得してインクリメント
     const newSlipCounter = (slipCounter || 0) + 1;
     const newSlipNumber = newSlipCounter;
+    
+    // (★変更★) キャストアプリの場合、自動でログインキャストを指名に入れる
+    const nominationCastId = currentCastId;
 
     const newSlip = {
+        // slipId は addDoc で自動生成
         slipNumber: newSlipNumber,
         tableId: tableId,
         status: 'active',
         name: "新規のお客様",
         startTime: startTimeISO,
-        nominationCastId: null, 
+        nominationCastId: nominationCastId, 
         items: [],
         tags: [],
         paidAmount: 0,
@@ -1332,15 +1393,23 @@ const createNewSlip = async (tableId, startTimeISO) => {
     };
     
     try {
-        const docRef = await addDoc(slipsCollectionRef, newSlip);
-        await setDoc(slipCounterRef, { count: newSlipNumber });
+        // (★変更★) slipsCollectionRef に新しい伝票を追加
+        const docRef = await fbAddDoc(slipsCollectionRef, newSlip); // (★エラー修正★)
+        
+        // (★変更★) slipCounterRef を更新
+        await fbSetDoc(slipCounterRef, { count: newSlipNumber }); // (★エラー修正★)
+        
+        // (★変更★) ローカルの伝票IDを更新
         currentSlipId = docRef.id;
 
+        // (★追加★) 割引フォームをリセット
         if (discountAmountInput) discountAmountInput.value = '';
         if (discountTypeSelect) discountTypeSelect.value = 'yen';
-        
+
+        // (★新規★) オーダーモーダルのカテゴリをリセット
         currentOrderModalCategoryId = null;
-        renderOrderModal();
+        // (★修正★) onSnapshot が renderOrderModal を呼ぶのを待つ
+        // renderOrderModal();
         openModal(orderModal);
 
     } catch (e) {
@@ -1350,7 +1419,6 @@ const createNewSlip = async (tableId, startTimeISO) => {
 
 /**
  * (★一括会計 修正★) 在庫を減算する (エラーを throw するように変更)
- * (★エラー修正★) 2重定義されていたため、片方を削除
  */
 const reduceStock = async (slipData) => {
     if (!menu || !menu.items || !inventoryItems || !inventoryItemsCollectionRef) {
@@ -1360,7 +1428,7 @@ const reduceStock = async (slipData) => {
 
     const updates = new Map();
 
-    for (const slipItem of slipData.items) {
+    for (const slipItem of (slipData.items || [])) { // (★修正★)
         const menuItem = menu.items.find(m => m.id === slipItem.id);
         
         if (menuItem && menuItem.inventoryItemId && menuItem.inventoryConsumption > 0) {
@@ -1379,7 +1447,7 @@ const reduceStock = async (slipData) => {
     const updatePromises = [];
     for (const [inventoryId, totalConsumption] of updates.entries()) {
         
-        const itemDocRef = doc(inventoryItemsCollectionRef, inventoryId);
+        const itemDocRef = fbDoc(inventoryItemsCollectionRef, inventoryId); // (★エラー修正★)
         
         const localItem = inventoryItems.find(i => i.id === inventoryId);
         const currentStock = localItem ? (localItem.currentStock || 0) : 0;
@@ -1388,9 +1456,9 @@ const reduceStock = async (slipData) => {
         console.log(`Reducing stock for ${inventoryId} (Slip No.${slipData.slipNumber}): ${currentStock} -> ${newStock}`);
 
         updatePromises.push(
-            setDoc(itemDocRef, {
+            fbSetDoc(itemDocRef, { // (★エラー修正★)
                 currentStock: newStock,
-                updatedAt: serverTimestamp()
+                updatedAt: fbServerTimestamp() // (★エラー修正★)
             }, { merge: true })
         );
     }
@@ -1411,15 +1479,15 @@ const reduceStock = async (slipData) => {
  * @param {string} tableId 
  */
 const renderSlipSelectionModal = (tableId) => {
-    if (!slips) return; 
+    if (!slips) return; // (★変更★)
     slipSelectionModalTitle.textContent = `テーブル ${tableId} の伝票一覧`;
     slipSelectionList.innerHTML = '';
 
-    const activeSlips = slips.filter( 
+    const activeSlips = slips.filter( // (★変更★)
         slip => slip.tableId === tableId && (slip.status === 'active' || slip.status === 'checkout')
     );
     
-    activeSlips.sort((a, b) => b.slipNumber - a.slipNumber);
+    activeSlips.sort((a, b) => (b.slipNumber || 0) - (a.slipNumber || 0)); // (★修正★)
 
     if (activeSlips.length === 0) {
         slipSelectionList.innerHTML = '<p class="text-slate-500 text-sm">現在アクティブな伝票はありません。</p>';
@@ -1435,19 +1503,29 @@ const renderSlipSelectionModal = (tableId) => {
                     statusColor = 'orange';
                     statusText = '会計待ち';
                     break;
+                default: // (★追加★)
+                    statusColor = 'gray';
+                    statusText = '不明';
+                    break;
             }
             const nominationText = getCastNameById(slip.nominationCastId);
-            
-            const now = new Date();
-            const startTime = new Date(slip.startTime);
-            const diffMs = now.getTime() - startTime.getTime();
-            const elapsedTimeStr = formatElapsedTime(diffMs);
-            const startTimeStr = isNaN(startTime.getTime()) ? '??:??' : startTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+            let elapsedTimeStr = '--:--';
+            let startTimeStr = '??:??';
+            try { // (★修正★)
+                const now = new Date();
+                const startTime = new Date(slip.startTime);
+                if (!isNaN(startTime.getTime())) {
+                    const diffMs = now.getTime() - startTime.getTime();
+                    elapsedTimeStr = formatElapsedTime(diffMs);
+                    startTimeStr = startTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+                }
+            } catch(e) {}
 
             slipSelectionList.innerHTML += `
                 <button class="w-full text-left p-4 bg-slate-50 rounded-lg hover:bg-slate-100 border" data-slip-id="${slip.slipId}">
                     <div class="flex justify-between items-center">
-                        <span class="font-semibold text-lg truncate">(No.${slip.slipNumber}) ${slip.name} (${nominationText})</span>
+                        <span class="font-semibold text-lg truncate">(No.${slip.slipNumber || '?'}) ${slip.name} (${nominationText})</span>
                         <span class="text-sm font-medium text-${statusColor}-600 bg-${statusColor}-100 px-2 py-1 rounded-full">${statusText}</span>
                     </div>
                     <p class="text-sm text-slate-500 mt-1">
@@ -1470,7 +1548,7 @@ const renderSlipSelectionModal = (tableId) => {
 const renderNewSlipConfirmModal = (tableId) => {
     const modalStartTimeInput = document.getElementById('new-slip-start-time-input');
     const modalTimeError = document.getElementById('new-slip-time-error');
-    
+
     newSlipConfirmTitle.textContent = `伝票の新規作成 (${tableId})`;
     newSlipConfirmMessage.textContent = `テーブル ${tableId} で新しい伝票を作成しますか？`;
 
@@ -1488,23 +1566,53 @@ const renderNewSlipConfirmModal = (tableId) => {
 
 
 /**
+ * (★勤怠機能修正★) テーブルカードクリック時の処理
+ * @param {string} tableId 
+ */
+const handleTableClick = (tableId) => {
+    // (★勤怠機能追加★) 出勤チェック
+    if (!isClockedIn) {
+        alert("出勤打刻がされていません。\n操作を行うには「出勤」ページで出勤打刻をしてください。");
+        return;
+    }
+
+    if (!settings || !settings.tables) return; // (★変更★) (★修正★)
+    const tableData = settings.tables.find(t => t.id === tableId); // (★変更★)
+    if (!tableData) return;
+    
+    const activeSlips = getActiveSlipCount(tableId);
+    const tableStatus = activeSlips > 0 ? 'occupied' : 'available';
+
+    if (tableStatus === 'available') {
+        renderNewSlipConfirmModal(tableId);
+    } else {
+        renderSlipSelectionModal(tableId);
+    }
+};
+
+/**
  * (新規) 未会計伝票カードクリック時の処理 (ダッシュボード、伝票一覧ページなど)
  * @param {string} slipId 
  */
 const handleSlipClick = (slipId) => {
-    if (!slips) return; 
-    const slipData = slips.find(s => s.slipId === slipId); 
+    if (!slips) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === slipId); // (★変更★)
     if (!slipData) return;
 
-    currentSlipId = slipId; 
+    currentSlipId = slipId; // (★変更★)
 
+    // (★追加★) 割引情報をフォームに読み込む
     const discount = slipData.discount || { type: 'yen', value: 0 };
     discountAmountInput.value = discount.value;
     discountTypeSelect.value = discount.type;
     
+    // (★新規★) オーダーモーダルのカテゴリをリセット
     currentOrderModalCategoryId = null;
     renderOrderModal();
     openModal(orderModal);
+
+    // (★AI対応★) 伝票を開いたときにもAIサジェストを実行
+    runUpsellSuggestion(slipData);
 };
 
 /**
@@ -1512,12 +1620,13 @@ const handleSlipClick = (slipId) => {
  * @param {string} slipId 
  */
 const handlePaidSlipClick = (slipId) => {
-    if (!slips) return; 
-    const slipData = slips.find(s => s.slipId === slipId); 
+    if (!slips) return; // (★変更★)
+    const slipData = slips.find(s => s.slipId === slipId); // (★変更★)
     if (!slipData) return;
 
-    currentSlipId = slipId; 
+    currentSlipId = slipId; // (★変更★)
     
+    // (★追加★) 割引情報をフォームに読み込む
     const discount = slipData.discount || { type: 'yen', value: 0 };
     discountAmountInput.value = discount.value;
     discountTypeSelect.value = discount.type;
@@ -1529,254 +1638,33 @@ const handlePaidSlipClick = (slipId) => {
 
 
 /**
- * (★ランキングロジック変更★) キャストランキングを描画する (dashboard.jsでのみ使用)
- */
-const renderCastRanking = () => {
-    if (!settings || !settings.ranking) {
-        if (!settings) settings = {};
-        if (!settings.ranking) settings.ranking = { period: 'monthly', type: 'nominations' };
-    }
-    const { period, type } = settings.ranking;
-    
-    if (rankingPeriodSelect) {
-        rankingPeriodSelect.value = period;
-    }
-    if (rankingTypeBtns) {
-        rankingTypeBtns.forEach(btn => {
-            if (btn.dataset.type === type) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
-        });
-    }
-    
-    const baseDate = new Date();
-    
-    let slipsToAggregate = [];
-    const { paidSlips } = getSlipsForPeriod(period, baseDate);
-
-    if (period === 'daily') {
-        const todayBusinessStart = getBusinessDayStart(baseDate);
-        const todayBusinessEnd = getBusinessDayEnd(todayBusinessStart);
-        
-        const activeSlipsToday = (slips || []).filter(slip => {
-            if (slip.status !== 'active' && slip.status !== 'checkout') return false;
-            if (!slip.startTime) return false;
-            try {
-                const startTimeMs = new Date(slip.startTime).getTime();
-                return startTimeMs >= todayBusinessStart.getTime() && startTimeMs <= todayBusinessEnd.getTime();
-            } catch (e) {
-                return false;
-            }
-        });
-        
-        slipsToAggregate = [...paidSlips, ...activeSlipsToday];
-        
-    } else {
-        slipsToAggregate = paidSlips;
-    }
-
-
-    if (!castRankingList) return;
-    
-    const rankingMap = new Map();
-
-    slipsToAggregate.forEach(slip => {
-        const castId = slip.nominationCastId;
-        if (!castId) return; 
-
-        const current = rankingMap.get(castId) || { id: castId, name: getCastNameById(castId), sales: 0, nominations: 0 };
-        
-        let slipSales = 0;
-        if (slip.status === 'paid') {
-            slipSales = slip.paidAmount || 0;
-        } else {
-            slipSales = calculateSlipTotal(slip);
-        }
-        
-        current.sales += slipSales; 
-        current.nominations += 1;
-        
-        rankingMap.set(castId, current);
-    });
-
-    let sortedData = [];
-    if (type === 'sales') {
-        sortedData = [...rankingMap.values()].sort((a, b) => b.sales - a.sales);
-    } else { // nominations
-        sortedData = [...rankingMap.values()].sort((a, b) => b.nominations - a.nominations);
-    }
-
-    if (sortedData.length === 0) {
-        castRankingList.innerHTML = '<p class="text-slate-500 text-sm">データがありません。</p>';
-        return;
-    }
-
-    castRankingList.innerHTML = '';
-    sortedData.slice(0, 5).forEach((cast, index) => { 
-        const rank = index + 1;
-        let rankColor = 'text-slate-400';
-        if (rank === 1) rankColor = 'text-yellow-500';
-        if (rank === 2) rankColor = 'text-gray-400';
-        if (rank === 3) rankColor = 'text-amber-700';
-
-        const valueString = type === 'sales' ? formatCurrency(cast.sales) : `${cast.nominations} 組`;
-
-        castRankingList.innerHTML += `
-            <li class="flex items-center space-x-2">
-                <span class="font-bold text-lg w-6 text-center ${rankColor}">
-                    ${rank}
-                </span>
-                <div class="flex-1 ml-2">
-                    <p class="font-semibold">${cast.name}</p>
-                </div>
-                <div class="text-right">
-                    <p class="font-bold text-sm text-blue-600">${valueString}</p>
-                </div>
-            </li>
-        `;
-    });
-};
-
-/**
- * (★修正★) マイク担当回数ランキングを描画する (reports.js から移植)
- */
-const renderMicRanking = () => {
-    if (!micRankingList || !champagneCalls || !settings || !casts) {
-        if (micRankingList) micRankingList.innerHTML = '<li class="text-slate-500">...</li>';
-        if (micRankingLoading) micRankingLoading.style.display = 'none';
-        return;
-    }
-
-    // 1. 現在の期間（設定と連動）
-    const currentRankingPeriod = (settings && settings.ranking && settings.ranking.period) ? settings.ranking.period : 'monthly';
-    
-    const { range } = getSlipsForPeriod(currentRankingPeriod, new Date()); 
-    const startTimestamp = range.start.getTime();
-    const endTimestamp = range.end.getTime();
-
-    // 2. 期間内に「完了」したコールをフィルタリング
-    const completedCalls = champagneCalls.filter(call => {
-        if (call.status !== 'completed' || !call.completedAt) return false;
-        try {
-            // (★修正★) serverTimestamp は .toDate() で Date に変換
-            const completedTime = call.completedAt.toDate ? call.completedAt.toDate().getTime() : new Date(call.completedAt).getTime();
-            return completedTime >= startTimestamp && completedTime <= endTimestamp;
-        } catch (e) {
-            return false;
-        }
-    });
-
-    // 3. キャストごとにマイク回数を集計
-    const micStats = new Map();
-    
-    // 集計用のヘルパー関数
-    const getStats = (castId) => {
-        if (!castId || castId === 'none') return null;
-        let stats = micStats.get(castId);
-        if (!stats) {
-            stats = {
-                id: castId,
-                name: getCastNameById(castId), 
-                mainCount: 0,
-                subCount: 0,
-                totalCount: 0
-            };
-            micStats.set(castId, stats);
-        }
-        return stats;
-    };
-
-    completedCalls.forEach(call => {
-        const mainStats = getStats(call.mainMicCastId);
-        if (mainStats) {
-            mainStats.mainCount++;
-            mainStats.totalCount++;
-        }
-        
-        const subStats = getStats(call.subMicCastId);
-        if (subStats) {
-            subStats.subCount++;
-            subStats.totalCount++;
-        }
-    });
-
-    // 4. メインマイクの回数順にソート
-    const sortedStats = [...micStats.values()].sort((a, b) => b.mainCount - a.mainCount);
-
-    // 5. HTMLを描画
-    micRankingList.innerHTML = '';
-    if (micRankingLoading) micRankingLoading.style.display = 'none';
-    
-    if (sortedStats.length === 0) {
-        micRankingList.innerHTML = '<li class="text-slate-500">データがありません</li>';
-        return;
-    }
-
-    sortedStats.forEach((cast, index) => {
-        micRankingList.innerHTML += `
-            <li class="flex justify-between items-center py-2 border-b">
-                <span class="font-medium">${index + 1}. ${cast.name}</span>
-                <span class="font-bold text-blue-600 text-xs text-right">
-                    メイン: ${cast.mainCount}回<br>
-                    サブ: ${cast.subCount}回
-                </span>
-            </li>
-        `;
-    });
-};
-
-
-/**
  * (★コール管理 変更★) デフォルトの state を定義する関数
  */
 const getDefaultSettings = () => {
-    // (★一括会計 修正★) firstVisitSettings を追加
+    // (★一括会計 修正★)
     return {
         slipTagsMaster: [
             { id: 'tag1', name: '指名' }, { id: 'tag2', name: '初指名' },
         ],
         tables: [
-            { id: 'V1', status: 'available' }, { id: 'T1', status: 'available' },
+            { id: 'V1', status: 'available' }, { id: 'V2', status: 'available' },
         ],
         storeInfo: {
-            name: "Night POS",
-            address: "東京都新宿区歌舞伎町1-1-1",
-            tel: "03-0000-0000",
-            zip: "160-0021" 
+            name: "Night POS", address: "東京都新宿区歌舞伎町1-1-1",
+            tel: "03-0000-0000", zip: "160-0021"
         },
         rates: { tax: 0.10, service: 0.20 },
         rounding: { type: 'none', unit: 1 }, 
-        receiptSettings: {
-            storeName: "Night POS",
-            address: "〒160-0021<br>東京都新宿区歌舞伎町1-1-1",
-            tel: "TEL: 03-0000-0000",
-            invoiceNumber: "T1234567890",
-            defaultDescription: "お飲食代として"
-        },
         dayChangeTime: "05:00",
         // (★一括会計 修正★) firstVisitSettings を追加
         firstVisitSettings: {
             maxPhoto: 1,
             maxSend: 1
         },
-        performanceSettings: {
-            menuItems: {
-                'm14_default': { salesType: 'percentage', salesValue: 100, countNomination: true }
-            },
-            serviceCharge: { salesType: 'percentage', salesValue: 0 },
-            tax: { salesType: 'percentage', salesValue: 0 },
-            sideCustomer: { salesValue: 100, countNomination: true }
-        },
         ranking: { period: 'monthly', type: 'nominations' },
-        // (★コール管理 追加★) デフォルトのシャンパンコール設定
+        // (★コール管理 追加★)
         champagneCallBorders: [
             { callName: "シャンパンコール", borderAmount: 50000 },
-            { callName: "ロングコール (曲A)", borderAmount: 150000 },
-            { callName: "ロングコール (曲B)", borderAmount: 250000 },
-            { callName: "オールコール", borderAmount: 750000 },
-            { callName: "ミリオンコール", borderAmount: 1000000 }
         ]
     };
 };
@@ -1784,39 +1672,74 @@ const getDefaultSettings = () => {
 const getDefaultMenu = () => {
     const catSetId = getUUID();
     const catDrinkId = getUUID();
-    const catBottleId = getUUID();
     const catCastId = getUUID(); 
     
     return {
         categories: [
-            { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false },
-            { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false },
-            { id: catBottleId, name: 'ボトル', isSetCategory: false, isCastCategory: false },
-            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true }, 
+            { id: catSetId, name: 'セット料金', isSetCategory: true, isCastCategory: false, order: 0 }, // (★修正★)
+            { id: catDrinkId, name: 'ドリンク', isSetCategory: false, isCastCategory: false, order: 1 }, // (★修正★)
+            { id: catCastId, name: 'キャスト料金', isSetCategory: false, isCastCategory: true, order: 2 }, // (★報酬削除★) (★修正★)
         ],
         items: [
-            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, inventoryItemId: null, inventoryConsumption: null, isCallTarget: false },
-            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, inventoryItemId: null, inventoryConsumption: null, isCallTarget: false },
-            { id: 'm11', categoryId: catBottleId, name: '鏡月 (ボトル)', price: 8000, duration: null, inventoryItemId: null, inventoryConsumption: null, isCallTarget: false },
-            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null, inventoryItemId: null, inventoryConsumption: null, isCallTarget: false },
-            // (★コール管理 追加★)
-            { id: getUUID(), categoryId: catBottleId, name: 'ドン・ペリニヨン', price: 80000, duration: null, inventoryItemId: null, inventoryConsumption: null, isCallTarget: true },
+            { id: 'm1', categoryId: catSetId, name: '基本セット (指名)', price: 10000, duration: 60, isCallTarget: false, order: 0 }, // (★修正★)
+            { id: 'm7', categoryId: catDrinkId, name: 'キャストドリンク', price: 1500, duration: null, isCallTarget: false, order: 0 }, // (★修正★)
+            { id: 'm14_default', categoryId: catCastId, name: '本指名料', price: 3000, duration: null, isCallTarget: false, order: 0 }, // (★修正★)
         ],
         currentActiveMenuCategoryId: catSetId,
     };
 };
 
+/**
+ * (★勤怠機能追加★) 現在の出勤ステータスを更新する
+ */
+const updateClockedInStatus = () => {
+    if (!settings || !currentCastId || !attendances) {
+        isClockedIn = false;
+        return;
+    }
+    
+    // 1. 今日の営業日を計算
+    const businessDayStart = getBusinessDayStart(new Date());
+    const businessDayStr = formatDateISO(businessDayStart);
+    
+    // 2. 今日の勤怠ドキュメントIDを特定
+    const attendanceId = `${businessDayStr}_${currentCastId}`;
+    
+    // 3. 勤怠データを検索
+    const todaysData = attendances.find(a => a.id === attendanceId);
+    
+    if (todaysData && (todaysData.status === 'clocked_in' || todaysData.status === 'late')) {
+        isClockedIn = true;
+    } else {
+        isClockedIn = false;
+    }
+    console.log(`Cast Clocked In Status (for cast-order.js): ${isClockedIn}`);
+};
 
 /**
- * (★要望4, 5★)
- * (★新規★) ヘッダーのストアセレクターを描画する
+ * (★新規★) ログインキャストの情報を取得してグローバル変数にセット
  */
-const renderHeaderStoreName = () => {
-    if (!headerStoreName || !settings || !currentStoreId) return;
-
-    const currentStoreName = (settings.storeInfo && settings.storeInfo.name) ? settings.storeInfo.name : "店舗";
+const loadCastInfo = async () => {
+    if (!currentCastId || !castsCollectionRef) {
+        console.warn("Cast ID or collection ref not ready.");
+        return;
+    }
     
-    headerStoreName.textContent = currentStoreName;
+    try {
+        const castRef = fbDoc(castsCollectionRef, currentCastId); // (★エラー修正★)
+        const castSnap = await fbGetDoc(castRef); // (★エラー修正★)
+
+        if (castSnap.exists()) {
+            currentCastName = castSnap.data().name || "キャスト";
+        } else {
+            console.warn("Cast document not found in Firestore.");
+        }
+    } catch (error) {
+        console.error("Error fetching cast data: ", error);
+    }
+    
+    // UI（ヘッダー名）に反映
+    if (castHeaderName) castHeaderName.textContent = currentCastName;
 };
 
 
@@ -1831,11 +1754,13 @@ const openTableTransferModal = () => {
     transferTableGrid.innerHTML = '';
     transferError.textContent = '';
     
+    // 現在アクティブな伝票があるテーブルIDのリスト
     const activeTableIds = slips
-        .filter(s => (s.status === 'active' || s.status === 'checkout') && s.slipId !== currentSlipId) 
+        .filter(s => (s.status === 'active' || s.status === 'checkout') && s.slipId !== currentSlipId) // (★修正★) 自分自身は除外
         .map(s => s.tableId);
         
-    const availableTables = settings.tables.filter(t => !activeTableIds.includes(t.id));
+    // 全テーブルからアクティブなテーブルを除外 (＝空席)
+    const availableTables = (settings.tables || []).filter(t => !activeTableIds.includes(t.id)); // (★修正★)
     
     if (availableTables.length === 0) {
         transferTableGrid.innerHTML = '<p class="text-slate-500 col-span-full">現在、移動可能な空席テーブルはありません。</p>';
@@ -1860,13 +1785,14 @@ const openTableTransferModal = () => {
 const handleTableTransfer = async (newTableId) => {
     if (!currentSlipId || !slipsCollectionRef) return;
     
-    const slipRef = doc(slipsCollectionRef, currentSlipId);
+    const slipRef = fbDoc(slipsCollectionRef, currentSlipId); // (★エラー修正★)
     
     try {
-        await setDoc(slipRef, { tableId: newTableId }, { merge: true });
+        await fbSetDoc(slipRef, { tableId: newTableId }, { merge: true }); // (★エラー修正★)
         
         closeModal(tableTransferModal);
         closeModal(orderModal);
+        // onSnapshot が自動でテーブル一覧を更新
         
     } catch (e) {
         console.error("Error transferring table: ", e);
@@ -1874,146 +1800,74 @@ const handleTableTransfer = async (newTableId) => {
     }
 };
 
-// (★一括会計 修正★) 一括会計モーダルを描画する
-const renderBulkCheckoutModal = () => {
-    if (!slips || !bulkCheckoutModal) return;
-    
-    const slipsToCheckout = slips.filter(s => s.status === 'checkout');
-    
-    if (bulkCheckoutCount) bulkCheckoutCount.textContent = slipsToCheckout.length;
-    if (bulkCheckoutList) bulkCheckoutList.innerHTML = '';
-    if (bulkCheckoutError) bulkCheckoutError.textContent = '';
-
-    if (slipsToCheckout.length === 0) {
-        bulkCheckoutList.innerHTML = '<p class="text-sm text-slate-500 text-center p-4">現在「会計待ち」の伝票はありません。</p>';
-        if (confirmBulkCheckoutBtn) confirmBulkCheckoutBtn.disabled = true;
-    } else {
-        slipsToCheckout.forEach(slip => {
-            const finalAmount = calculateFinalBillingAmount(slip);
-            bulkCheckoutList.innerHTML += `
-                <div class="flex justify-between items-center text-sm p-2 bg-white rounded border">
-                    <span class="font-medium">T${slip.tableId} (No.${slip.slipNumber}) - ${slip.name}</span>
-                    <span class="font-semibold">${formatCurrency(finalAmount)}</span>
-                </div>
-            `;
-        });
-        if (confirmBulkCheckoutBtn) confirmBulkCheckoutBtn.disabled = false;
-    }
-    
-    if (bulkCheckoutBtnText) bulkCheckoutBtnText.textContent = '一括会計を実行';
-    openModal(bulkCheckoutModal);
-};
-
-// (★一括会計 修正★) 一括会計処理 (Promise.all に reduceStock を含める)
-const handleBulkCheckout = async () => {
-    if (!slips || !slipsCollectionRef || !confirmBulkCheckoutBtn) return;
-    
-    const slipsToCheckout = slips.filter(s => s.status === 'checkout');
-    if (slipsToCheckout.length === 0) {
-        bulkCheckoutError.textContent = '対象の伝票がありません。';
-        return;
-    }
-    
-    confirmBulkCheckoutBtn.disabled = true;
-    if (bulkCheckoutBtnText) bulkCheckoutBtnText.textContent = '処理中...';
-    bulkCheckoutError.textContent = '';
-    
-    const nowISO = new Date().toISOString();
-    const allPromises = []; // (★変更★) 在庫減算と伝票更新の両方を入れる
-    
-    for (const slip of slipsToCheckout) {
-        // 1. 在庫減算のPromiseを作成
-        // (★変更★) reduceStock の呼び出し自体を allPromises に追加
-        allPromises.push(reduceStock(slip)); 
-        
-        // 2. 伝票データ更新のPromiseを作成
-        const finalAmount = calculateFinalBillingAmount(slip);
-        
-        const updatedSlipData = {
-            paidAmount: finalAmount, 
-            paymentDetails: {
-                cash: finalAmount, // (★仮★) 一括会計は「現金」として処理
-                card: 0,
-                credit: 0
-            },
-            // discount は既に slip.discount に保存されているものをそのまま使う
-            status: 'paid',
-            paidTimestamp: nowISO
-        };
-
-        const slipRef = doc(slipsCollectionRef, slip.slipId);
-        allPromises.push(setDoc(slipRef, updatedSlipData, { merge: true }));
-    }
-    
-    try {
-        // (★変更★) 在庫減算と伝票更新をすべて待つ
-        await Promise.all(allPromises); 
-        console.log(`Bulk checkout successful for ${slipsToCheckout.length} slips.`);
-        closeModal(bulkCheckoutModal);
-        
-    } catch (error) {
-        // (★変更★) reduceStock から throw されたエラーをここでキャッチ
-        console.error("Error during bulk checkout: ", error);
-        bulkCheckoutError.textContent = `一括会計処理中にエラーが発生しました: ${error.message}`;
-        confirmBulkCheckoutBtn.disabled = false;
-        if (bulkCheckoutBtnText) bulkCheckoutBtnText.textContent = '一括会計を実行';
-    }
-};
-
-
 
 /**
  * (★コール管理 変更★) --- Firestore リアルタイムリスナー ---
  */
-document.addEventListener('firebaseReady', (e) => {
+document.addEventListener('firebaseReady', async (e) => {
     
-    // (★変更★) 新しい参照を取得
+    // (★変更★) 認証情報と参照を取得
     const { 
+        currentCastId: cId,
         settingsRef: sRef, 
         menuRef: mRef, 
         slipCounterRef: scRef,
         castsCollectionRef: cRef, 
         customersCollectionRef: cuRef, 
         slipsCollectionRef: slRef,
-        attendancesCollectionRef: aRef, 
-        inventoryItemsCollectionRef: iRef, 
+        attendancesCollectionRef: aRef, // (★勤怠機能追加★)
+        inventoryItemsCollectionRef: iRef, // (★在庫管理 追加★)
         champagneCallsCollectionRef: ccRef, // (★コール管理 追加★)
-        currentStoreId: csId 
+        query, where, orderBy, collection, doc, // (★エラー修正★)
+        setDoc, addDoc, deleteDoc, getDoc, serverTimestamp // (★エラー修正★)
     } = e.detail;
 
-    // (★変更★) グローバル変数に参照をセット
+    // (★変更★) グローバル変数にセット
+    currentCastId = cId;
     settingsRef = sRef;
     menuRef = mRef;
     slipCounterRef = scRef;
     castsCollectionRef = cRef;
     customersCollectionRef = cuRef;
     slipsCollectionRef = slRef;
-    attendancesCollectionRef = aRef; 
-    inventoryItemsCollectionRef = iRef; 
+    attendancesCollectionRef = aRef; // (★勤怠機能追加★)
+    inventoryItemsCollectionRef = iRef; // (★在庫管理 追加★)
     champagneCallsCollectionRef = ccRef; // (★コール管理 追加★)
-    currentStoreId = csId; 
+    
+    // (★エラー修正★) 関数をグローバル変数に割り当て
+    fbQuery = query;
+    fbWhere = where;
+    fbOrderBy = orderBy;
+    fbCollection = collection;
+    fbDoc = doc;
+    fbSetDoc = setDoc;
+    fbAddDoc = addDoc;
+    fbDeleteDoc = deleteDoc;
+    fbGetDoc = getDoc;
+    fbServerTimestamp = serverTimestamp;
+    
+    // (★新規★) まずキャスト情報を読み込む
+    await loadCastInfo();
 
-
+    // (★新規★) 全データをロードできたか確認するフラグ
     let settingsLoaded = false;
     let menuLoaded = false;
     let castsLoaded = false;
     let customersLoaded = false;
     let slipsLoaded = false;
     let counterLoaded = false;
-    let attendancesLoaded = false; 
-    let inventoryLoaded = false; 
+    let attendancesLoaded = false; // (★勤怠機能追加★)
+    let inventoryLoaded = false; // (★在庫管理 追加★)
     let callsLoaded = false; // (★コール管理 追加★)
 
     // (★コール管理 変更★) 全データロード後にUIを初回描画する関数
     const checkAndRenderAll = () => {
+        // (★変更★) cast-order.js は renderTableGrid を呼ぶ
         if (settingsLoaded && menuLoaded && castsLoaded && customersLoaded && slipsLoaded && counterLoaded && attendancesLoaded && inventoryLoaded && callsLoaded) { // (★コール管理 変更★)
-            console.log("All data loaded. Rendering UI.");
-            renderDashboardSummary();
-            renderCastRanking();
-            renderDashboardSlips(); // (★エラー修正★) renderAllSlipsPage() -> renderDashboardSlips()
-            renderMicRanking(); // (★修正★) マイクランキングを呼び出し
+            console.log("All data loaded. Rendering UI for cast-order.js");
+            renderTableGrid();
             updateModalCommonInfo(); 
-            renderHeaderStoreName(); 
+            updateClockedInStatus(); // (★勤怠機能追加★)
         }
     };
 
@@ -2024,12 +1878,16 @@ document.addEventListener('firebaseReady', (e) => {
         } else {
             console.log("No settings document found. Creating default settings...");
             const defaultSettings = getDefaultSettings();
-            await setDoc(settingsRef, defaultSettings);
+            await fbSetDoc(settingsRef, defaultSettings); // (★エラー修正★)
             settings = defaultSettings;
         }
         settingsLoaded = true;
-        checkAndRenderAll(); 
-    }, (error) => console.error("Error listening to settings: ", error));
+        checkAndRenderAll();
+    }, (error) => { // (★修正★)
+        console.error("Error listening to settings: ", error);
+        settingsLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 2. Menu
     onSnapshot(menuRef, async (docSnap) => {
@@ -2038,12 +1896,16 @@ document.addEventListener('firebaseReady', (e) => {
         } else {
             console.log("No menu document found. Creating default menu...");
             const defaultMenu = getDefaultMenu();
-            await setDoc(menuRef, defaultMenu);
+            await fbSetDoc(menuRef, defaultMenu); // (★エラー修正★)
             menu = defaultMenu;
         }
         menuLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to menu: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to menu: ", error);
+        menuLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 3. Slip Counter
     onSnapshot(slipCounterRef, async (docSnap) => {
@@ -2051,12 +1913,16 @@ document.addEventListener('firebaseReady', (e) => {
             slipCounter = docSnap.data().count;
         } else {
             console.log("No slip counter document found. Creating default counter...");
-            await setDoc(slipCounterRef, { count: 0 });
+            await fbSetDoc(slipCounterRef, { count: 0 }); // (★エラー修正★)
             slipCounter = 0;
         }
         counterLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to slip counter: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to slip counter: ", error);
+        counterLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 4. Casts
     onSnapshot(castsCollectionRef, (querySnapshot) => {
@@ -2067,7 +1933,11 @@ document.addEventListener('firebaseReady', (e) => {
         console.log("Casts loaded: ", casts.length);
         castsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to casts: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to casts: ", error);
+        castsLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 5. Customers
     onSnapshot(customersCollectionRef, (querySnapshot) => {
@@ -2078,24 +1948,28 @@ document.addEventListener('firebaseReady', (e) => {
         console.log("Customers loaded: ", customers.length);
         customersLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to customers: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to customers: ", error);
+        customersLoaded = true;
+        checkAndRenderAll();
+    });
     
     // 6. Slips
     onSnapshot(slipsCollectionRef, (querySnapshot) => {
         slips = [];
         querySnapshot.forEach((doc) => {
-            slips.push({ ...doc.data(), slipId: doc.id }); 
+            slips.push({ ...doc.data(), slipId: doc.id }); // (★注意★) slipId フィールド
         });
         console.log("Slips loaded: ", slips.length);
         slipsLoaded = true;
-        checkAndRenderAll(); 
+        checkAndRenderAll();
     }, (error) => {
         console.error("Error listening to slips: ", error);
-        slipsLoaded = true; // (★修正★) エラーでも続行
-        checkAndRenderAll();
+        slipsLoaded = true; // (★修正★)
+        checkAndRenderAll(); // (★修正★)
     });
 
-    // 7. Attendances 
+    // 7. Attendances (★勤怠機能追加★)
     onSnapshot(attendancesCollectionRef, (querySnapshot) => {
         attendances = [];
         querySnapshot.forEach((doc) => {
@@ -2104,13 +1978,14 @@ document.addEventListener('firebaseReady', (e) => {
         console.log("Attendances loaded: ", attendances.length);
         attendancesLoaded = true;
         checkAndRenderAll();
+        updateClockedInStatus(); // (★勤怠機能追加★) 勤怠データ更新時にもステータスを再チェック
     }, (error) => {
         console.error("Error listening to attendances: ", error);
-        attendancesLoaded = true; 
+        attendancesLoaded = true; // エラーでも続行
         checkAndRenderAll();
     });
     
-    // 8. Inventory Items
+    // 8. (★在庫管理 追加★) Inventory Items
     onSnapshot(inventoryItemsCollectionRef, (querySnapshot) => {
         inventoryItems = [];
         querySnapshot.forEach((doc) => {
@@ -2121,11 +1996,11 @@ document.addEventListener('firebaseReady', (e) => {
         checkAndRenderAll();
     }, (error) => {
         console.error("Error listening to inventory items: ", error);
-        inventoryLoaded = true; 
+        inventoryLoaded = true; // エラーでも続行
         checkAndRenderAll();
     });
     
-    // 9. (★コール管理 追加★) Champagne Calls
+    // 9. (★コール管理 追加★) Champagne Calls (Full list)
     onSnapshot(champagneCallsCollectionRef, (querySnapshot) => {
         champagneCalls = [];
         querySnapshot.forEach((doc) => {
@@ -2139,18 +2014,38 @@ document.addEventListener('firebaseReady', (e) => {
         callsLoaded = true; // エラーでも続行
         checkAndRenderAll();
     });
+    
+    // 10. (★コール管理 追加★) Cast Notification Badge Listener
+    // (★重要★) 認証が完了し、`champagneCallsCollectionRef`が定義された後に設定
+    const badgeEl = document.getElementById('nav-call-management-cast-badge');
+    if (badgeEl && champagneCallsCollectionRef && fbQuery && fbWhere) { // (★修正★)
+        // (★新規★) 'pending' (未対応) ステータスのコールのみをクエリ
+        const q = fbQuery(champagneCallsCollectionRef, fbWhere("status", "==", "pending")); // (★修正★)
+        
+        onSnapshot(q, (snapshot) => {
+            const pendingCount = snapshot.size;
+            if (pendingCount > 0) {
+                badgeEl.textContent = pendingCount > 9 ? '9+' : pendingCount;
+                badgeEl.style.display = 'inline-flex';
+            } else {
+                badgeEl.style.display = 'none';
+            }
+        }, (error) => {
+            console.error("Error listening to champagne call notifications: ", error);
+            badgeEl.style.display = 'none';
+        });
+    }
 });
 
 
 // --- イベントリスナー ---
 document.addEventListener('DOMContentLoaded', () => {
     
-    // (★新規★) サイドバーを描画
-    renderSidebar('sidebar-container', 'index.html');
-
     // ===== DOM要素の取得 =====
+    // (★修正★) cast-order.html に存在するDOMのみ取得
+    castHeaderName = document.getElementById('cast-header-name');
     pageTitle = document.getElementById('page-title');
-    dashboardSlips = document.getElementById('dashboard-slips');
+    tableGrid = document.getElementById('table-grid'); 
     orderModal = document.getElementById('order-modal');
     checkoutModal = document.getElementById('checkout-modal');
     receiptModal = document.getElementById('receipt-modal');
@@ -2158,22 +2053,14 @@ document.addEventListener('DOMContentLoaded', () => {
     modalCloseBtns = document.querySelectorAll('.modal-close-btn');
     openSlipPreviewBtn = document.getElementById('open-slip-preview-btn');
     processPaymentBtn = document.getElementById('process-payment-btn');
-    
-    // (★要望5★) 領収書印刷ボタンのIDを変更
-    printReceiptBtn = document.getElementById('print-receipt-btn'); 
-    
+    printSlipBtn = document.getElementById('print-slip-btn');
     goToCheckoutBtn = document.getElementById('go-to-checkout-btn');
     reopenSlipBtn = document.getElementById('reopen-slip-btn');
-    menuEditorModal = document.getElementById('menu-editor-modal');
-    menuEditorModalTitle = document.getElementById('menu-editor-modal-title');
-    menuEditorForm = document.getElementById('menu-editor-form');
-    menuCategorySelect = document.getElementById('menu-category');
-    menuNameInput = document.getElementById('menu-name');
-    menuDurationGroup = document.getElementById('menu-duration-group');
-    menuDurationInput = document.getElementById('menu-duration');
-    menuPriceInput = document.getElementById('menu-price');
-    menuEditorError = document.getElementById('menu-editor-error');
-    saveMenuItemBtn = document.getElementById('save-menu-item-btn');
+    
+    // (★削除★) menu-editor-modal 関連は不要
+    // menuEditorModal = document.getElementById('menu-editor-modal');
+    // ...
+    
     cancelSlipModal = document.getElementById('cancel-slip-modal');
     openCancelSlipModalBtn = document.getElementById('open-cancel-slip-modal-btn');
     cancelSlipModalTitle = document.getElementById('cancel-slip-modal-title');
@@ -2190,12 +2077,13 @@ document.addEventListener('DOMContentLoaded', () => {
     newSlipConfirmMessage = document.getElementById('new-slip-confirm-message');
     confirmCreateSlipBtn = document.getElementById('confirm-create-slip-btn');
     
+    // (★新規★) 伝票作成時間
     newSlipStartTimeInput = document.getElementById('new-slip-start-time-input');
     newSlipTimeError = document.getElementById('new-slip-time-error');
     
     orderModalTitle = document.getElementById('order-modal-title');
     orderItemsList = document.getElementById('order-items-list');
-    orderCategoryTabsContainer = document.getElementById('order-category-tabs-container'); 
+    orderCategoryTabsContainer = document.getElementById('order-category-tabs-container'); // (★新規★)
     menuOrderGrid = document.getElementById('menu-order-grid');
     orderSubtotalEl = document.getElementById('order-subtotal');
     orderCustomerNameSelect = document.getElementById('order-customer-name-select');
@@ -2222,24 +2110,8 @@ document.addEventListener('DOMContentLoaded', () => {
     slipTaxEl = document.getElementById('slip-tax');
     slipPaidAmountEl = document.getElementById('slip-paid-amount');
     slipTotalEl = document.getElementById('slip-total');
-    castRankingList = document.getElementById('cast-ranking-list');
-    
-    // (★修正★) マイクランキング用のDOMを取得
-    micRankingList = document.getElementById('mic-ranking-list');
-    micRankingLoading = document.getElementById('mic-ranking-loading');
 
-    rankingPeriodSelect = document.getElementById('ranking-period-select');
-    rankingTypeBtns = document.querySelectorAll('.ranking-type-btn');
-    
-    summaryTotalSales = document.getElementById('summary-total-sales');
-    summarySalesComparison = document.getElementById('summary-sales-comparison');
-    summaryTableRate = document.getElementById('summary-table-rate');
-    summaryTableDetail = document.getElementById('summary-table-detail');
-    summaryAvgSpend = document.getElementById('summary-avg-spend');
-    summaryAvgSpendComparison = document.getElementById('summary-avg-spend-comparison');
-    summaryCastNum = document.getElementById('summary-cast-num');
-    summaryCastTrial = document.getElementById('summary-cast-trial');
-    
+    // (新規) モーダル共通情報のDOM
     slipStoreName = document.getElementById('slip-store-name');
     slipStoreTel = document.getElementById('slip-store-tel');
     slipServiceRate = document.getElementById('slip-service-rate');
@@ -2249,6 +2121,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkoutServiceRate = document.getElementById('checkout-service-rate');
     checkoutTaxRate = document.getElementById('checkout-tax-rate');
     
+    // (★要望5★) 領収書モーダルのDOM
     receiptStoreName = document.getElementById('receipt-store-name');
     receiptAddress = document.getElementById('receipt-address');
     receiptTel = document.getElementById('receipt-tel');
@@ -2262,72 +2135,55 @@ document.addEventListener('DOMContentLoaded', () => {
     receiptCustomerNameDisplay = document.getElementById('receipt-customer-name-display');
     receiptTotalDisplay = document.getElementById('receipt-total-display');
     receiptDescriptionDisplay = document.getElementById('receipt-description-display');
+    printReceiptBtn = document.getElementById('print-receipt-btn'); // (★変更★)
 
+    // (★新規★) 割引
     discountAmountInput = document.getElementById('discount-amount');
     discountTypeSelect = document.getElementById('discount-type');
     
-    headerStoreName = document.getElementById('header-store-name');
+    logoutButtonHeader = document.getElementById('logout-button-header'); // (★新規★)
 
+    // (★新規★) 転卓モーダル
     tableTransferModal = document.getElementById('table-transfer-modal');
     openTransferModalBtn = document.getElementById('open-transfer-modal-btn');
     transferSlipNumber = document.getElementById('transfer-slip-number');
     transferTableGrid = document.getElementById('transfer-table-grid');
     transferError = document.getElementById('transfer-error');
 
-    // (★一括会計★) 一括会計モーダルのDOMを取得
-    bulkCheckoutBtn = document.getElementById('bulk-checkout-btn');
-    bulkCheckoutModal = document.getElementById('bulk-checkout-modal');
-    bulkCheckoutTitle = document.getElementById('bulk-checkout-title');
-    bulkCheckoutCount = document.getElementById('bulk-checkout-count');
-    bulkCheckoutList = document.getElementById('bulk-checkout-list');
-    bulkCheckoutError = document.getElementById('bulk-checkout-error');
-    confirmBulkCheckoutBtn = document.getElementById('confirm-bulk-checkout-btn');
-    bulkCheckoutBtnText = document.getElementById('bulk-checkout-btn-text');
+    // (★AI対応★) AIサジェスト
+    aiSuggestionBox = document.getElementById('ai-suggestion-box');
+    aiSuggestionText = document.getElementById('ai-suggestion-text');
 
+    // (削除) 初期化処理は 'firebaseReady' イベントリスナーに移動
     
     // ===== イベントリスナーの設定 =====
 
-    if (dashboardSlips) {
-        dashboardSlips.addEventListener('click', (e) => {
-            const card = e.target.closest('button[data-slip-id]');
+    // (新規) テーブルカードのイベント委任
+    if (tableGrid) {
+        tableGrid.addEventListener('click', (e) => {
+            const card = e.target.closest('.table-card');
             if (card) {
-                if (card.dataset.status !== 'paid') {
-                    handleSlipClick(card.dataset.slipId);
-                }
+                handleTableClick(card.dataset.tableId); // (★勤怠機能修正★) この関数内でチェック
             }
         });
     }
 
+    // モーダルを閉じるボタン
     modalCloseBtns.forEach(btn => {
         btn.addEventListener('click', (e) => {
-            // (★一括会計★) bulkCheckoutModal も閉じる
             const modal = e.target.closest('.modal-backdrop');
-            if(modal) {
+            if (modal) {
                 closeModal(modal);
             }
-            
+            // (★追加★) 割引をリセット
             if(discountAmountInput) discountAmountInput.value = '';
             if(discountTypeSelect) discountTypeSelect.value = 'yen';
         });
     });
     
-    // (★一括会計★) 一括会計ボタンのリスナー
-    if (bulkCheckoutBtn) {
-        bulkCheckoutBtn.addEventListener('click', () => {
-            renderBulkCheckoutModal();
-        });
-    }
-    
-    // (★一括会計★) 一括会計実行ボタンのリスナー
-    if (confirmBulkCheckoutBtn) {
-        confirmBulkCheckoutBtn.addEventListener('click', () => {
-            handleBulkCheckout();
-        });
-    }
-
     if (orderNominationSelect) {
         orderNominationSelect.addEventListener('change', (e) => {
-            updateSlipInfo(); 
+            updateSlipInfo(); // (★変更★)
             const selectedCastId = e.target.value;
             renderCustomerDropdown(selectedCastId);
         });
@@ -2341,32 +2197,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 newCustomerError.textContent = '';
                 newCustomerNameInput.focus();
                 
-                if (slips) {
+                if (slips) { // (★変更★)
                     const slipData = slips.find(s => s.slipId === currentSlipId);
                     if (slipData) {
-                        slipData.name = "新規のお客様"; 
-                        updateSlipInfo(); 
+                        // slipData.name = "新規のお客様"; // (★修正★) 不要
+                        updateSlipInfo();
                     }
                 }
 
             } else {
                 newCustomerInputGroup.classList.add('hidden');
                 newCustomerError.textContent = '';
-                updateSlipInfo(); 
+                updateSlipInfo();
             }
         });
     }
 
     if (saveNewCustomerBtn) {
-        saveNewCustomerBtn.addEventListener('click', async () => { 
-            if (!customers) return; 
+        saveNewCustomerBtn.addEventListener('click', async () => { // (★変更★)
+            if (!customers || !customersCollectionRef) return; // (★変更★) (★修正★)
             const newName = newCustomerNameInput.value.trim();
             if (newName === "") {
                 newCustomerError.textContent = "顧客名を入力してください。";
                 return;
             }
             
-            const existingCustomer = customers.find(c => c.name === newName); 
+            const existingCustomer = customers.find(c => c.name === newName); // (★変更★)
             if (existingCustomer) {
                 newCustomerError.textContent = "その顧客名は既に使用されています。";
                 return;
@@ -2374,23 +2230,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const currentCastId = orderNominationSelect.value === 'null' ? null : orderNominationSelect.value;
             const newCustomer = { 
+                // id: getUUID(), (★変更★) addDoc に任せる
                 name: newName, 
                 nominatedCastId: currentCastId,
-                memo: "" 
+                memo: "" // (★新規★) メモ欄を追加
             };
             
+            // (★変更★)
             try {
-                await addDoc(customersCollectionRef, newCustomer);
-
+                await fbAddDoc(customersCollectionRef, newCustomer); // (★エラー修正★)
+                
+                // (★修正★) 伝票の顧客名も更新
                 const slipData = slips.find(s => s.slipId === currentSlipId);
                 if (slipData) {
-                    slipData.name = newName; 
-                    updateSlipInfo(); 
+                    // (★修正★) select の値を新しい名前に設定してから updateSlipInfo を呼ぶ
+                    renderCustomerDropdown(currentCastId); // (★修正★) ドロップダウンを再描画
+                    orderCustomerNameSelect.value = newName; // (★修正★) 新しい名前を選択
+                    updateSlipInfo(); // (★修正★)
                 }
                 
                 newCustomerInputGroup.classList.add('hidden');
                 newCustomerError.textContent = '';
-
+                
             } catch (e) {
                  console.error("Error adding new customer: ", e);
                  newCustomerError.textContent = "顧客の保存に失敗しました。";
@@ -2399,20 +2260,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (openSlipPreviewBtn) {
-        openSlipPreviewBtn.addEventListener('click', async () => { 
-            await updateSlipInfo(); 
-            await renderSlipPreviewModal(); 
+        openSlipPreviewBtn.addEventListener('click', async () => { // (★変更★)
+            await updateSlipInfo(); // (★変更★)
+            await renderSlipPreviewModal(); // (★変更★)
             closeModal(orderModal);
             openModal(slipPreviewModal);
         });
     }
 
+    // (★新規★) 転卓モーダルを開く
     if (openTransferModalBtn) {
         openTransferModalBtn.addEventListener('click', () => {
             openTableTransferModal();
         });
     }
 
+    // (★新規★) 転卓モーダル内のテーブル選択
     if (transferTableGrid) {
         transferTableGrid.addEventListener('click', (e) => {
             const tableBtn = e.target.closest('.table-card-option');
@@ -2432,45 +2295,53 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (confirmCancelSlipBtn) {
-        confirmCancelSlipBtn.addEventListener('click', async () => { 
-            if (!slips) return; 
+        confirmCancelSlipBtn.addEventListener('click', async () => { // (★変更★)
+            if (!slips || !slipsCollectionRef) return; // (★変更★) (★修正★)
             const reason = cancelSlipReasonInput.value.trim();
             if (reason === "") {
                 cancelSlipError.textContent = "ボツ伝にする理由を必ず入力してください。";
                 return;
             }
 
-            const slip = slips.find(s => s.slipId === currentSlipId); 
+            const slip = slips.find(s => s.slipId === currentSlipId); // (★変更★)
             if (slip) {
+                // (★変更★)
                 try {
-                    const slipRef = doc(slipsCollectionRef, currentSlipId);
-                    await setDoc(slipRef, { 
+                    const slipRef = fbDoc(slipsCollectionRef, currentSlipId); // (★エラー修正★)
+                    await fbSetDoc(slipRef, { // (★エラー修正★)
                         status: 'cancelled',
                         cancelReason: reason,
+                        // (★勤怠機能修正★) ボツ伝にした日時を記録（reports.jsで利用）
                         paidTimestamp: new Date().toISOString() 
                     }, { merge: true });
-
+                    
                     closeModal(orderModal);
                     closeModal(cancelSlipModal);
-
                 } catch (e) {
-                    console.error("Error cancelling slip: ", e);
+                     console.error("Error cancelling slip: ", e);
                     cancelSlipError.textContent = "伝票のキャンセルに失敗しました。";
                 }
             }
         });
     }
 
-    // (★修正★) printSlipBtn は index.html に存在しない
-    // if (printSlipBtn) { ... }
+    if (printSlipBtn) {
+        printSlipBtn.addEventListener('click', () => {
+            window.print();
+        });
+    }
     
+    // (★要望5★) 領収書印刷ボタン
     if (printReceiptBtn) {
         printReceiptBtn.addEventListener('click', () => {
+            // (★要望5★) 印刷前にプレビューを最終更新
             updateReceiptPreview(); 
+            // 印刷実行
             window.print();
         });
     }
 
+    // (★要望5★) 領収書フォームの入力でプレビューを更新
     if (receiptForm) {
         receiptForm.addEventListener('input', updateReceiptPreview);
     }
@@ -2483,6 +2354,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // (★修正★) 割引入力にもリスナーを追加
     if (discountAmountInput) {
         discountAmountInput.addEventListener('input', updatePaymentStatus);
     }
@@ -2501,13 +2373,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (processPaymentBtn) {
-        processPaymentBtn.addEventListener('click', async () => { 
-            if (!slips) return; 
-            const slip = slips.find(s => s.slipId === currentSlipId); 
+        processPaymentBtn.addEventListener('click', async () => { // (★変更★)
+            if (!slips || !slipsCollectionRef) return; // (★変更★) (★修正★)
+            const slip = slips.find(s => s.slipId === currentSlipId); // (★変更★)
             if (!slip) return;
 
+            // (★変更★)
             const updatedSlipData = {
-                paidAmount: currentBillingAmount, 
+                paidAmount: currentBillingAmount,
                 paymentDetails: {
                     cash: parseInt(paymentCashInput.value) || 0,
                     card: parseInt(paymentCardInput.value) || 0,
@@ -2520,32 +2393,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 status: 'paid',
                 paidTimestamp: new Date().toISOString()
             };
-
+            
+            // (★変更★)
             try {
-                // (★一括会計 修正★) 個別会計でも在庫減算を await する
+                // (★在庫管理 追加★) 在庫減算処理を実行
                 await reduceStock(slip);
 
-                const slipRef = doc(slipsCollectionRef, currentSlipId);
-                await setDoc(slipRef, updatedSlipData, { merge: true });
+                const slipRef = fbDoc(slipsCollectionRef, currentSlipId); // (★エラー修正★)
+                await fbSetDoc(slipRef, updatedSlipData, { merge: true }); // (★エラー修正★)
 
                 renderReceiptModal();
                 closeModal(checkoutModal);
                 openModal(receiptModal);
-
             } catch (e) {
-                console.error("Error processing payment: ", e);
-                // (★一括会計 修正★) エラーメッセージをアラート
-                alert(`会計処理中にエラーが発生しました: ${e.message}`);
+                 console.error("Error processing payment: ", e);
+                 // (★在庫管理 追加★)
+                 alert(`会計処理中にエラーが発生しました: ${e.message}\n在庫が正しく減算されていない可能性があります。`);
             }
         });
     }
 
     if (reopenSlipBtn) {
-        reopenSlipBtn.addEventListener('click', async () => { 
-            if (!slips) return; 
-            const slip = slips.find(s => s.slipId === currentSlipId); 
+        reopenSlipBtn.addEventListener('click', async () => { // (★変更★)
+            if (!slips || !slipsCollectionRef) return; // (★変更★) (★修正★)
+            const slip = slips.find(s => s.slipId === currentSlipId); // (★変更★)
             if (slip) {
-                
+                // (★変更★)
                 const updatedSlipData = {
                     status: 'active',
                     paidAmount: 0,
@@ -2553,53 +2426,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     paidTimestamp: null,
                     discount: { type: 'yen', value: 0 }
                 };
-                
+
+                // (★在庫管理 追加★)
                 alert("伝票を復活させました。\n(注意: 消費した在庫は自動で戻りません。在庫管理ページから手動で調整してください。)");
 
+                // (★変更★)
                 try {
-                    const slipRef = doc(slipsCollectionRef, currentSlipId);
-                    await setDoc(slipRef, updatedSlipData, { merge: true });
+                    const slipRef = fbDoc(slipsCollectionRef, currentSlipId); // (★エラー修正★)
+                    await fbSetDoc(slipRef, updatedSlipData, { merge: true }); // (★エラー修正★)
                     
                     closeModal(receiptModal);
-                    handleSlipClick(currentSlipId); 
-
+                    handleSlipClick(currentSlipId);
                 } catch (e) {
                     console.error("Error reopening slip: ", e);
                 }
             }
-        });
-    }
-
-    if (rankingPeriodSelect) {
-        rankingPeriodSelect.addEventListener('change', async (e) => { 
-            if (!settings) return; 
-            
-            const newPeriod = e.target.value;
-            try {
-                await setDoc(settingsRef, { 
-                    ranking: { ...settings.ranking, period: newPeriod }
-                }, { merge: true });
-            } catch (e) {
-                console.error("Error updating ranking period: ", e);
-            }
-        });
-    }
-
-    if (rankingTypeBtns) {
-        rankingTypeBtns.forEach(btn => {
-            btn.addEventListener('click', async () => { 
-                if (!settings) return; 
-                
-                const newType = btn.dataset.type;
-                try {
-                    await setDoc(settingsRef, { 
-                        ranking: { ...settings.ranking, type: newType }
-                    }, { merge: true });
-                    
-                } catch (e) {
-                    console.error("Error updating ranking type: ", e);
-                }
-            });
         });
     }
 
@@ -2609,7 +2450,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (removeBtn) {
                 const itemId = removeBtn.dataset.itemId;
                 if (itemId) {
-                    removeOrderItem(itemId); 
+                    removeOrderItem(itemId); // (★変更★)
                 }
             }
         });
@@ -2620,24 +2461,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 const newQty = parseInt(e.target.value);
                 
                 if (itemId && !isNaN(newQty) && newQty > 0) {
-                    updateOrderItemQty(itemId, newQty); 
+                    updateOrderItemQty(itemId, newQty); // (★変更★)
                 } else if (itemId && (!isNaN(newQty) && newQty <= 0)) {
-                    removeOrderItem(itemId); 
+                    removeOrderItem(itemId); // (★変更★)
                 }
             }
         });
     }
     
+    // (新規) 伝票タグのイベント委任
     const tagsContainer = document.getElementById('order-tags-container');
     if (tagsContainer) {
         tagsContainer.addEventListener('click', (e) => {
             const tagBtn = e.target.closest('.slip-tag-btn');
             if (tagBtn) {
-                toggleSlipTag(tagBtn.dataset.tagName); 
+                toggleSlipTag(tagBtn.dataset.tagName); // (★変更★)
             }
         });
     }
     
+    // (★新規★) オーダーモーダルのカテゴリタブ イベント委任
     if (orderCategoryTabsContainer) {
         orderCategoryTabsContainer.addEventListener('click', (e) => {
             const tab = e.target.closest('.order-category-tab');
@@ -2647,11 +2490,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // (新規) 注文メニューのイベント委任
     if (menuOrderGrid) {
         menuOrderGrid.addEventListener('click', (e) => {
             const menuBtn = e.target.closest('.menu-order-btn');
             if (menuBtn) {
-                addOrderItem( 
+                addOrderItem( // (★変更★)
                     menuBtn.dataset.itemId,
                     menuBtn.dataset.itemName,
                     parseInt(menuBtn.dataset.itemPrice)
@@ -2660,6 +2504,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // (新規) 伝票選択モーダルのイベント委任
     if (slipSelectionList) {
         slipSelectionList.addEventListener('click', (e) => {
             const slipBtn = e.target.closest('button[data-slip-id]');
@@ -2670,6 +2515,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // (新規) 伝票選択モーダル -> 新規伝票作成
     if (createNewSlipBtn) {
         createNewSlipBtn.addEventListener('click', () => {
             const tableId = createNewSlipBtn.dataset.tableId;
@@ -2680,23 +2526,42 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // (★変更★) 新規伝票確認モーダル -> OK
     if (confirmCreateSlipBtn) {
         confirmCreateSlipBtn.addEventListener('click', () => {
             const tableId = confirmCreateSlipBtn.dataset.tableId;
+            
             const startTimeValue = newSlipStartTimeInput ? newSlipStartTimeInput.value : '';
             if (!startTimeValue) {
                 if (newSlipTimeError) newSlipTimeError.textContent = '開始時刻を入力してください。';
                 return;
             }
-            if (newSlipTimeError) newSlipTimeError.textContent = '';
-            
-            const startTimeISO = new Date(startTimeValue).toISOString();
-            
-            if (tableId) {
-                createNewSlip(tableId, startTimeISO); 
-                closeModal(newSlipConfirmModal);
+            try { // (★修正★)
+                const startTimeISO = new Date(startTimeValue).toISOString();
+                if (newSlipTimeError) newSlipTimeError.textContent = '';
+                
+                if (tableId) {
+                    createNewSlip(tableId, startTimeISO); // (★変更★)
+                    closeModal(newSlipConfirmModal);
+                }
+            } catch (e) {
+                if (newSlipTimeError) newSlipTimeError.textContent = '有効な日時を入力してください。';
             }
         });
     }
 
+    // (★新規★) ログアウトボタン
+    if (logoutButtonHeader) {
+        logoutButtonHeader.addEventListener('click', async () => {
+            if (confirm("ログアウトしますか？")) {
+                try {
+                    await signOut(auth);
+                    // ログアウト成功時、firebase-init.js が login.html へリダイレクト
+                } catch (error) {
+                    console.error("Sign out error: ", error);
+                }
+            }
+        });
+    }
+    
 });

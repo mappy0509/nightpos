@@ -10,7 +10,9 @@ import {
     addDoc, 
     deleteDoc, 
     doc,
-    collection 
+    collection,
+    orderBy, // (★修正★) firebaseReady から受け取る
+    query // (★修正★) firebaseReady から受け取る
 } from './firebase-init.js';
 
 // (★削除★) エラーの原因となった参照のインポートは不要
@@ -37,6 +39,9 @@ let currentEditingCustomerId = null;
 // (★新規★) 参照(Ref)はグローバル変数として保持 (firebaseReady で設定)
 let settingsRef, castsCollectionRef, customersCollectionRef, slipsCollectionRef,
     currentStoreId; // (★動的表示 追加★)
+
+// (★修正★) firebase-init.js から渡されるモジュールを保持
+let fbQuery, fbOrderBy;
 
 
 // ===== DOM要素 =====
@@ -70,6 +75,9 @@ let pageTitle,
  * @returns {string} フォーマットされた通貨文字列
  */
 const formatCurrency = (amount) => {
+    if (typeof amount !== 'number' || isNaN(amount)) {
+        amount = 0;
+    }
     return `¥${amount.toLocaleString()}`;
 };
 
@@ -80,7 +88,7 @@ const formatCurrency = (amount) => {
  */
 const getCastNameById = (castId) => {
     if (!casts) return '不明'; 
-    if (!castId || castId === 'null') return 'フリー';
+    if (!castId || castId === 'null' || castId === 'none') return 'フリー'; // (★修正★)
     const cast = casts.find(c => c.id === castId);
     return cast ? cast.name : '不明';
 };
@@ -149,13 +157,10 @@ const getCustomerStats = (customerId, customerName) => {
     const customerSlips = slips.filter(slip => {
         if (slip.status !== 'paid' || !slip.paidTimestamp) return false;
         
-        // (★変更★) IDと名前の両方で照合
-        // (IDは addDoc で自動生成されるため、古いデータには customerId がない想定)
-        // (★修正★) ID が 'id' ではなく 'customerId' として伝票に保存されているか確認
         // (★修正★) `saveCustomer` (L234) は `customerId` を伝票に保存していない。
         // (★修正★) よって `slip.name === customerName` のみで照合する
         
-        // if (slip.customerId === customerId) return true; 
+        // if (slip.customerId === customerId) return true; // (★コメントアウト★)
         if (slip.name === customerName) return true;
         
         return false;
@@ -166,9 +171,19 @@ const getCustomerStats = (customerId, customerName) => {
     }
 
     // (★変更★) タイムスタンプでソートして最新の日付を取得
-    customerSlips.sort((a, b) => new Date(b.paidTimestamp).getTime() - new Date(a.paidTimestamp).getTime());
+    customerSlips.sort((a, b) => {
+        try { // (★修正★)
+            return new Date(b.paidTimestamp).getTime() - new Date(a.paidTimestamp).getTime();
+        } catch(e) {
+            return 0;
+        }
+    });
     
-    const lastVisitDate = new Date(customerSlips[0].paidTimestamp);
+    let lastVisitDate = null; // (★修正★)
+    try {
+        lastVisitDate = new Date(customerSlips[0].paidTimestamp);
+        if (isNaN(lastVisitDate.getTime())) lastVisitDate = null; // (★修正★)
+    } catch(e) {}
     
     // (★新規★) 総利用額を計算
     const totalSpend = customerSlips.reduce((total, slip) => total + (slip.paidAmount || 0), 0);
@@ -198,6 +213,7 @@ const renderCustomerList = () => {
     
     // (★新規★) 検索キーワードでフィルタリング
     const filteredCustomers = customers.filter(cust => {
+        if (!cust.name) return false; // (★修正★)
         if (searchTerm === "") return true;
         const castName = getCastNameById(cust.nominatedCastId).toLowerCase();
         return cust.name.toLowerCase().includes(searchTerm) || castName.includes(searchTerm);
@@ -262,7 +278,8 @@ const openCustomerEditorModal = (customerId = null) => {
     
     // キャスト一覧をプルダウンに設定
     customerNominationSelect.innerHTML = '<option value="null">フリー (指名なし)</option>';
-    casts.sort((a,b) => a.name.localeCompare(b.name)).forEach(cast => {
+    // (★修正★)
+    [...casts].sort((a,b) => a.name.localeCompare(b.name)).forEach(cast => {
         customerNominationSelect.innerHTML += `<option value="${cast.id}">${cast.name}</option>`;
     });
 
@@ -294,6 +311,8 @@ const openCustomerEditorModal = (customerId = null) => {
  * (★新規★) 顧客情報を保存 (新規作成または更新)
  */
 const saveCustomer = async () => {
+    if (!customersCollectionRef) return; // (★修正★)
+    
     const name = customerNameInput.value.trim();
     const nominatedCastId = customerNominationSelect.value === 'null' ? null : customerNominationSelect.value;
     const memo = customerMemoInput.value.trim();
@@ -340,7 +359,7 @@ const saveCustomer = async () => {
  * (★新規★) 顧客情報を削除
  */
 const deleteCustomer = async () => {
-    if (!currentEditingCustomerId) return;
+    if (!currentEditingCustomerId || !customersCollectionRef) return; // (★修正★)
     
     // (★重要★) 伝票で使われているかチェック
     const customer = customers.find(c => c.id === currentEditingCustomerId);
@@ -402,17 +421,24 @@ const openCustomerDetailModal = (customerId) => {
     } else {
         // stats.slips は既に降順ソート済み
         stats.slips.forEach(slip => {
-            const slipDate = new Date(slip.paidTimestamp);
-            const dateStr = slipDate.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
+            let slipDate = null; // (★修正★)
+            try {
+                slipDate = new Date(slip.paidTimestamp);
+                if (isNaN(slipDate.getTime())) slipDate = null;
+            } catch(e) {}
+            
+            const dateStr = slipDate 
+                ? slipDate.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })
+                : '日付不明';
             
             const itemHTML = `
                 <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
                     <div class="flex justify-between items-center">
-                        <span class="font-semibold text-base">${dateStr} (No.${slip.slipNumber})</span>
+                        <span class="font-semibold text-base">${dateStr} (No.${slip.slipNumber || '?'})</span>
                         <span class="font-bold text-blue-600 text-lg">${formatCurrency(slip.paidAmount || 0)}</span>
                     </div>
                     <p class="text-sm text-slate-600 mt-1">
-                        テーブル: ${slip.tableId} / 指名: ${getCastNameById(slip.nominationCastId)}
+                        テーブル: ${slip.tableId || '?'} / 指名: ${getCastNameById(slip.nominationCastId)}
                     </p>
                 </div>
             `;
@@ -448,7 +474,9 @@ document.addEventListener('firebaseReady', (e) => {
         castsCollectionRef: cRef, 
         customersCollectionRef: cuRef, 
         slipsCollectionRef: slRef,
-        currentStoreId: csId // (★動的表示 追加★)
+        currentStoreId: csId, // (★動的表示 追加★)
+        orderBy: fbOrderBy, // (★修正★)
+        query: fbQuery // (★修正★)
     } = e.detail;
 
     // (★変更★) グローバル変数に参照をセット
@@ -457,6 +485,8 @@ document.addEventListener('firebaseReady', (e) => {
     customersCollectionRef = cuRef;
     slipsCollectionRef = slRef;
     currentStoreId = csId; // (★動的表示 追加★)
+    fbOrderBy = fbOrderBy; // (★修正★)
+    fbQuery = fbQuery; // (★修正★)
 
 
     let settingsLoaded = false;
@@ -484,7 +514,11 @@ document.addEventListener('firebaseReady', (e) => {
         }
         settingsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to settings: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to settings: ", error);
+        settingsLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 2. Casts
     onSnapshot(castsCollectionRef, (querySnapshot) => {
@@ -495,7 +529,11 @@ document.addEventListener('firebaseReady', (e) => {
         console.log("Casts loaded: ", casts.length);
         castsLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to casts: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to casts: ", error);
+        castsLoaded = true;
+        checkAndRenderAll();
+    });
 
     // 3. Customers
     onSnapshot(customersCollectionRef, (querySnapshot) => {
@@ -506,7 +544,11 @@ document.addEventListener('firebaseReady', (e) => {
         console.log("Customers loaded: ", customers.length);
         customersLoaded = true;
         checkAndRenderAll();
-    }, (error) => console.error("Error listening to customers: ", error));
+    }, (error) => { // (★修正★)
+        console.error("Error listening to customers: ", error);
+        customersLoaded = true;
+        checkAndRenderAll();
+    });
     
     // 4. Slips
     onSnapshot(slipsCollectionRef, (querySnapshot) => {

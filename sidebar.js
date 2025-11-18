@@ -1,5 +1,5 @@
-// (★変更★) db, getDoc, doc, collection, query, where, onSnapshot をインポート
-import { auth, signOut, db, getDoc, doc, collection, query, where, onSnapshot } from './firebase-init.js';
+// (★変更★) auth, signOut のみ import し、他は firebaseReady から受け取る
+import { auth, signOut } from './firebase-init.js';
 
 /**
  * サイドバーのHTMLを生成する
@@ -171,9 +171,15 @@ export const renderSidebar = (containerId, currentPage) => {
     // (※ firebase-init.js が先に読み込まれ、イベントが発火する前提)
     document.addEventListener('firebaseReady', async (e) => {
         // (★変更★) champagneCallsCollectionRef を追加
+        // (★エラー修正★) db, doc, getDoc, query, where, onSnapshot を event detail から取得
         const { 
             auth, 
             db, 
+            doc,
+            getDoc,
+            query,
+            where,
+            onSnapshot,
             currentUserRole, 
             currentCastId, 
             castsCollectionRef,
@@ -197,8 +203,8 @@ export const renderSidebar = (containerId, currentPage) => {
             } else if (currentUserRole === 'cast' && currentCastId && castsCollectionRef) {
                 userRoleEl.textContent = 'キャスト';
                 // Castsコレクションから名前を取得
-                const castRef = doc(castsCollectionRef, currentCastId);
-                const castSnap = await getDoc(castRef);
+                const castRef = doc(castsCollectionRef, currentCastId); // (★修正★) doc() を使用
+                const castSnap = await getDoc(castRef); // (★修正★) getDoc() を使用
                 if (castSnap.exists()) {
                     userNameEl.textContent = castSnap.data().name || auth.currentUser.email;
                 } else {
@@ -218,9 +224,9 @@ export const renderSidebar = (containerId, currentPage) => {
             const badgeEl = document.getElementById('nav-call-management-badge');
             if (badgeEl) {
                 // (★新規★) 'pending' (未対応) ステータスのコールのみをクエリ
-                const q = query(champagneCallsCollectionRef, where("status", "==", "pending"));
+                const q = query(champagneCallsCollectionRef, where("status", "==", "pending")); // (★修正★) query(), where() を使用
                 
-                onSnapshot(q, (snapshot) => {
+                onSnapshot(q, (snapshot) => { // (★修正★) onSnapshot() を使用
                     const pendingCount = snapshot.size;
                     if (pendingCount > 0) {
                         badgeEl.textContent = pendingCount > 9 ? '9+' : pendingCount;
