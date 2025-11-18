@@ -588,7 +588,8 @@
                             <p id="receipt-store-zip" class="hidden"></p>
                             <p id="receipt-address"></p>
                             <p id="receipt-tel"></p>
-                            </div>
+                            <p class="mt-2" id="receipt-staff">担当: (キャスト名)</p>
+                        </div>
                         
                         <div class="text-right text-xs text-slate-400 mt-2" id="receipt-invoice-number">
                             インボイス登録番号: T1234567890
@@ -614,51 +615,8 @@
         </div>
     </div>
     
-    <div id="menu-editor-modal" class="modal-backdrop">
-        <div class="modal-content w-full max-w-lg">
-            <form id="menu-editor-form">
-                <div class="flex justify-between items-center p-5 border-b">
-                    <h3 class="text-xl font-semibold" id="menu-editor-modal-title">新規メニュー追加</h3>
-                    <button type="button" class="modal-close-btn text-slate-400 hover:text-slate-600">
-                        <i class="fa-solid fa-xmark fa-xl"></i>
-                    </button>
-                </div>
-                
-                <div class="p-6 space-y-4">
-                    <div>
-                        <label for="menu-category" class="text-sm font-semibold text-slate-600">カテゴリ</label>
-                        <select id="menu-category" class="w-full p-2 border border-slate-300 rounded-lg mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            </select>
-                    </div>
-                    <div>
-                        <label for="menu-name" class="text-sm font-semibold text-slate-600">項目名</label>
-                        <input type="text" id="menu-name" class="w-full p-2 border border-slate-300 rounded-lg mt-1" required>
-                    </div>
-                    <div id="menu-duration-group" class="hidden">
-                        <label for="menu-duration" class="text-sm font-semibold text-slate-600">時間 (分)</label>
-                        <input type="number" id="menu-duration" placeholder="例: 60" class="w-full p-2 border border-slate-300 rounded-lg mt-1">
-                    </div>
-                    <div>
-                        <label for="menu-price" class="text-sm font-semibold text-slate-600">料金 (税抜)</label>
-                        <input type="number" id="menu-price" placeholder="例: 10000" class="w-full p-2 border border-slate-300 rounded-lg mt-1" required>
-                    </div>
-                    <p id="menu-editor-error" class="text-xs text-red-600"></p>
-                </div>
-
-                <div class="flex justify-end p-5 border-t bg-slate-50 rounded-b-lg space-x-3">
-                    <button type="button" class="modal-close-btn px-4 py-2 rounded-lg bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300">
-                        キャンセル
-                    </button>
-                    <button id="save-menu-item-btn" type="submit" class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700">
-                        保存する
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <script type="module" src="ai-service.js"></script>
-    <script type="module" src="sidebar.js"></script>
-    <script type="module" src="all-slips.js"></script>
+    <script type"module" src="ai-service.js"></script>
+    <script type="module" src="cast-order.js"></script>
 </body>
 </html>
+}
